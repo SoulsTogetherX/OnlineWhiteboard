@@ -1,0 +1,81 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ${FRONTEND_HOST}
+    environment:
+      VITE_API_BASE: "http://backend:${BACKEND_PORT}"
+      VITE_PUBLIC_SITE_URL: "${PUBLIC_SITE_URL}"
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    develop:
+      watch:
+        - action: sync
+          path: ./frontend/src
+          target: /frontend/src
+          initial_sync: true
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./frontend/package.json
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ${BACKEND_HOST}
+    env_file: .env
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./backend/ts
+          target: /backend/ts
+          initial_sync: true
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ./backend/package.json
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: ${POSTGRES_HOST}
+    env_file: .env
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - database-v:/var/lib/postgresql
+    command: ["postgres", "-p", "${POSTGRES_PORT}"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./database
+          target: /database
+          initial_sync: true
+          ignore:
+            - Dockerfile/
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      start_period: 0s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  server-v-node-modules:
+    name: "server-v-node-modules"
+  database-v:
+    name: "database-v"
