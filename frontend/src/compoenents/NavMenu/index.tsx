@@ -1,3 +1,7 @@
+//#region Imports
+import "./styles.css"
+//#endregion
+
 //#region Constant
 const toggleNavOpenClass = "nav-open"
 //#endregion
@@ -43,5 +47,6 @@ function NavMenu({ isOpen }: NavMenuProps) {
 //#endregion
 
 //#region Exports
+export type { NavMenuProps }
 export default NavMenu
 //#endregion

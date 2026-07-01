@@ -1,0 +1,22 @@
+.nav-menu-button {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-around;
+  align-items: center;
+
+  position: fixed;
+  top: 0;
+  left: 0;
+
+  z-index: 1;
+
+  width: 30px;
+  aspect-ratio: 1;
+}
+
+.nav-menu-button span {
+  width: 70%;
+  height: 0.2em;
+
+  background-color: black;
+}

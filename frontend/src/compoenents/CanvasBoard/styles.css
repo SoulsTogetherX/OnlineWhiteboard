@@ -1,0 +1,28 @@
+.canvas-wrapper {
+  display: grid;
+  place-items: center;
+
+  position: relative;
+  width: 100%;
+  height: 100%;
+
+  pointer-events: none;
+}
+.draw-canvas {
+  width: min(90vw, 80vh);
+  height: min(90vw, 80vh);
+
+  border: solid black 4px;
+
+  background-image: url("../../assets/transparent-pattern-background.png");
+  background-repeat: repeat;
+  background-size: cover;
+
+  /* Prevent browser smoothing when scaling up */
+  image-rendering: -moz-crisp-edges; /* Firefox */
+  image-rendering: pixelated; /* Chrome, Edge, Safari */
+
+  user-select: none;
+  pointer-events: all;
+  touch-action: none;
+}

@@ -3,11 +3,12 @@ import type { ColorType } from "./colorType"
 //#endregion
 
 //#region Type Def
-type drawOptions = {
-  color: ColorType
+type ColorPallet = {
+  primary: ColorType
+  secondary: ColorType
 }
 //#endregion
 
 //#region Exports
-export default drawOptions
+export type { ColorPallet }
 //#endregion
