@@ -1,7 +1,7 @@
 //#region Imports
 import { CANVAS_WIDTH, CANVAS_HEIGHT } from "../constants/canvas"
 import type { ColorPallet } from "../types/colorPallet"
-import type ColorType from "../types/colorType"
+import type { ColorType } from "../types/colorType"
 
 import type { DrawAction, PencilAction } from "../types/drawAction"
 import type { Vec } from "../types/vector"

@@ -1,4 +1,4 @@
-.nav-menu {
+.tool-menu {
   position: fixed;
   top: 0;
   bottom: 0;
@@ -14,20 +14,30 @@
 
   background-color: burlywood;
 }
-.nav-menu.nav-open {
+@media screen and (min-width: 1024px) {
+  .tool-menu {
+    transform: translateX(0%);
+  }
+}
+.tool-menu.tool-open {
   transform: translateX(0%);
 }
 
-.nav-list {
+.tool-list {
+  display: flex;
   list-style: none;
 
-  height: 100%;
+  height: calc(100% - 1em);
 
   padding: 0.5em;
   margin: 0;
+
+  :last-child {
+    margin-top: auto;
+  }
 }
 
-.nav-button {
+.tool-button {
   position: relative;
 
   width: 20px;
@@ -92,7 +102,7 @@
   border-right: 16px solid black;
 }
 
-.nav-button:hover {
+.tool-button:hover {
   .button-icon {
     transform: scale(1.5);
   }
