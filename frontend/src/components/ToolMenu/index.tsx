@@ -9,14 +9,15 @@ const OPEN_TOOL_CLASS = "tool-open"
 //#region Component Def
 interface ToolMenuProps {
   isOpen: boolean
+  openRoomPicker: () => void
 }
 
-function ToolMenu({ isOpen }: ToolMenuProps) {
+function ToolMenu({ isOpen, openRoomPicker }: ToolMenuProps) {
   return (
     <div className={`tool-menu ${isOpen ? OPEN_TOOL_CLASS : ""}`}>
       <ul className="tool-list">
         <li>
-          <button className="tool-button">
+          <button className="tool-button" onClick={openRoomPicker}>
             <svg
               className="button-icon"
               fill="currentColor"

@@ -23,6 +23,7 @@ function useCanvasDrawing(
       handleDrawActionStart,
       handleDrawActionFinish,
       handleDrawActionMotion,
+      handleDrawActionLeave,
     ] = settupDrawActions(canvas)
 
     let isDragging = false
@@ -38,6 +39,13 @@ function useCanvasDrawing(
 
       handleDrawActionStart(drawAction.current, colorPallet.current, ev)
     }
+    const onDrawLeave = (ev: PointerEvent) => {
+      if (pointerId !== ev.pointerId || !isDragging) {
+        return
+      }
+      handleDrawActionLeave(drawAction.current, colorPallet.current, ev)
+    }
+
     const onDrawFinish = (ev: PointerEvent) => {
       if (pointerId !== ev.pointerId || !isDragging) {
         return
@@ -57,13 +65,17 @@ function useCanvasDrawing(
     }
 
     canvas.addEventListener("pointerdown", onDrawStart)
-    canvas.addEventListener("pointerup", onDrawFinish)
-    canvas.addEventListener("pointermove", onDrawMove)
+    canvas.addEventListener("pointerleave", onDrawLeave)
+
+    document.addEventListener("pointerup", onDrawFinish)
+    document.addEventListener("pointermove", onDrawMove)
 
     return () => {
       canvas.removeEventListener("pointerdown", onDrawStart)
-      canvas.removeEventListener("pointerup", onDrawFinish)
-      canvas.removeEventListener("pointermove", onDrawMove)
+      canvas.removeEventListener("pointerleave", onDrawLeave)
+
+      document.removeEventListener("pointerup", onDrawFinish)
+      document.removeEventListener("pointermove", onDrawMove)
     }
   }, [canvasRef])
 }

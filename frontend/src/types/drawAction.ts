@@ -1,5 +1,4 @@
 //#region Imports
-import type { ColorType } from "./colorType"
 import type { Vec } from "./vector"
 //#endregion
 

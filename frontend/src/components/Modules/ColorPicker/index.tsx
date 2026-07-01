@@ -1,22 +1,20 @@
 //#region Imports
-import "../styles.css"
-import "./styles.css"
-//#endregion
+import ModuleBase from "../ModuleBase"
 
-//#region Constant
-const MODULE_OPEN_CLASS = "module-open"
+import "./styles.css"
 //#endregion
 
 //#region Component
 interface ColorPickerProps {
   isOpen: boolean
+  onClose: () => void
 }
 
-function ColorPicker({ isOpen }: ColorPickerProps) {
+function ColorPicker({ isOpen, onClose }: ColorPickerProps) {
   return (
-    <div
-      className={`module color-picker-module ${isOpen ? MODULE_OPEN_CLASS : ""}`}
-    ></div>
+    <ModuleBase isOpen={isOpen} onClose={onClose}>
+      <div></div>
+    </ModuleBase>
   )
 }
 //#endregion

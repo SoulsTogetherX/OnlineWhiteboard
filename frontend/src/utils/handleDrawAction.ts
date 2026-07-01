@@ -7,7 +7,19 @@ import type { DrawAction, PencilAction } from "../types/drawAction"
 import type { Vec } from "../types/vector"
 //#endregion
 
+//#region Type Def
+type drawHandlerMethod = (
+  da: DrawAction,
+  cp: ColorPallet,
+  ev: PointerEvent,
+) => void
+//#endregion
+
 //#region Helper Method
+function clamp(val: number, min: number, max: number): number {
+  return Math.max(Math.min(val, max), min)
+}
+
 function getColor(cp: ColorPallet, ev: PointerEvent): ColorType | null {
   if (ev.pointerType !== "mouse" || (ev.buttons & 1) === 1) {
     return cp.primary
@@ -62,13 +74,21 @@ function setPixelLine(
 //#endregion
 
 //#region Settup Method
-function settupDrawActions(canvas: HTMLCanvasElement) {
+function settupDrawActions(
+  canvas: HTMLCanvasElement,
+): [
+  drawHandlerMethod,
+  drawHandlerMethod,
+  drawHandlerMethod,
+  drawHandlerMethod,
+] {
   canvas.width = CANVAS_WIDTH
   canvas.height = CANVAS_HEIGHT
 
   const ctx = canvas.getContext("2d")
   if (!ctx) {
-    return []
+    const emptyFunction = (): void => {}
+    return [emptyFunction, emptyFunction, emptyFunction, emptyFunction]
   }
   const imageData = ctx.getImageData(0, 0, CANVAS_WIDTH, CANVAS_HEIGHT)
 
@@ -77,16 +97,22 @@ function settupDrawActions(canvas: HTMLCanvasElement) {
     const scaleX = CANVAS_WIDTH / rect.width
     const scaleY = CANVAS_HEIGHT / rect.height
 
-    const x = Math.max(
-      Math.min(Math.floor((ev.clientX - rect.left) * scaleX), CANVAS_WIDTH),
-      0,
-    )
-    const y = Math.max(
-      Math.min(Math.floor((ev.clientY - rect.top) * scaleY), CANVAS_HEIGHT),
-      0,
-    )
+    const x = Math.floor((ev.clientX - rect.left) * scaleX)
+    const y = Math.floor((ev.clientY - rect.top) * scaleY)
 
     return [x, y]
+  }
+  const getPosCorrected = (ev: PointerEvent): [Vec, boolean] => {
+    const [x, y] = getPos(ev)
+
+    const correctedX = clamp(x, 0, CANVAS_WIDTH - 1)
+    const correctedY = clamp(y, 0, CANVAS_HEIGHT - 1)
+
+    if (x !== correctedX || y !== correctedY) {
+      return [[correctedX, correctedY], false]
+    }
+
+    return [[x, y], true]
   }
 
   const setPixel = (idx: number, color: ColorType) => {
@@ -104,7 +130,7 @@ function settupDrawActions(canvas: HTMLCanvasElement) {
     switch (da.type) {
       case "pencil":
         da.prevPos = undefined
-        da.nextPos = getPos(ev)
+        da.nextPos = getPosCorrected(ev)[0]
         break
     }
   }
@@ -125,11 +151,38 @@ function settupDrawActions(canvas: HTMLCanvasElement) {
   ) => {
     switch (da.type) {
       case "pencil":
+        const next = getPosCorrected(ev)
+
         da.prevPos = da.nextPos
-        da.nextPos = getPos(ev)
+        da.nextPos = next[0]
+
+        if (!next[1]) {
+          return
+        }
 
         const c = getColor(cp, ev)
-        console.log(ev.button)
+        if (!c) {
+          return
+        }
+
+        setPixelLine(da, c, setPixel)
+        ctx.putImageData(imageData, 0, 0)
+        break
+    }
+  }
+  const handleDrawActionLeave = (
+    da: DrawAction,
+    cp: ColorPallet,
+    ev: PointerEvent,
+  ) => {
+    switch (da.type) {
+      case "pencil":
+        const next = getPosCorrected(ev)
+
+        da.prevPos = da.nextPos
+        da.nextPos = next[0]
+
+        const c = getColor(cp, ev)
         if (!c) {
           return
         }
@@ -140,7 +193,12 @@ function settupDrawActions(canvas: HTMLCanvasElement) {
     }
   }
 
-  return [handleDrawActionStart, handleDrawActionFinish, handleDrawActionMotion]
+  return [
+    handleDrawActionStart,
+    handleDrawActionFinish,
+    handleDrawActionMotion,
+    handleDrawActionLeave,
+  ]
 }
 //#endregion
 

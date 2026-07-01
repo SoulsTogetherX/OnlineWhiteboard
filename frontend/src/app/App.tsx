@@ -13,11 +13,13 @@ import type { DrawAction } from "../types/drawAction"
 import type { ColorPallet } from "../types/colorPallet"
 
 import "./styles.css"
+import RoomPicker from "../components/Modules/RoomPicker"
 //#endregion
 
 //#region Page Methods
 function App() {
   const [isNavOpen, setIsNavOpen] = useState<boolean>(false)
+  const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
 
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const drawAction = useRef<DrawAction>(defaultDrawAction)
@@ -26,16 +28,16 @@ function App() {
   const openPalletModuleHandler = (isPrimary: boolean) => {}
 
   useCanvasDrawing(canvasRef, drawAction, colorPallet)
-
   return (
     <>
       <div className="background" onClick={() => setIsNavOpen(false)}></div>
-      <ToolMenu isOpen={isNavOpen} />
+      <ToolMenu isOpen={isNavOpen} openRoomPicker={() => setIsRoomOpen(true)} />
       <CanvasBoard canvasRef={canvasRef} />
       <PaletteHandler
         colorPallet={colorPallet}
         openPalletModule={openPalletModuleHandler}
       />
+      <RoomPicker isOpen={isRoomOpen} onClose={() => setIsRoomOpen(false)} />
     </>
   )
 }

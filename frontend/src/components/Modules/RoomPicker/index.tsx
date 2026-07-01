@@ -1,24 +1,28 @@
 //#region Imports
-import "../styles.css"
-import "./styles.css"
-//#endregion
+import ModuleBase from "../ModuleBase"
 
-//#region Constant
-const MODULE_OPEN_CLASS = "module-open"
+import "./styles.css"
 //#endregion
 
 //#region Component
 interface RoomPickerProps {
   isOpen: boolean
+  onClose: () => void
 }
 
-function RoomPicker({ isOpen }: RoomPickerProps) {
+function RoomPicker({ isOpen, onClose }: RoomPickerProps) {
   return (
-    <div
-      className={`module room-picker-module ${isOpen ? MODULE_OPEN_CLASS : ""}`}
-    >
-      Test
-    </div>
+    <ModuleBase isOpen={isOpen} onClose={onClose}>
+      <div>
+        Name
+        <input />
+      </div>
+      <div>
+        Room Id
+        <input />
+      </div>
+      <button onClick={onClose}>Save</button>
+    </ModuleBase>
   )
 }
 //#endregion
