@@ -6,16 +6,3 @@
 
   background-color: bisque;
 }
-
-.nav-menu-button {
-  position: fixed;
-  top: 0;
-  left: 0;
-
-  z-index: 1;
-
-  width: 50px;
-  aspect-ratio: 1;
-
-  background-color: burlywood;
-}

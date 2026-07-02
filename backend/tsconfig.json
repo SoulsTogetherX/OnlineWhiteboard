@@ -2,14 +2,14 @@
   "compilerOptions": {
     "target": "ES2020",
     "module": "CommonJS",
-    "rootDir": "ts",
+    "rootDir": "src",
     "outDir": "src",
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,
     "strict": true,
-    "typeRoots": ["./node_modules/@types", "./src/types"]
+    "typeRoots": ["./node_modules/@types", "src/types"]
   },
-  "include": ["ts/**/*.ts", "typings/**/*.d.ts"],
+  "include": ["src/**/*.ts", "typings/**/*.d.ts"],
   "exclude": ["node_modules"]
 }

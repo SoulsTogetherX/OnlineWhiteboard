@@ -3,13 +3,13 @@ import "./styles.css"
 //#endregion
 
 //#region Component
-interface ModuleBaseProps {
+interface PopupBaseProps {
   children?: React.ReactNode
   isOpen: boolean
   onClose: () => void
 }
 
-function ModuleBase({ children, isOpen, onClose }: ModuleBaseProps) {
+function PopupBase({ children, isOpen, onClose }: PopupBaseProps) {
   return (
     <div
       className={`module-wrapper${isOpen ? " active" : ""}`}
@@ -23,6 +23,6 @@ function ModuleBase({ children, isOpen, onClose }: ModuleBaseProps) {
 //#endregion
 
 //#region Exports
-export type { ModuleBaseProps }
-export default ModuleBase
+export type { PopupBaseProps }
+export default PopupBase
 //#endregion

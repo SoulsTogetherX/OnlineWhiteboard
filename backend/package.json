@@ -4,6 +4,7 @@
     "start": "node src/server.js"
   },
   "dependencies": {
+    "@types/ws": "^8.18.1",
     "express": "^5.2.1",
     "pg": "^8.22.0",
     "ws": "^8.21.0"
