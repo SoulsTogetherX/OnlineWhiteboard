@@ -1,0 +1,5 @@
+# The build context is the repo root, so ignore patterns here apply to
+# every service built from it (frontend, backend).
+
+**/node_modules
+**/.git

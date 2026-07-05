@@ -1,0 +1,67 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    container_name: ${FRONTEND_HOST}
+    volumes:
+      - ./frontend/src:/app/src # live-mount source for Vite's dev server / HMR
+      - ./shared:/shared # shared TS code, mounted as a sibling of /app (matches host layout)
+      - /app/node_modules # keep the image's own node_modules; don't let the bind mount hide it
+    environment:
+      VITE_API_BASE: "http://backend:${BACKEND_PORT}"
+      VITE_PUBLIC_SITE_URL: "${PUBLIC_SITE_URL}"
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: ${BACKEND_HOST}
+    volumes:
+      - ./backend/src:/app/src # live-mount source; ts-node-dev restarts on change
+      - ./shared:/shared # shared TS code, mounted as a sibling of /app (matches host layout)
+      - /app/node_modules
+    env_file: .env
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: ${POSTGRES_HOST}
+    env_file: .env
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - database-v:/var/lib/postgresql
+    command: ["postgres", "-p", "${POSTGRES_PORT}"]
+    develop:
+      watch:
+        - action: sync+restart
+          path: ./database
+          target: /database
+          initial_sync: true
+          ignore:
+            - Dockerfile/
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      start_period: 0s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  database-v:
+    name: "database-v"

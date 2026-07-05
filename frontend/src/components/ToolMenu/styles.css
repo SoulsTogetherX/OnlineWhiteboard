@@ -1,0 +1,113 @@
+.tool-menu {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  left: 0;
+
+  z-index: 1;
+
+  width: fit-content;
+  padding: 0.4em;
+
+  transition: transform ease 0.3s;
+  transform: translateX(-100%);
+
+  background-color: var(--toolbar-background);
+}
+@media screen and (min-width: 1024px) {
+  .tool-menu {
+    transform: translateX(0%);
+  }
+}
+.tool-menu.tool-open {
+  transform: translateX(0%);
+}
+
+.tool-list {
+  display: flex;
+  list-style: none;
+
+  height: calc(100% - 1em);
+
+  padding: 0.5em;
+  margin: 0;
+
+  :last-child {
+    margin-top: auto;
+  }
+}
+
+.tool-button {
+  position: relative;
+
+  width: 20px;
+  height: 20px;
+
+  padding: 0.4em;
+}
+.button-icon {
+  transition: ease 0.3s;
+  transform: scale(1);
+}
+.tool-tip {
+  display: inline-block;
+  position: absolute;
+  left: 100%;
+  top: 50%;
+
+  width: fit-content;
+
+  padding: 0.2em 0.5em 0.2em 0.5em;
+
+  border-radius: 15%;
+  border: black solid 2px;
+
+  background-color: aliceblue;
+
+  transform-origin: left bottom;
+  transition: ease 0.3s;
+  transform: translate(0, -50%) rotate(15deg);
+  opacity: 0;
+
+  pointer-events: none;
+}
+.tool-tip::after {
+  content: "";
+
+  display: inline-block;
+  position: absolute;
+  left: -14px;
+  top: calc(50% - 6px);
+
+  width: 0;
+  height: 0;
+  border-top: 6px solid transparent;
+  border-bottom: 6px solid transparent;
+
+  border-right: 16px solid aliceblue;
+}
+.tool-tip::before {
+  content: "";
+
+  display: inline-block;
+  position: absolute;
+  left: -16px;
+  top: calc(50% - 8px);
+
+  width: 0;
+  height: 0;
+  border-top: 8px solid transparent;
+  border-bottom: 8px solid transparent;
+
+  border-right: 16px solid black;
+}
+
+.tool-button:hover {
+  .button-icon {
+    transform: scale(1.5);
+  }
+  .tool-tip {
+    transform: translate(15px, -50%) rotate(0deg);
+    opacity: 1;
+  }
+}

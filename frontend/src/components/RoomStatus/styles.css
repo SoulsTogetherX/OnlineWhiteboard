@@ -1,0 +1,21 @@
+.room-status {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 3;
+
+  display: flex;
+  gap: 12px;
+  align-items: center;
+
+  padding: 8px 12px;
+  border: 1px solid hsl(from var(--border-color) h s l / 0.15);
+  border-radius: 8px;
+
+  background: rgb(255 255 255 / 88%);
+  color: #1f2933;
+  font:
+    14px/1.2 system-ui,
+    sans-serif;
+}
