@@ -1,0 +1,126 @@
+.color-picker-module {
+  display: grid;
+  gap: 18px;
+
+  width: min(420px, calc(100vw - 64px));
+}
+
+.color-picker-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+
+  gap: 16px;
+}
+
+.color-picker-header h2 {
+  margin: 0;
+
+  color: var(--text-color);
+}
+
+.color-picker-header p {
+  max-width: 260px;
+
+  margin: 4px 0 0;
+
+  color: var(--sub-text-color);
+}
+
+.color-preview {
+  flex: 0 0 auto;
+
+  width: 64px;
+  height: 64px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border-radius: 8px;
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 45%);
+
+  background-image:
+    linear-gradient(45deg, #d9e0e7 25%, transparent 25%),
+    linear-gradient(-45deg, #d9e0e7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9e0e7 75%),
+    linear-gradient(-45deg, transparent 75%, #d9e0e7 75%);
+  background-position:
+    0 0,
+    0 8px,
+    8px -8px,
+    -8px 0;
+  background-size: 16px 16px;
+}
+
+.hex-picker-row,
+.rgba-control {
+  display: grid;
+  grid-template-columns: 56px 1fr 72px;
+  align-items: center;
+
+  gap: 12px;
+
+  color: var(--text-color);
+}
+
+.hex-picker-row input[type="color"] {
+  grid-column: 2 / 4;
+
+  width: 100%;
+  height: 40px;
+
+  padding: 2px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border-radius: 8px;
+
+  background: var(--popup-background);
+}
+
+.rgba-grid {
+  display: grid;
+  gap: 12px;
+}
+
+.rgba-control input[type="range"] {
+  width: 100%;
+
+  accent-color: var(--accent-color);
+}
+
+.rgba-control input[type="number"] {
+  width: 100%;
+  min-width: 0;
+
+  padding: 8px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border-radius: 8px;
+}
+
+.color-popup-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.color-popup-actions button {
+  min-width: 84px;
+
+  padding: 9px 12px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border-radius: 8px;
+
+  color: var(--text-color);
+  background: var(--popup-background);
+
+  text-align: center;
+
+  cursor: pointer;
+}
+
+.color-popup-actions button:last-child {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+
+  color: var(--popup-background);
+}

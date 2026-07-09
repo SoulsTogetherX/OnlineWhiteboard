@@ -1,0 +1,64 @@
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+    container_name: ${FRONTEND_HOST}
+    volumes:
+      - ./frontend/src:/app/src
+      - ./shared:/shared
+      - /app/node_modules
+    environment:
+      VITE_API_BASE: "http://backend:${BACKEND_PORT}"
+      VITE_PUBLIC_SITE_URL: "${PUBLIC_SITE_URL}"
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
+    ports:
+      - "${FRONTEND_PORT}:${FRONTEND_PORT}"
+    depends_on:
+      - backend
+
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: ${BACKEND_HOST}
+    volumes:
+      - ./backend/src:/app/src
+      - ./shared:/shared
+      - /app/node_modules
+    env_file: .env
+    environment:
+      CHOKIDAR_USEPOLLING: "true"
+      CHOKIDAR_INTERVAL: "300"
+    ports:
+      - "${BACKEND_PORT}:${BACKEND_PORT}"
+    depends_on:
+      database:
+        condition: service_healthy
+
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    container_name: ${POSTGRES_HOST}
+    env_file: .env
+    ports:
+      - "${POSTGRES_PORT}:${POSTGRES_PORT}"
+    volumes:
+      - database-v:/var/lib/postgresql
+    command: ["postgres", "-p", "${POSTGRES_PORT}"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      start_period: 0s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  database-v:
+    name: "database-v"
