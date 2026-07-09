@@ -3,13 +3,13 @@ import "./styles.css"
 //#endregion
 
 //#region Component Def
-export interface NavMenuButtonProps {
+export interface HamburgerButtonProps {
   onClick: () => void
 }
 
-export default function NavMenuButton({ onClick }: NavMenuButtonProps) {
+export default function HamburgerButton({ onClick }: HamburgerButtonProps) {
   return (
-    <button className="nav-menu-button" onClick={onClick}>
+    <button className="hamburger-button" onClick={onClick}>
       <span></span>
       <span></span>
       <span></span>

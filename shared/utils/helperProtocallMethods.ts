@@ -11,6 +11,7 @@ export type CanvasState = {
   imageData: ImageData
 }
 
+export type PixelColorMethod = (idx: number) => ColorType
 export type PixelInteractionMethod = (idx: number, color: ColorType) => void
 //#endregion
 
@@ -22,8 +23,11 @@ const canvasStates = new WeakMap<HTMLCanvasElement, CanvasState>()
 export function clamp(val: number, min: number, max: number): number {
   return Math.max(Math.min(val, max), min)
 }
-export function getIdx(vec: Vec): number {
+export function getIdxFromVec(vec: Vec): number {
   return (vec[1] * CANVAS_WIDTH + vec[0]) << 2
+}
+export function getVecFromIdx(idx: number): Vec {
+  return [idx % CANVAS_WIDTH, Math.floor(idx / CANVAS_WIDTH)]
 }
 
 export function createImageDataFromBase64(data: string): ImageData {
@@ -99,6 +103,22 @@ export function getPosCorrected(
 //#endregion
 
 //#region ToolType Methods
+export function getLookAtMethod(
+  type: ToolType,
+  imageData: ImageData | Uint8ClampedArray,
+): PixelColorMethod {
+  const image =
+    imageData instanceof Uint8ClampedArray ? imageData : imageData.data
+
+  return (idx: number): ColorType => {
+    return {
+      r: image[idx + 0],
+      g: image[idx + 1],
+      b: image[idx + 2],
+      a: image[idx + 3],
+    }
+  }
+}
 export function getDrawerMethod(
   type: ToolType,
   imageData: ImageData | Uint8ClampedArray,
@@ -106,42 +126,31 @@ export function getDrawerMethod(
   const image =
     imageData instanceof Uint8ClampedArray ? imageData : imageData.data
 
-  switch (type) {
-    case "pencil":
-    case "eraser":
-      return (idx: number, color: ColorType) => {
-        image[idx + 0] = color.r
-        image[idx + 1] = color.g
-        image[idx + 2] = color.b
-        image[idx + 3] = color.a
-      }
-    case "spray":
-      break
-    case "bucket":
-      break
+  return (idx: number, color: ColorType): void => {
+    image[idx + 0] = color.r
+    image[idx + 1] = color.g
+    image[idx + 2] = color.b
+    image[idx + 3] = color.a
   }
-  return () => {}
 }
 //#endregion
 
 //#region Color Methods
-export function getDirectColor(
-  cp: ColorPallet,
-  ev: PointerEvent,
-): ColorType | null {
-  if (ev.pointerType !== "mouse" || (ev.buttons & 1) === 1) {
+export function getDirectColor(cp: ColorPallet, ev: PointerEvent): ColorType {
+  if (ev.pointerType !== "mouse") {
     return cp.primary
-  } else if ((ev.buttons & 2) === 2) {
+  }
+  if (ev.button === 2 || (ev.buttons & 2) === 2) {
     return cp.secondary
   }
-  return null
+  return cp.primary
 }
 
 export function getToolColor(
   type: ToolType,
-  defaultColor: ColorType | null,
+  defaultColor: ColorType,
 ): ColorType {
-  if (type === "eraser" || defaultColor === null) {
+  if (type === "eraser") {
     return { r: 0, g: 0, b: 0, a: 0 }
   }
   return defaultColor

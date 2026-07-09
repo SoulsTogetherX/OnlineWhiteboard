@@ -3,20 +3,17 @@ import type { Vec, ColorType } from "./primitive"
 //#endregion
 
 //#region Summery Types
-export type LineToolType = "pencil" | "eraser" | "spray"
-export type PointToolType = "bucket"
-export type ToolType = LineToolType | PointToolType
+export type LineToolType = "pencil" | "eraser"
+export type FillToolType = "bucket"
+export type ToolType = LineToolType | FillToolType
 
-export type LineAction = PencilAction | EraseAction | SprayAction
-export type PointAction = BucketAction
-export type DrawAction = LineAction | PointAction
+export type LineAction = PencilAction | EraseAction
+export type FillAction = BucketAction
+export type DrawAction = LineAction | FillAction
 
-export type LineInstruction =
-  | PencilInstruction
-  | EraseInstruction
-  | SprayInstruction
-export type PointInstruction = BucketInstruction
-export type DrawInstruction = LineInstruction | PointInstruction
+export type LineInstruction = PencilInstruction | EraseInstruction
+export type FillInstruction = BucketInstruction
+export type DrawInstruction = LineInstruction | FillInstruction
 //#endregion
 
 //#region Base Draw Action Types
@@ -45,16 +42,9 @@ type EraseShared = {
 export type EraseAction = EraseShared & BaseAction
 export type EraseInstruction = EraseShared & BaseInstruction
 
-type SprayShared = {
-  type: "spray"
-  prevPos?: Vec
-  nextPos?: Vec
-}
-export type SprayAction = SprayShared & BaseAction
-export type SprayInstruction = SprayShared & BaseInstruction
-
 type BucketShared = {
   type: "bucket"
+  pos?: Vec
 }
 export type BucketAction = BucketShared & BaseAction
 export type BucketInstruction = BucketShared & BaseInstruction

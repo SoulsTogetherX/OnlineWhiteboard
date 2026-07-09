@@ -38,19 +38,26 @@ export default function useCanvasDrawing(
       pointerId = ev.pointerId
       isDragging = true
 
-      handleDrawActionStart(drawAction.current, colorPallet.current, ev)
+      const instruction = handleDrawActionStart(
+        drawAction.current,
+        colorPallet.current,
+        ev,
+      )
+      if (instruction) {
+        onDrawInstruction?.(instruction)
+      }
     }
     const onDrawLeave = (ev: PointerEvent) => {
       if (pointerId !== ev.pointerId || !isDragging) {
         return
       }
-      const action = handleDrawActionLeave(
+      const instruction = handleDrawActionLeave(
         drawAction.current,
         colorPallet.current,
         ev,
       )
-      if (action) {
-        onDrawInstruction?.(action)
+      if (instruction) {
+        onDrawInstruction?.(instruction)
       }
     }
 
@@ -62,20 +69,27 @@ export default function useCanvasDrawing(
       pointerId = null
       isDragging = false
 
-      handleDrawActionFinish(drawAction.current, colorPallet.current, ev)
+      const instruction = handleDrawActionFinish(
+        drawAction.current,
+        colorPallet.current,
+        ev,
+      )
+      if (instruction) {
+        onDrawInstruction?.(instruction)
+      }
     }
     const onDrawMove = (ev: PointerEvent) => {
       if (pointerId !== ev.pointerId || !isDragging) {
         return
       }
 
-      const action = handleDrawActionMotion(
+      const instruction = handleDrawActionMotion(
         drawAction.current,
         colorPallet.current,
         ev,
       )
-      if (action) {
-        onDrawInstruction?.(action)
+      if (instruction) {
+        onDrawInstruction?.(instruction)
       }
     }
 

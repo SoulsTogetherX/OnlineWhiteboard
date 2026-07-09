@@ -3,9 +3,6 @@ import {
   createImageDataFromBase64,
   getCanvasState,
 } from "./helperProtocallMethods"
-
-import type { DrawAction, DrawInstruction } from "../types/drawProtocol"
-import type { ColorPallet } from "../types/primitive"
 import {
   handleDrawLineFinish,
   handleDrawLineInstruction,
@@ -13,6 +10,16 @@ import {
   handleDrawLineMotion,
   handleDrawLineStart,
 } from "./handleLineProtocall"
+import {
+  handleDrawFillFinish,
+  handleDrawFillInstruction,
+  handleDrawFillLeave,
+  handleDrawFillMotion,
+  handleDrawFillStart,
+} from "./handleFillProtocall"
+
+import type { DrawAction, DrawInstruction } from "../types/drawProtocol"
+import type { ColorPallet } from "../types/primitive"
 //#endregion
 
 //#region Type Def
@@ -47,12 +54,10 @@ export default function settupDrawActions(
     switch (da.type) {
       case "pencil":
       case "eraser":
-      case "spray":
         return handleDrawLineStart(canvas, da, cp, ev)
       case "bucket":
-        break
+        return handleDrawFillStart(canvas, da, cp, ev)
     }
-    return null
   }
   const handleDrawActionFinish = (
     da: DrawAction,
@@ -62,12 +67,10 @@ export default function settupDrawActions(
     switch (da.type) {
       case "pencil":
       case "eraser":
-      case "spray":
         return handleDrawLineFinish(canvas, da, cp, ev)
       case "bucket":
-        break
+        return handleDrawFillFinish(canvas, da, cp, ev)
     }
-    return null
   }
   const handleDrawActionMotion = (
     da: DrawAction,
@@ -77,12 +80,10 @@ export default function settupDrawActions(
     switch (da.type) {
       case "pencil":
       case "eraser":
-      case "spray":
         return handleDrawLineMotion(canvas, da, cp, ev)
       case "bucket":
-        break
+        return handleDrawFillMotion(canvas, da, cp, ev)
     }
-    return null
   }
   const handleDrawActionLeave = (
     da: DrawAction,
@@ -92,12 +93,10 @@ export default function settupDrawActions(
     switch (da.type) {
       case "pencil":
       case "eraser":
-      case "spray":
         return handleDrawLineLeave(canvas, da, cp, ev)
       case "bucket":
-        break
+        return handleDrawFillLeave(canvas, da, cp, ev)
     }
-    return null
   }
 
   return [
@@ -117,10 +116,10 @@ export function applyDrawInstructionToCanvas(
   switch (inst.type) {
     case "pencil":
     case "eraser":
-    case "spray":
       handleDrawLineInstruction(pixels, inst)
       break
     case "bucket":
+      handleDrawFillInstruction(pixels, inst)
       break
   }
 }

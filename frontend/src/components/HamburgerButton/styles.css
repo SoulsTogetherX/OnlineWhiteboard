@@ -1,20 +1,28 @@
-.nav-menu-button {
+.hamburger-button {
   display: flex;
   flex-direction: column;
   justify-content: space-around;
   align-items: center;
 
   position: fixed;
-  top: 0;
-  left: 0;
+  top: 5px;
+  left: 5px;
 
   z-index: 1;
 
   width: 30px;
   aspect-ratio: 1;
+
+  background-color: var(--toolbar-background);
+
+  border-radius: 10%;
+
+  border-color: var(--border-color);
+  border-style: solid;
+  border-width: 2px;
 }
 
-.nav-menu-button span {
+.hamburger-button span {
   width: 70%;
   height: 0.2em;
 

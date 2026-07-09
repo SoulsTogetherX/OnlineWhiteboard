@@ -18,6 +18,7 @@ import type { DrawAction } from "@shared/types/drawProtocol"
 import type { ColorPalletKeys } from "@shared/types/primitive"
 
 import "./styles.css"
+import HamburgerButton from "@/components/HamburgerButton"
 //#endregion
 
 //#region Page Def
@@ -53,6 +54,7 @@ export default function App() {
         activeUsers={activeUsers}
         socketLabel={socketLabel}
       />
+      <HamburgerButton onClick={() => setIsToolbarOpen(true)} />
       <ToolMenu
         isOpen={isToolbarOpen}
         drawAction={drawAction}

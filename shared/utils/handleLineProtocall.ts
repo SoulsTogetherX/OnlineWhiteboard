@@ -3,7 +3,7 @@ import {
   getCanvasState,
   getDirectColor,
   getDrawerMethod,
-  getIdx,
+  getIdxFromVec,
   getPosCorrected,
   getToolColor,
   updateCanvas,
@@ -35,7 +35,7 @@ function setPixelLine(
 
   let err = dx - dy
   while (true) {
-    setPixel(getIdx([x0, y0]), color)
+    setPixel(getIdxFromVec([x0, y0]), color)
 
     if (x0 === x1 && y0 === y1) {
       break
@@ -116,6 +116,10 @@ export function handleDrawLineLeave(
   cp: ColorPallet,
   ev: PointerEvent,
 ): LineInstruction | null {
+  const next = getPosCorrected(ev, canvas)
+  da.prevPos = da.nextPos
+  da.nextPos = next[0]
+
   const canvasState = getCanvasState(canvas)
   if (canvasState === null) {
     return null
