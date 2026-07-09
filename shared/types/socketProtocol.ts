@@ -7,7 +7,7 @@ export type ClientSocketMessage =
   | {
       type: "draw"
       roomId: string
-      action: DrawInstruction
+      instruction: DrawInstruction
     }
   | {
       type: "ping"
@@ -24,7 +24,7 @@ export type ServerSocketMessage =
   | {
       type: "draw"
       roomId: string
-      action: DrawInstruction
+      instruction: DrawInstruction
       revision: number
     }
   | {

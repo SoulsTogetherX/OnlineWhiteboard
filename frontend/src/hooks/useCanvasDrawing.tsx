@@ -1,7 +1,7 @@
 //#region Imports
 import { useEffect } from "react"
 
-import settupDrawActions from "@shared/utils/handleDrawProtocol"
+import settupDrawActions from "@shared/utils/handleCanvasProtocol"
 
 import type { DrawAction, DrawInstruction } from "@shared/types/drawProtocol"
 import type { ColorPallet } from "@shared/types/primitive"

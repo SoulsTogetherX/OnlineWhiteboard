@@ -7,7 +7,7 @@ import { useSessionStorage } from "@/hooks/useSessionStorage"
 import {
   applyDrawInstructionToCanvas,
   applySnapshotToCanvas,
-} from "@shared/utils/handleDrawProtocol"
+} from "@shared/utils/handleCanvasProtocol"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
@@ -16,6 +16,7 @@ import type {
 } from "@shared/types/socketProtocol"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
 import type { ClientSocket } from "@/types/ClientSocket"
+import { getCanvasState } from "@shared/utils/helperProtocallMethods"
 //#endregion
 
 //#region Constants
@@ -69,7 +70,14 @@ export default function useRoomConnection(
 
         case "draw":
           if (message.roomId === roomId && canvasRef.current) {
-            applyDrawInstructionToCanvas(canvasRef.current, message.action)
+            const canvasState = getCanvasState(canvasRef.current)
+            if (canvasState === null) {
+              return
+            }
+            applyDrawInstructionToCanvas(
+              canvasState.imageData,
+              message.instruction,
+            )
           }
           break
 
@@ -110,11 +118,11 @@ export default function useRoomConnection(
   const { send, close } = useWebSocket("/ws", roomId, socketOptions)
 
   const sendDrawInstruction = useCallback(
-    (action: DrawInstruction) => {
+    (instruction: DrawInstruction) => {
       const message: ClientSocketMessage = {
         type: "draw",
         roomId,
-        action,
+        instruction,
       }
       send(message)
     },

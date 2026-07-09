@@ -28,6 +28,7 @@ export default function RoomPopup({
         <div>
           Room Id:
           <input
+            name="room-id"
             value={draftRoomId}
             onChange={(ev) => setDraftRoomId(ev.target.value)}
             maxLength={22}

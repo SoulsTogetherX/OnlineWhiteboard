@@ -3,7 +3,7 @@ import type { RawData, WebSocketServer } from "ws"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
-import { applyDrawInstruction } from "@/utils/canvasActions"
+import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
@@ -139,7 +139,7 @@ export default class RoomManager {
       return
     }
 
-    this.applyAction(room, message.action)
+    this.applyInstruction(room, message.instruction)
   }
 
   private parseMessage(raw: RawData): ClientSocketMessage | null {
@@ -151,15 +151,18 @@ export default class RoomManager {
     }
   }
 
-  private applyAction(room: RoomState, action: DrawInstruction): void {
-    applyDrawInstruction(room.pixels, action)
+  private applyInstruction(
+    room: RoomState,
+    instruction: DrawInstruction,
+  ): void {
+    applyDrawInstructionToCanvas(room.pixels, instruction)
     room.revision += 1
     room.isDirty = true
 
     this.broadcast(room, {
       type: "draw",
       roomId: room.roomId,
-      action,
+      instruction,
       revision: room.revision,
     })
   }

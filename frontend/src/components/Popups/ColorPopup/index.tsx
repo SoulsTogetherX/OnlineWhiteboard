@@ -81,6 +81,7 @@ export default function ColorPopup({
         <label className="hex-picker-row">
           <span>Color</span>
           <input
+            name="color-picker"
             type="color"
             value={colorToHex(draftColor)}
             onChange={(ev) =>
@@ -94,6 +95,7 @@ export default function ColorPopup({
             <label className="rgba-control" key={component}>
               <span>{component.toUpperCase()}</span>
               <input
+                name={`${component}-hue-amount-slider`}
                 type="range"
                 min="0"
                 max="255"
@@ -103,6 +105,7 @@ export default function ColorPopup({
                 }
               />
               <input
+                name={`${component}-hue-amount-numerical`}
                 type="number"
                 min="0"
                 max="255"

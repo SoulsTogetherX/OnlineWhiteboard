@@ -25,6 +25,7 @@
 
 .tool-list {
   display: flex;
+  flex-direction: column;
   list-style: none;
 
   height: calc(100% - 1em);

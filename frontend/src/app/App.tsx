@@ -55,6 +55,7 @@ export default function App() {
       />
       <ToolMenu
         isOpen={isToolbarOpen}
+        drawAction={drawAction}
         openRoomPicker={() => setIsRoomOpen(true)}
       />
       <CanvasBoard canvasRef={canvasRef} />
