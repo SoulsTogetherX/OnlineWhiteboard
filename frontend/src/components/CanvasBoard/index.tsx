@@ -13,13 +13,11 @@ export default function CanvasBoard({ canvasRef }: CanvasBoardProps) {
   }
 
   return (
-    <div className="canvas-wrapper">
-      <canvas
-        ref={canvasRef}
-        className="draw-canvas"
-        onContextMenu={handleContextMenu}
-      ></canvas>
-    </div>
+    <canvas
+      ref={canvasRef}
+      className="draw-canvas"
+      onContextMenu={handleContextMenu}
+    ></canvas>
   )
 }
 //#endregion

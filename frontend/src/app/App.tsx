@@ -7,8 +7,10 @@ import RoomPopup from "@/components/Popups/RoomPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
 import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
+import HamburgerButton from "@/components/HamburgerButton"
 
-import useCanvasDrawing from "@/hooks/useCanvasDrawing"
+import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
+import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
 import useRoomConnection from "@/hooks/useRoomConnection"
 import useColorPalette from "@/hooks/useColorPalette"
 
@@ -18,12 +20,14 @@ import type { DrawAction } from "@shared/types/drawProtocol"
 import type { ColorPalletKeys } from "@shared/types/primitive"
 
 import "./styles.css"
-import HamburgerButton from "@/components/HamburgerButton"
 //#endregion
 
 //#region Page Def
 export default function App() {
   // Refs
+  const frameRef = useRef<HTMLDivElement>(
+    null,
+  ) as React.RefObject<HTMLDivElement>
   const canvasRef = useRef<HTMLCanvasElement>(
     null,
   ) as React.RefObject<HTMLCanvasElement>
@@ -42,13 +46,17 @@ export default function App() {
   const { roomId, activeUsers, socketLabel, sendDrawInstruction, loadRoom } =
     useRoomConnection(canvasRef, () => setIsRoomOpen(false))
 
-  // Drawing Settup
+  // Canvas Settup
+  useCanvasMotion(frameRef, canvasRef)
   useCanvasDrawing(canvasRef, drawAction, colorPallet, sendDrawInstruction)
 
   // Frontend
   return (
-    <>
-      <div className="background" onClick={() => setIsToolbarOpen(false)} />
+    <div
+      ref={frameRef}
+      className="app-wrapper"
+      onClick={() => setIsToolbarOpen(false)}
+    >
       <RoomStatus
         roomId={roomId}
         activeUsers={activeUsers}
@@ -84,7 +92,7 @@ export default function App() {
         onClose={() => setIsRoomOpen(false)}
         onLoad={loadRoom}
       />
-    </>
+    </div>
   )
 }
 //#endregion

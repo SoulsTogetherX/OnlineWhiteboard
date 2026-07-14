@@ -17,6 +17,12 @@ services:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     depends_on:
       - backend
+    develop:
+      watch:
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/Dockerfile
 
   backend:
     build:
@@ -36,6 +42,12 @@ services:
     depends_on:
       database:
         condition: service_healthy
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend/package.json
+        - action: rebuild
+          path: ./backend/Dockerfile
 
   database:
     build:
