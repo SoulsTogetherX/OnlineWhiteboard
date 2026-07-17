@@ -1,0 +1,99 @@
+.auth-popup {
+  display: grid;
+  gap: 16px;
+
+  width: min(360px, calc(100vw - 64px));
+}
+
+.auth-header h2 {
+  margin: 0;
+
+  color: var(--text-color);
+}
+
+.auth-header p {
+  margin: 4px 0 0;
+
+  color: var(--sub-text-color);
+
+  font-size: 0.9em;
+}
+
+.auth-field {
+  display: grid;
+  gap: 6px;
+
+  color: var(--text-color);
+}
+
+.auth-field span {
+  font-size: 0.9em;
+}
+
+.auth-field input {
+  width: 100%;
+  min-width: 0;
+
+  padding: 9px 10px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border-radius: 8px;
+
+  color: var(--text-color);
+  background: var(--popup-background);
+}
+
+.auth-field input:focus-visible {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 1px;
+}
+
+.auth-error {
+  margin: 0;
+
+  color: #d13438;
+
+  font-size: 0.9em;
+}
+
+.auth-submit {
+  padding: 10px 12px;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 8px;
+
+  color: var(--popup-background);
+  background: var(--accent-color);
+
+  font-weight: 600;
+
+  cursor: pointer;
+}
+
+.auth-submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.auth-switch {
+  margin: 0;
+
+  color: var(--sub-text-color);
+
+  font-size: 0.9em;
+  text-align: center;
+}
+
+.auth-switch button {
+  padding: 0;
+
+  border: none;
+  background: none;
+
+  color: var(--accent-color);
+
+  font: inherit;
+  text-decoration: underline;
+
+  cursor: pointer;
+}

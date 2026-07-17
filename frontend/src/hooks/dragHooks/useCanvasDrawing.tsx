@@ -20,11 +20,16 @@ export default function useCanvasDrawing(
   colorPallet: React.RefObject<ColorPallet>,
   onDrawInstruction: (action: DrawInstruction) => void,
   onCommitAction?: OnCommitAction,
+  // When this ref reads true, pointer gestures don't draw. Used by the
+  // eyedropper: while sampling, a click must pick a colour, not lay down paint.
+  disabledRef?: React.RefObject<boolean>,
 ): void {
   const [start, finish, motion, leave] = useDrawActions(
     canvasRef,
     onCommitAction,
   )
+
+  const isDisabled = () => disabledRef?.current === true
 
   // Each of these runs from a pointer event, so reading `.current` here is
   // correct — it picks up the tool and palette as they are at gesture time
@@ -36,10 +41,13 @@ export default function useCanvasDrawing(
   }
 
   const onDrawStart = (ev: PointerEvent) =>
-    emit(start(drawAction.current, colorPallet.current, ev))
-  const onDrawFinish = (ev: PointerEvent) => emit(finish(drawAction.current, ev))
-  const onDrawMotion = (ev: PointerEvent) => emit(motion(drawAction.current, ev))
-  const onDrawLeave = (ev: PointerEvent) => emit(leave(drawAction.current, ev))
+    isDisabled() ? undefined : emit(start(drawAction.current, colorPallet.current, ev))
+  const onDrawFinish = (ev: PointerEvent) =>
+    isDisabled() ? undefined : emit(finish(drawAction.current, ev))
+  const onDrawMotion = (ev: PointerEvent) =>
+    isDisabled() ? undefined : emit(motion(drawAction.current, ev))
+  const onDrawLeave = (ev: PointerEvent) =>
+    isDisabled() ? undefined : emit(leave(drawAction.current, ev))
 
   useDrag(
     canvasRef,

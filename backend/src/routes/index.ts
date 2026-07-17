@@ -1,5 +1,8 @@
 //#region Imports
 import express, { Express } from "express"
+
+import configureAuthRoutes from "./auth"
+import configureColorRoutes from "./colors"
 //#endregion
 
 //#region Configure Routes
@@ -9,6 +12,9 @@ export default function configure(app: Express) {
   // the request as parsed, so the second registration was always a no-op and
   // the 2mb limit never actually took effect.
   app.use(express.json({ limit: "2mb" }))
+
+  configureAuthRoutes(app)
+  configureColorRoutes(app)
 
   // Liveness probe. Both Dockerfiles' HEALTHCHECK and every deploy platform
   // (Render, Fly, Railway, Kubernetes) poll an endpoint like this to decide

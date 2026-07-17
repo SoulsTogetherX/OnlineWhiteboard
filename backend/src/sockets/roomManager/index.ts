@@ -10,6 +10,7 @@ import {
   type DrawEvent,
 } from "@/db/eventRepository"
 import { pruneStaleRooms } from "@/db/roomRepository"
+import { deleteExpiredSessions } from "@/db/sessionRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 
 import type { ClientSocket } from "@/types/ClientSocket"
@@ -18,6 +19,8 @@ import type {
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
 import type { DrawInstruction } from "@shared/types/drawProtocol"
+import type { Participant } from "@shared/types/identity"
+import type { Vec } from "@shared/types/primitive"
 //#endregion
 
 //#region Constants
@@ -102,26 +105,28 @@ export default class RoomManager {
     })
   }
 
-  // Starts the stale-room cleanup sweep. Kept separate from start() and called
-  // by the server only AFTER migrations have run, because — unlike the heartbeat
-  // — this touches the database, and start() runs before the schema exists
-  // (it's wired up during configureWebSockets, ahead of runMigrations). Runs
-  // once now to clear anything accumulated while the server was down, then daily.
+  // Starts the periodic cleanup sweep (stale rooms + expired sessions). Kept
+  // separate from start() and called by the server only AFTER migrations have
+  // run, because — unlike the heartbeat — this touches the database, and start()
+  // runs before the schema exists (it's wired up during configureWebSockets,
+  // ahead of runMigrations). Runs once now to clear anything accumulated while
+  // the server was down, then daily.
   startCleanup(): void {
-    void this.cleanupStaleRooms()
+    void this.runCleanup()
     this.cleanupTimer = setInterval(
-      () => void this.cleanupStaleRooms(),
+      () => void this.runCleanup(),
       CLEANUP_INTERVAL_MS,
     )
   }
 
-  private async cleanupStaleRooms(): Promise<void> {
-    const cutoff = new Date(Date.now() - ROOM_RETENTION_MS)
-    // Never delete a room someone is currently in — see pruneStaleRooms.
-    const activeRoomIds = [...this.rooms.keys()]
-
+  private async runCleanup(): Promise<void> {
+    // Both sweeps bound a table that would otherwise grow forever — abandoned
+    // rooms and logged-out/expired sessions. Independent, so a failure in one
+    // doesn't skip the other.
     try {
-      const deleted = await pruneStaleRooms(cutoff, activeRoomIds)
+      const cutoff = new Date(Date.now() - ROOM_RETENTION_MS)
+      // Never delete a room someone is currently in — see pruneStaleRooms.
+      const deleted = await pruneStaleRooms(cutoff, [...this.rooms.keys()])
       if (deleted > 0) {
         console.log(
           `cleanup: removed ${deleted} room(s) untouched since ` +
@@ -129,9 +134,17 @@ export default class RoomManager {
         )
       }
     } catch (error) {
-      // A failed sweep is not fatal — the rows are harmless and the next sweep
-      // retries. Log and carry on rather than taking the server down.
+      // Not fatal — the rows are harmless and the next sweep retries.
       console.error("Stale-room cleanup failed:", error)
+    }
+
+    try {
+      const removed = await deleteExpiredSessions()
+      if (removed > 0) {
+        console.log(`cleanup: removed ${removed} expired session(s)`)
+      }
+    } catch (error) {
+      console.error("Expired-session cleanup failed:", error)
     }
   }
 
@@ -194,7 +207,8 @@ export default class RoomManager {
       type: "ready",
       roomId,
       revision: room.revision,
-      activeUsers: room.clients.size,
+      self: socket.identity,
+      participants: this.roster(room),
     })
     this.sendSnapshot(socket, room)
     this.broadcastPresence(room)
@@ -296,7 +310,36 @@ export default class RoomManager {
       return
     }
 
+    if (message.type === "cursor") {
+      this.relayCursor(socket, room, message.pos)
+      return
+    }
+
+    // Only "draw" remains — TypeScript has narrowed the union accordingly.
     this.applyInstruction(room, message.instruction)
+  }
+
+  // Relays a cursor position to everyone else in the room. Pure pass-through:
+  // no validation beyond shape (a bad position just renders a dot in the wrong
+  // place, it can't corrupt anything), no canvas mutation, no persistence. Not
+  // echoed to the sender — a client doesn't need its own cursor sent back.
+  private relayCursor(
+    socket: ClientSocket,
+    room: RoomState,
+    pos: Vec | null,
+  ): void {
+    const message: ServerSocketMessage = {
+      type: "cursor",
+      roomId: room.roomId,
+      connectionId: socket.connectionId,
+      pos,
+    }
+    const payload = JSON.stringify(message)
+    room.clients.forEach((client) => {
+      if (client !== socket) {
+        this.sendRaw(client, payload)
+      }
+    })
   }
 
   private parseMessage(raw: RawData): ClientSocketMessage | null {
@@ -435,11 +478,16 @@ export default class RoomManager {
     }
   }
 
+  // The room's current roster — one entry per connected socket, in join order.
+  private roster(room: RoomState): Participant[] {
+    return [...room.clients].map((client) => client.identity)
+  }
+
   private broadcastPresence(room: RoomState): void {
     this.broadcast(room, {
       type: "presence",
       roomId: room.roomId,
-      activeUsers: room.clients.size,
+      participants: this.roster(room),
     })
   }
 

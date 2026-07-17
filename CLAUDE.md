@@ -6,6 +6,40 @@
 
 ## Changelog
 
+**2026-07-17 (later) — accounts, presence, live cursors, full colour picker.**
+Six verified features (A–F). New migrations 004 (users+sessions) and 005 (saved_colors).
+
+- **Auth (optional accounts).** Email+password, scrypt-hashed (`backend/src/auth/password.ts`,
+  built-in `crypto.scrypt` — no native dep, Alpine-safe). Server-side sessions: cookie holds
+  a random token, DB stores only its SHA-256 hash (`backend/src/auth/session.ts`). httpOnly +
+  SameSite=Lax cookie, Secure in prod. Routes `POST /api/auth/{register,login,logout}` +
+  `GET /api/auth/me` (`backend/src/routes/auth.ts`). Login uses a generic error + constant-work
+  path so it can't leak which emails exist. Frontend: `useAuth` + `AuthPopup` + `AuthControl`.
+- **Identity per connection.** `resolveConnectionIdentity` reads the session cookie on the WS
+  upgrade → logged-in user identity, else a generated guest (name+colour). Every socket gets a
+  `connectionId` (unique per socket; two tabs = two participants). Attached in `sockets/index.ts`.
+- **Presence + cursors.** Protocol changed: `ready` now carries `self` + `participants`,
+  `presence` carries `participants` (not `activeUsers`), and there's a new ephemeral `cursor`
+  message (client→server pos, server→room relay with connectionId — NEVER applied to canvas or
+  logged). Frontend: `PresenceRoster`, `CursorOverlay` (rAF-positioned, reads getBoundingClientRect
+  each frame so cursors track pan/zoom — note rAF pauses in hidden tabs, which is correct).
+  Login/logout reconnects the socket via `reconnectKey` in `useWebSocket` so identity refreshes
+  without reload.
+- **Colour picker.** Visual HSV square + hue slider (`HsvPicker`, colour maths in
+  `frontend/src/utils/color.ts`, unit-tested). Recent colours (localStorage, always) + saved
+  palette (per-account via `/api/colors` when logged in, localStorage as guest — `useSavedColors`).
+  Eyedropper is a FRONTEND-only tool (`AppTool = ToolType | "eyedropper"`); it gates drawing via a
+  `disabledRef` on `useCanvasDrawing` and samples the canvas ImageData in `useEyedropper`.
+- **Tests:** shared 71, frontend 8 (colour maths — new `frontend/vitest.config.ts`), backend 33
+  (added password + auth/session integration). Smoke test gained identity + cursor checks (15
+  checks). All green in dev and prod.
+- **Gotchas hit:** frontend prod build (`tsc -b`) typechecks test files, so `vitest` had to be a
+  frontend devDep (matches backend). The newer `react-hooks/set-state-in-effect` lint rule forced
+  the "sync-state-during-render" pattern in `HsvPicker` and `useSavedColors` (not effects).
+  `crypto.scrypt` needs a raised `maxmem` for N=2^15. Express 5 accepts `return res.json()` in
+  handlers. The in-app browser pane is a HIDDEN tab so rAF doesn't fire there — verified cursor
+  positioning by running one frame manually.
+
 **2026-07-17 — durable persistence (event sourcing) + Kysely + DB migrations.**
 Delivered in four verified stages. Data model went from one `canvases` blob table
 to `rooms` + `canvas_snapshots` + `draw_events`.

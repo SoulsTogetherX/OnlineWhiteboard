@@ -4,20 +4,14 @@ import "./styles.css"
 
 //#region Component Def
 export interface RoomStatusProps {
-  activeUsers: number
   roomId: string
   socketLabel: string
 }
 
-export default function RoomStatus({
-  activeUsers,
-  roomId,
-  socketLabel,
-}: RoomStatusProps) {
+export default function RoomStatus({ roomId, socketLabel }: RoomStatusProps) {
   return (
     <div className="room-status" aria-live="polite">
       <span>Room: {roomId}</span>
-      <span>{activeUsers} active</span>
       <span>{socketLabel}</span>
     </div>
   )

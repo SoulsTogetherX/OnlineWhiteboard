@@ -96,10 +96,135 @@
   border-radius: 8px;
 }
 
+.color-picker-heading h2 {
+  margin: 0;
+
+  color: var(--text-color);
+}
+
+.color-picker-heading p {
+  margin: 4px 0 0;
+
+  color: var(--sub-text-color);
+
+  font-size: 0.86em;
+}
+
+/* --- Swatch rows (saved + recent) --- */
+.swatch-row {
+  display: grid;
+  gap: 6px;
+}
+
+.swatch-row-label {
+  color: var(--sub-text-color);
+
+  font-size: 0.72em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.swatch-row-empty {
+  color: var(--sub-text-color);
+
+  font-size: 0.82em;
+}
+
+.swatch-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+
+  margin: 0;
+  padding: 0;
+
+  list-style: none;
+}
+
+.swatch-cell {
+  position: relative;
+}
+
+.swatch-chip {
+  display: block;
+
+  width: 26px;
+  height: 26px;
+
+  padding: 0;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.35);
+  border-radius: 7px;
+
+  /* The transparency checkerboard shows through translucent swatches. */
+  background-image:
+    linear-gradient(45deg, #d9e0e7 25%, transparent 25%),
+    linear-gradient(-45deg, #d9e0e7 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #d9e0e7 75%),
+    linear-gradient(-45deg, transparent 75%, #d9e0e7 75%);
+  background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+  background-size: 12px 12px;
+
+  cursor: pointer;
+}
+
+.swatch-remove {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+
+  display: none;
+
+  width: 16px;
+  height: 16px;
+
+  padding: 0;
+
+  border: none;
+  border-radius: 50%;
+
+  background: var(--text-color);
+  color: var(--popup-background);
+
+  font-size: 12px;
+  line-height: 1;
+
+  cursor: pointer;
+}
+
+.swatch-cell:hover .swatch-remove,
+.swatch-remove:focus-visible {
+  display: block;
+}
+
 .color-popup-actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 10px;
+}
+
+.color-popup-spacer {
+  flex: 1 1 auto;
+}
+
+.color-save-button {
+  min-width: 84px;
+
+  padding: 9px 12px;
+
+  border: 1px solid hsl(from var(--border-color) h s l / 0.3);
+  border-radius: 8px;
+
+  color: var(--text-color);
+  background: var(--popup-background);
+
+  cursor: pointer;
+}
+
+.color-save-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .color-popup-actions button {

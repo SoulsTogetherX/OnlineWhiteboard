@@ -21,6 +21,8 @@ import type {
   ClientSocketMessage,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
+import type { Participant } from "@shared/types/identity"
+import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
 import type { ClientSocket } from "@/types/ClientSocket"
 import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocallMethods"
@@ -35,10 +37,20 @@ const DEFAULT_ROOM_ID = "testRoom"
 export interface UseRoomConnectionResult {
   roomId: string
   setRoomId: (val: string) => void
-  activeUsers: number
+  participants: Participant[]
+  self: Participant | null
   socketLabel: string
   loadRoom: (nextRoomId: string) => void
   sendDrawInstruction: (action: DrawInstruction) => void
+  sendCursor: (pos: Vec | null) => void
+  // Live cursor positions keyed by connectionId. A REF, not state: cursor moves
+  // arrive many times a second and must not trigger a React render each time —
+  // the overlay reads this directly in a requestAnimationFrame loop.
+  cursorsRef: RefObject<Map<string, Vec>>
+  // The connectionIds that currently have a cursor. State (so the overlay knows
+  // which cursor nodes to render), but only changes when a cursor appears or
+  // disappears — never on movement.
+  cursorIds: string[]
 }
 //#endregion
 
@@ -46,14 +58,24 @@ export interface UseRoomConnectionResult {
 export default function useRoomConnection(
   canvasRef: RefObject<HTMLCanvasElement>,
   closeRoom: () => void,
+  // The logged-in user's id, or null for a guest. Changing it forces a socket
+  // reconnect so the server re-resolves this connection's identity from the new
+  // session cookie (see reconnectKey in useWebSocket).
+  identityKey: string | null,
 ): UseRoomConnectionResult {
   const [roomId, setRoomId] = useSessionStorage<string>(
     ROOM_ID_STORAGE_KEY,
     DEFAULT_ROOM_ID,
   )
 
-  const [activeUsers, setActiveUsers] = useState<number>(1)
+  const [participants, setParticipants] = useState<Participant[]>([])
+  const [self, setSelf] = useState<Participant | null>(null)
   const [socketLabel, setSocketLabel] = useState<string>("Connecting")
+
+  // Cursor positions live in a ref (mutated on every move, no render); cursorIds
+  // is the render-driving set that only changes on appear/disappear.
+  const cursorsRef = useRef<Map<string, Vec>>(new Map())
+  const [cursorIds, setCursorIds] = useState<string[]>([])
 
   // Populated once useWebSocket returns below. handleSocketMessage needs to
   // be able to send a "resync" request, but it's itself a dependency of the
@@ -77,13 +99,45 @@ export default function useRoomConnection(
 
       switch (message.type) {
         case "ready":
-          setActiveUsers(message.activeUsers)
+          setSelf(message.self)
+          setParticipants(message.participants)
           lastRevision.current = message.revision
           break
 
-        case "presence":
-          setActiveUsers(message.activeUsers)
+        case "presence": {
+          setParticipants(message.participants)
+          // Drop cursors for anyone who has left, so a stale cursor doesn't
+          // linger after its owner disconnects.
+          const present = new Set(
+            message.participants.map((p) => p.connectionId),
+          )
+          for (const id of cursorsRef.current.keys()) {
+            if (!present.has(id)) {
+              cursorsRef.current.delete(id)
+            }
+          }
+          setCursorIds((ids) => ids.filter((id) => present.has(id)))
           break
+        }
+
+        case "cursor": {
+          const { connectionId, pos } = message
+          if (pos === null) {
+            // Pointer left the canvas — remove the cursor.
+            if (cursorsRef.current.delete(connectionId)) {
+              setCursorIds((ids) => ids.filter((id) => id !== connectionId))
+            }
+          } else {
+            const isNew = !cursorsRef.current.has(connectionId)
+            cursorsRef.current.set(connectionId, pos)
+            // Only touch state when a NEW cursor appears; plain moves stay in the
+            // ref and never re-render.
+            if (isNew) {
+              setCursorIds((ids) => [...ids, connectionId])
+            }
+          }
+          break
+        }
 
         case "draw":
           if (message.roomId === roomId && canvasRef.current) {
@@ -145,8 +199,10 @@ export default function useRoomConnection(
       onDisconnected: () => setSocketLabel("Reconnecting"),
       onError: () => setSocketLabel("Connection error"),
       onMessage: handleSocketMessage,
+      // Reconnect when the login state changes so identity is re-resolved.
+      reconnectKey: identityKey ?? "guest",
     }),
-    [handleSocketMessage],
+    [handleSocketMessage, identityKey],
   )
 
   const { send, close } = useWebSocket("/ws", roomId, socketOptions)
@@ -176,6 +232,13 @@ export default function useRoomConnection(
     [roomId, send],
   )
 
+  const sendCursor = useCallback(
+    (pos: Vec | null) => {
+      send({ type: "cursor", roomId, pos })
+    },
+    [roomId, send],
+  )
+
   const loadRoom = useCallback(
     (nextRoomId: string) => {
       const trimmedRoomId = nextRoomId.trim()
@@ -187,7 +250,10 @@ export default function useRoomConnection(
 
       close()
       setRoomId(trimmedRoomId)
-      setActiveUsers(1)
+      setParticipants([])
+      setSelf(null)
+      cursorsRef.current.clear()
+      setCursorIds([])
       setSocketLabel("Connecting")
       closeRoom()
     },
@@ -197,10 +263,14 @@ export default function useRoomConnection(
   return {
     roomId,
     setRoomId,
-    activeUsers,
+    participants,
+    self,
     socketLabel,
     loadRoom,
     sendDrawInstruction,
+    sendCursor,
+    cursorsRef,
+    cursorIds,
   }
 }
 

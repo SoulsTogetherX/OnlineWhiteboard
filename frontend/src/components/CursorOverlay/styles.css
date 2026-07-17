@@ -1,0 +1,50 @@
+.cursor-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+
+  /* The overlay must never intercept pointer events — drawing happens on the
+     canvas underneath it. */
+  pointer-events: none;
+}
+
+.remote-cursor {
+  position: fixed;
+  top: 0;
+  left: 0;
+
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+
+  /* Positioned every frame via transform; hint the compositor. */
+  will-change: transform, opacity;
+  transition: opacity 120ms ease;
+}
+
+.remote-cursor-arrow {
+  flex: 0 0 auto;
+
+  filter: drop-shadow(0 1px 1px rgb(0 0 0 / 30%));
+}
+
+.remote-cursor-label {
+  margin-top: 10px;
+
+  max-width: 120px;
+
+  padding: 1px 6px;
+
+  border-radius: 6px;
+
+  color: white;
+
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+
+  /* Keep light-coloured identity labels legible. */
+  text-shadow: 0 1px 1px rgb(0 0 0 / 35%);
+}

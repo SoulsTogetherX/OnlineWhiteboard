@@ -14,16 +14,21 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 ## Features
 
 * Real-time shared drawing across users in the same room
+* **Live presence** — see who else is in the room and their cursors moving in real time
+* **Accounts** (optional) — draw as a guest, or sign in to get a persistent identity and a
+  saved colour palette that follows you across devices
+* **Full colour picker** — visual hue/saturation/value picker, recent colours, a saved
+  palette, and an eyedropper that samples from the canvas
 * Undo/redo that is safe under concurrent editing
 * Durable canvases — survive server restarts and hard crashes with sub-second data loss
 * Desktop and mobile-friendly interface
-* Live room-based synchronization
 * Responsive UI for collaborative use
 
 ## Tech Stack
 
 * Frontend: React + Vite
 * Backend: Express + Node.js + WebSockets (`ws`)
+* Auth: email + password (scrypt-hashed) with httpOnly cookie sessions stored server-side
 * Database: PostgreSQL, accessed with [Kysely](https://kysely.dev/) (typed SQL query builder)
   and evolved through a tracked, ordered migration system
 * Language: TypeScript
@@ -178,8 +183,22 @@ then replay every event newer than it" — so a hard `docker kill` loses at most
 buffered in the last ~250 ms, not the 15 s between snapshots. When a snapshot is written it
 also **compacts** the log (deletes the events it now supersedes), keeping storage bounded.
 On a clean shutdown (`SIGTERM`) the server flushes every room before exiting, so a normal
-deploy loses nothing at all. The schema — `rooms`, `canvas_snapshots`, `draw_events` — is
-created and evolved by ordered SQL migrations that run automatically on startup.
+deploy loses nothing at all. The schema is created and evolved by ordered SQL migrations
+that run automatically on startup.
+
+**Identity, presence and cursors.** Every connection is given an identity when the
+WebSocket opens: a logged-in user (recognised from their session cookie, sent on the
+upgrade request) draws under their account name and colour; everyone else is an anonymous
+guest with a generated name and colour. The server broadcasts the room's roster on every
+join and leave, and relays each client's cursor position to the others — ephemerally, never
+touching the canvas or the event log. Logging in or out reconnects the socket so the server
+re-resolves who you are without a page reload.
+
+**Accounts.** Registration hashes the password with scrypt (salted, memory-hard) and never
+stores the password itself. A login creates a server-side session whose token lives in an
+httpOnly, SameSite cookie — the database stores only a hash of that token, so a database
+leak can't be replayed as live logins. The saved colour palette is per-account (the
+`/api/colors` endpoints); guests keep theirs in the browser.
 
 ## Project structure
 
@@ -206,19 +225,20 @@ there desynchronises every client from the server's authoritative canvas.
 
 ```bash
 npm ci             # once, at the repo root
-npm test           # 71 unit tests
+npm test           # shared protocol unit tests
 npm run test:watch
 npm run test:coverage
 ```
 
 They live next to the code they cover, in `shared/utils/__tests__/`, covering Bresenham
 line drawing, flood fill, the compare-and-swap patch logic behind undo, and rejection of
-malformed input from the network.
+malformed input from the network. The frontend also unit-tests its pure colour-space maths
+(`cd frontend && npm test`), and password hashing is unit-tested on the backend.
 
-**Integration tests** cover the database repository layer against a real PostgreSQL —
-migrations, upserts, event append/replay, compaction, and `ON DELETE CASCADE`. These can
-only be verified against a real database, so they are gated on one being reachable and skip
-otherwise.
+**Integration tests** cover the database repository and auth layers against a real
+PostgreSQL — migrations, upserts, event append/replay, compaction, `ON DELETE CASCADE`,
+user/session lifecycle, and the saved-colour palette. These can only be verified against a
+real database, so they are gated on one being reachable and skip otherwise.
 
 ```bash
 cd backend && npm ci
@@ -274,10 +294,7 @@ npm run ramp -- --room demo --levels 5,10,25,50,100,200
 
 * Horizontal scaling — room state is currently an in-process `Map`; broadcasting across
   instances would need a shared bus (e.g. Redis pub/sub)
-* Accounts and authentication, with a per-room presence display
-* Eyedropper Tool
-* Stroke Size Controls
-* More shortcuts
-* Add a button to hide/show Room information
-* Export/import Canvas
-* Prompt for a room ID before loading the Canvas (i.e., removing the default 'TestRoom')
+* Email verification and password reset
+* Stroke size controls
+* Export/import canvas
+* Prompt for a room ID before loading the canvas (i.e. removing the default 'TestRoom')

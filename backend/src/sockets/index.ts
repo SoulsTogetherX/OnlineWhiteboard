@@ -3,6 +3,7 @@ import { IncomingMessage, Server } from "http"
 import WebSocket, { WebSocketServer } from "ws"
 
 import RoomManager from "./roomManager"
+import { resolveConnectionIdentity } from "@/auth/connectionIdentity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
@@ -44,19 +45,27 @@ export default function configure(
       return
     }
 
-    // addClient is async and hits Postgres (loadCanvas). `void`-ing it here
-    // meant any DB failure surfaced as an unhandled rejection, which Node
-    // treats as fatal — so one client failing to join killed the whole process
-    // and disconnected every user in every room. Catching it keeps the blast
-    // radius at the one socket that actually failed.
+    // Resolve who this connection is (logged-in user via the session cookie, or
+    // a generated guest) BEFORE joining, attach it to the socket, then add to
+    // the room. Both steps hit Postgres and are async.
     //
-    // 1011 = "internal error" in the WebSocket close-code registry. The client's
-    // autoReconnect (useWebSocket) then retries with backoff, so a transient DB
-    // blip self-heals instead of taking the server down.
-    roomManager.addClient(ws as ClientSocket, roomId).catch((error) => {
-      console.error(`Failed to add client to room "${roomId}":`, error)
-      ws.close(1011, "Failed to join room")
-    })
+    // addClient/`resolveConnectionIdentity` failures are caught here. `void`-ing
+    // them would surface as an unhandled rejection, which Node treats as fatal —
+    // so one client failing to join used to kill the whole process and drop
+    // every user in every room. Catching keeps the blast radius at the one
+    // socket. 1011 = "internal error"; the client's autoReconnect then retries
+    // with backoff, so a transient DB blip self-heals.
+    resolveConnectionIdentity(request)
+      .then((identity) => {
+        const socket = ws as ClientSocket
+        socket.connectionId = identity.connectionId
+        socket.identity = identity
+        return roomManager.addClient(socket, roomId)
+      })
+      .catch((error) => {
+        console.error(`Failed to add client to room "${roomId}":`, error)
+        ws.close(1011, "Failed to join room")
+      })
   })
 
   return roomManager
