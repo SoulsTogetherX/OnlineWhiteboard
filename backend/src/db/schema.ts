@@ -1,0 +1,88 @@
+//#region Why this file exists
+// Kysely is a *typed* query builder: it does not read the live database to
+// learn its shape (that would need codegen and a running DB at build time).
+// Instead you hand it this interface, and it type-checks every query against
+// it — a wrong column name or a string/number mismatch becomes a compile error.
+//
+// This interface describes the CURRENT (latest) schema — what the tables look
+// like after every migration has run. The migrations in ./migrations describe
+// how the database GOT here. The two are halves of one contract that nothing
+// enforces automatically: a migration adds a column, you add the field here by
+// hand, and if they disagree, queries typecheck against a schema the database
+// doesn't have and fail at runtime. Codegen (kysely-codegen) can derive this
+// from the DB once the schema stabilises; kept hand-written while it moves.
+//#endregion
+
+//#region Imports
+import type { ColumnType, Generated } from "kysely"
+
+import type { DrawInstruction } from "@shared/types/drawProtocol"
+//#endregion
+
+//#region Column Helpers
+// ColumnType<Select, Insert, Update> lets a column present three different
+// TypeScript types depending on the operation. A TIMESTAMPTZ with a DB default
+// comes back as a Date on SELECT, but must NOT be required on INSERT (the
+// default fills it) — so its Insert arm includes `undefined`.
+type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>
+//#endregion
+
+//#region Table Rows
+// A room's identity and metadata, split apart from its pixel data. This is
+// where per-room settings live now (title) and where ownership/membership will
+// attach later. `revision` is the room's current head — the count of applied
+// instructions — kept in sync with the in-memory RoomState.
+export interface RoomsTable {
+  id: string
+  title: ColumnType<string | null, string | null | undefined, string | null>
+  width: number
+  height: number
+  revision: Generated<number>
+  created_at: Timestamp
+  updated_at: Timestamp
+}
+
+// A checkpoint of the full pixel buffer at a specific revision. In the
+// event-sourcing model the source of truth is the draw_events log (Stage 3);
+// a snapshot exists only so recovery doesn't have to replay from revision 0.
+// One row per room is kept (the latest) — older checkpoints are redundant once
+// a newer one exists. The (room_id, revision) key is what lets the event log
+// anchor replay to "everything after this snapshot".
+export interface CanvasSnapshotsTable {
+  room_id: string
+  revision: number
+  width: number
+  height: number
+  // pg returns BYTEA as a Node Buffer; on write we hand it a Buffer too.
+  rgba: Buffer
+  created_at: Timestamp
+}
+
+// The append-only event log — one row per applied instruction, the durable
+// source of truth between snapshots.
+//
+// `instruction` is where the three-arm ColumnType earns its keep. node-postgres
+// AUTOMATICALLY parses a JSONB column into a JS object on SELECT, but does NOT
+// serialise one on INSERT — so the Select arm is the parsed DrawInstruction
+// while the Insert/Update arms are `string` (the caller hands over
+// JSON.stringify(instruction)). Getting this wrong is a runtime error, not a
+// type error, which is exactly why pinning it here matters.
+export interface DrawEventsTable {
+  room_id: string
+  revision: number
+  instruction: ColumnType<DrawInstruction, string, string>
+  session_id: string | null
+  created_at: Timestamp
+}
+//#endregion
+
+//#region Database
+// The top-level shape Kysely is generic over: property name = table name.
+// `canvases` is intentionally absent — migration 002 drops it after moving its
+// data into rooms + canvas_snapshots.
+export interface Database {
+  rooms: RoomsTable
+  canvas_snapshots: CanvasSnapshotsTable
+  draw_events: DrawEventsTable
+}
+//#endregion

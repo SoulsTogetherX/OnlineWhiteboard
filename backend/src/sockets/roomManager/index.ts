@@ -3,6 +3,12 @@ import type { RawData, WebSocketServer } from "ws"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
+import {
+  appendDrawEvents,
+  ensureRoom,
+  loadEventsSince,
+  type DrawEvent,
+} from "@/db/eventRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 
 import type { ClientSocket } from "@/types/ClientSocket"
@@ -17,6 +23,18 @@ import type { DrawInstruction } from "@shared/types/drawProtocol"
 const SAVE_INTERVAL_MS = 15_000
 const SNAPSHOT_INTERVAL_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 30_000
+
+// How often buffered draw events are flushed to the log. This is the durability
+// knob: a hard crash loses at most the events buffered since the last flush, so
+// ~250ms bounds worst-case loss to well under a second (vs the 15s snapshot
+// interval before the event log existed). Smaller = more durable but more
+// frequent tiny INSERTs; this is the balance point for interactive drawing.
+const FLUSH_INTERVAL_MS = 250
+
+// Flush early if the buffer grows past this between ticks, so a burst (e.g. a
+// fast scribble, or many users in one room) can't build an unbounded backlog or
+// stretch the loss window beyond one batch.
+const MAX_EVENT_BUFFER = 200
 
 // Cap on messages buffered while a room loads from Postgres (see addClient).
 // A well-behaved client sends one ping and maybe a stroke or two in that
@@ -34,6 +52,12 @@ type RoomState = {
   isDirty: boolean
   saveTimer: NodeJS.Timeout
   snapshotTimer: NodeJS.Timeout
+  flushTimer: NodeJS.Timeout
+  // Applied instructions awaiting their batched write to draw_events.
+  eventBuffer: DrawEvent[]
+  // Guards against a flush starting while the previous one is still in flight
+  // (the timer can fire again mid-await).
+  isFlushing: boolean
 }
 //#endregion
 
@@ -145,13 +169,39 @@ export default class RoomManager {
       return cached
     }
 
+    // Recovery: start from the latest snapshot, then replay every event newer
+    // than it. On a clean run there are no such events and this is just the
+    // snapshot; after a crash, these are the strokes drawn since the last
+    // checkpoint — the difference between losing <1s of work and losing 15s.
     const stored = await loadCanvas(roomId)
+    let revision = stored.revision
+
+    const events = await loadEventsSince(roomId, stored.revision)
+    for (const event of events) {
+      // The SAME shared, unit-tested function the live path uses. Replay is just
+      // "apply these instructions in order" — deterministic because they carry a
+      // monotonic revision and follow a known snapshot.
+      applyDrawInstructionToCanvas(stored.pixels, event.instruction)
+      revision = event.revision
+    }
+    if (events.length > 0) {
+      console.log(
+        `recovered room ${roomId}: replayed ${events.length} event(s) ` +
+          `past snapshot revision ${stored.revision} -> ${revision}`,
+      )
+    }
+
+    // Guarantee the FK target for draw_events exists before the first flush.
+    await ensureRoom(roomId)
+
     const room: RoomState = {
       roomId,
       clients: new Set<ClientSocket>(),
       pixels: stored.pixels,
-      revision: stored.revision,
+      revision,
       isDirty: false,
+      eventBuffer: [],
+      isFlushing: false,
       saveTimer: setInterval(
         () => void this.saveRoom(roomId),
         SAVE_INTERVAL_MS,
@@ -159,6 +209,10 @@ export default class RoomManager {
       snapshotTimer: setInterval(
         () => this.broadcastRevisionCheck(roomId),
         SNAPSHOT_INTERVAL_MS,
+      ),
+      flushTimer: setInterval(
+        () => void this.flushEvents(roomId),
+        FLUSH_INTERVAL_MS,
       ),
     }
 
@@ -221,12 +275,49 @@ export default class RoomManager {
     room.revision += 1
     room.isDirty = true
 
+    // Record the APPLIED instruction (for a patch, the narrowed subset that
+    // actually landed) against the revision it produced. This is what makes the
+    // log replay to the exact same pixels — the broadcast below sends clients
+    // the same `applied` value.
+    room.eventBuffer.push({ revision: room.revision, instruction: applied })
+    if (room.eventBuffer.length >= MAX_EVENT_BUFFER) {
+      void this.flushEvents(room.roomId)
+    }
+
     this.broadcast(room, {
       type: "draw",
       roomId: room.roomId,
       instruction: applied,
       revision: room.revision,
     })
+  }
+
+  // Writes the room's buffered events to the log in one batch. Kept safe against
+  // overlap (the flush timer can fire while a previous flush is still awaiting)
+  // by an isFlushing guard, and against loss by putting a failed batch back at
+  // the front of the buffer to retry on the next tick.
+  private async flushEvents(roomId: string): Promise<void> {
+    const room = this.rooms.get(roomId)
+    if (!room || room.isFlushing || room.eventBuffer.length === 0) {
+      return
+    }
+
+    room.isFlushing = true
+    // Take the current buffer and clear it so new events accumulate separately
+    // while this batch is in flight.
+    const batch = room.eventBuffer.splice(0, room.eventBuffer.length)
+
+    try {
+      await appendDrawEvents(roomId, batch)
+    } catch (error) {
+      console.error(`Failed to flush events for room ${roomId}:`, error)
+      // Return the unwritten events to the head of the buffer, preserving order,
+      // so the next flush retries them. Idempotent append (ON CONFLICT DO
+      // NOTHING) means a partial success followed by a retry can't duplicate.
+      room.eventBuffer.unshift(...batch)
+    } finally {
+      room.isFlushing = false
+    }
   }
 
   private async removeClient(socket: ClientSocket): Promise<void> {
@@ -239,6 +330,10 @@ export default class RoomManager {
     this.broadcastPresence(room)
 
     if (room.clients.size === 0) {
+      // Flush buffered events BEFORE the snapshot and before eviction —
+      // otherwise the last sub-second of drawing in a room that just emptied
+      // would be dropped when its buffer is discarded.
+      await this.flushEvents(room.roomId)
       await this.saveRoom(room.roomId)
       this.disposeIfEmpty(room)
     }
@@ -254,7 +349,30 @@ export default class RoomManager {
     }
     clearInterval(room.saveTimer)
     clearInterval(room.snapshotTimer)
+    clearInterval(room.flushTimer)
     this.rooms.delete(room.roomId)
+  }
+
+  // Graceful shutdown: on SIGTERM/SIGINT, flush every room's buffered events and
+  // write a final snapshot before the process exits. Without this, `docker stop`
+  // (and every deploy, which is a stop + start) would drop whatever was buffered
+  // since the last flush — the one window the event log can't recover on its
+  // own, because those events never reached the database. Timers are cleared so
+  // nothing reschedules while we drain.
+  async shutdown(): Promise<void> {
+    clearInterval(this.heartbeatTimer)
+    for (const room of this.rooms.values()) {
+      clearInterval(room.saveTimer)
+      clearInterval(room.snapshotTimer)
+      clearInterval(room.flushTimer)
+    }
+    // Drain all rooms concurrently — they write to independent rows.
+    await Promise.all(
+      [...this.rooms.values()].map(async (room) => {
+        await this.flushEvents(room.roomId)
+        await this.saveRoom(room.roomId)
+      }),
+    )
   }
 
   private async saveRoom(roomId: string): Promise<void> {

@@ -1,0 +1,28 @@
+# Normalise line endings. Without this, editing a file on Windows can rewrite it
+# with CRLF (\r\n) line endings, and a stray carriage return is invisible in most
+# editors but very much not invisible to the programs that read the file.
+#
+# This bit us concretely: a CRLF `.env` gave POSTGRES_PASSWORD a trailing \r, so
+# the password Postgres stored at init included the \r. Anything reading the same
+# CRLF file sent the \r too and matched by accident — but a clean client (the CI
+# database, a host-run integration test) sent the password WITHOUT it and got
+# "password authentication failed". Forcing LF removes that whole failure class.
+
+# Default: treat everything as text and check it out with LF on every platform.
+* text=auto eol=lf
+
+# Files where a stray CR is actively harmful — pin them explicitly.
+*.env      text eol=lf
+.env.example text eol=lf
+*.sh       text eol=lf
+*.sql      text eol=lf
+Dockerfile text eol=lf
+*.mjs      text eol=lf
+*.cjs      text eol=lf
+
+# Binary assets must never be line-ending "normalised".
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary

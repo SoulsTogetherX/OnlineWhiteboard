@@ -6,6 +6,51 @@
 
 ## Changelog
 
+**2026-07-17 — durable persistence (event sourcing) + Kysely + DB migrations.**
+Delivered in four verified stages. Data model went from one `canvases` blob table
+to `rooms` + `canvas_snapshots` + `draw_events`.
+
+- **Kysely** (typed SQL query builder) replaces raw `pool.query`. `backend/src/db/schema.ts`
+  is the hand-written `Database` interface every query is checked against; keep it in sync
+  with the migrations by hand (or adopt kysely-codegen later).
+- **Migrations** own the schema now — `backend/src/db/migrations/00N_*.ts` (raw SQL via the
+  `sql` tag), registered EXPLICITLY by import in `migrate.ts` (a static provider, because the
+  esbuild prod bundle has no migration files on disk for `FileMigrationProvider` to scan).
+  They run on startup before `listen`. The old `database/notes_table.sql` initdb script and
+  `ensureCanvasTable()`-on-every-save are both gone; `database/Dockerfile` is now stock
+  Postgres.
+- **Event sourcing = point 3 (no data loss).** Every applied instruction is appended to
+  `draw_events` (batched flush every 250 ms; `RoomManager.flushEvents`). Recovery in
+  `getOrCreateRoom` = latest snapshot + replay events with `revision > snapshot.revision`,
+  through the SAME `applyDrawInstructionToCanvas` the live path and the unit tests use.
+  Verified: `docker kill` mid-draw (no snapshot) recovers via replay; hard-crash loss window
+  is one flush (~250 ms) instead of the 15 s snapshot interval.
+- **Graceful shutdown** (closes the old gap): `SIGTERM`/`SIGINT` → `RoomManager.shutdown()`
+  flushes every room's buffer + writes a final snapshot before exit. `server.close` +
+  `pool.end`. Only works because the Dockerfile runs `node` as PID 1. Verified: `docker stop`
+  returns in <1 s, logs "draining rooms" → "Shutdown complete".
+- **Compaction** (Stage 4): `saveCanvas` now, in ONE transaction, upserts the room, writes
+  the snapshot, prunes older snapshots, AND deletes `draw_events` with `revision <=` the
+  snapshot's. Bounds the log to ~one save interval of drawing. Atomic so events are only
+  trimmed once their replacement snapshot is committed. Tradeoff: discards history older than
+  the last snapshot (fine for a whiteboard; keep events unpruned if you ever want time-travel).
+- **Tests:** 71 unit (shared/, unchanged) + **15 backend integration** against a real
+  Postgres (`backend/src/db/__tests__/*.test.ts`, Vitest, `backend/vitest.config.ts`). Gated
+  on `POSTGRES_PASSWORD` being set so `npm test` stays green with no DB. CI's `verify` job
+  gained a `services: postgres` container; run locally against a throwaway
+  `docker run -p 55432:5432 postgres`.
+- **Fixed in passing:** `.env` had CRLF line endings, so Compose stored the Postgres password
+  WITH a trailing `\r`. The app worked only because the backend read the same CRLF file; any
+  clean client (host test, CI) failed auth. Added `.gitattributes` (force LF) and normalised
+  the local `.env`.
+- **Gotcha for future work:** node-postgres does NOT serialise a JS object for a JSONB column
+  on INSERT (hand it `JSON.stringify`) but DOES parse it on SELECT. That asymmetry is encoded
+  in `draw_events.instruction`'s three-arm `ColumnType` in `schema.ts` — get it wrong and it's
+  a runtime error, not a type error. Also: `db.destroy()` ends the pool; don't also call
+  `pool.end()`. And a native Windows Postgres on `:5432` shadows the Docker one for HOST
+  connections (not for the app, which uses the Docker network) — use a throwaway on a free
+  port for local integration runs.
+
 **2026-07-16 (later still) — two bugs, both found from one dev-loop symptom.**
 71 tests now.
 

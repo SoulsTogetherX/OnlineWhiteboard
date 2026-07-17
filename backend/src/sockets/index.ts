@@ -8,7 +8,12 @@ import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
 
 //#region Exported Methods
-export default function configure(wss: WebSocketServer, server: Server) {
+// Returns the RoomManager so the caller can drive graceful shutdown (flush
+// buffered events + snapshot every room on SIGTERM). Nothing else needs it.
+export default function configure(
+  wss: WebSocketServer,
+  server: Server,
+): RoomManager {
   const roomManager = new RoomManager(wss)
   roomManager.start()
 
@@ -53,5 +58,7 @@ export default function configure(wss: WebSocketServer, server: Server) {
       ws.close(1011, "Failed to join room")
     })
   })
+
+  return roomManager
 }
 //#endregion
