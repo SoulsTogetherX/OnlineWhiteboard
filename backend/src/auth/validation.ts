@@ -23,6 +23,19 @@ export function validateEmail(input: unknown): Validated<string> {
   return { ok: true, value: email }
 }
 
+// A tiny blocklist of the passwords that dominate every breach corpus. This is
+// a floor, not a substitute for the real thing: the proper defence is checking
+// the candidate against a breached-password set (e.g. the Have I Been Pwned
+// range API, which uses k-anonymity so the password never leaves the server) —
+// noted as future work because it needs an outbound network call.
+const COMMON_PASSWORDS = new Set([
+  "password", "password1", "password123", "12345678", "123456789", "1234567890",
+  "qwerty123", "qwertyuiop", "1q2w3e4r", "iloveyou", "admin123", "letmein",
+  "welcome1", "monkey123", "abc12345", "111111111", "000000000", "sunshine",
+  "princess", "football", "baseball", "trustno1", "dragon123", "passw0rd",
+  "changeme", "whiteboard",
+])
+
 export function validatePassword(input: unknown): Validated<string> {
   if (typeof input !== "string") {
     return { ok: false, error: "Password is required." }
@@ -35,6 +48,12 @@ export function validatePassword(input: unknown): Validated<string> {
   }
   if (input.length > 200) {
     return { ok: false, error: "Password must be at most 200 characters." }
+  }
+  if (COMMON_PASSWORDS.has(input.toLowerCase())) {
+    return {
+      ok: false,
+      error: "That password is too common — please choose another.",
+    }
   }
   return { ok: true, value: input }
 }

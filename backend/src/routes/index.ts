@@ -3,10 +3,15 @@ import express, { Express } from "express"
 
 import configureAuthRoutes from "./auth"
 import configureColorRoutes from "./colors"
+import { csrfOriginGuard } from "@/security/csrf"
 //#endregion
 
 //#region Configure Routes
 export default function configure(app: Express) {
+  // Reject state-changing requests from unrecognised origins before any body is
+  // parsed or any handler runs (defence-in-depth over the SameSite cookie).
+  app.use(csrfOriginGuard)
+
   // Registered exactly once, here. It used to be applied in both server.ts
   // (default 100kb limit) and again here (2mb limit) — but express.json marks
   // the request as parsed, so the second registration was always a no-op and

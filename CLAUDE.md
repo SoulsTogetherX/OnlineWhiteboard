@@ -6,6 +6,35 @@
 
 ## Changelog
 
+**2026-07-17 (security pass) — hardening of the auth surface.** New `backend/src/security/`
+(origin allowlist, CSRF guard, rate limiter). All verified live.
+
+- **CSWSH** (S1): the WS upgrade now rejects browser handshakes from a non-allowlisted Origin
+  (`sockets/index.ts` + `security/origin.ts`). Without it, any site could open an authenticated
+  socket as the visitor (SameSite doesn't cover WS). Non-browser clients (no Origin) allowed.
+- **CSRF** (S2): `csrfOriginGuard` middleware rejects state-changing (`POST`/`DELETE`) API
+  requests from unrecognised origins — defence-in-depth over SameSite=Lax.
+- **Rate limiting** (S3): in-memory per-IP limiter on login (10/15min) and register (5/60min),
+  keyed off nginx's `X-Real-IP`. Per-process — multi-instance needs Redis.
+- **Common passwords** (S4): small blocklist in `validation.ts`. Full fix = HIBP k-anonymity
+  (needs outbound call, documented).
+- **PII** (S5): dropped `userId` from the broadcast `Participant` — it was a stable per-account
+  id exposed to everyone in the room (cross-room deanonymisation). Presence now carries only
+  connectionId/name/colour/isGuest.
+- **Headers** (S6): `security-headers.conf` adds CSP, HSTS, Referrer-Policy, X-Frame-Options
+  DENY. NOTE the nginx `add_header` inheritance trap — a location with its own add_header drops
+  ALL inherited ones, so the snippet is `include`d in the server block AND in the two cache
+  locations. CSP `style-src 'unsafe-inline'` is required by the app's inline `style={{}}`;
+  scripts stay `'self'`.
+- **Cookie/logging** (S7): `__Host-sid` cookie name in prod (requires Secure+Path=/+no-Domain);
+  register error logging now logs only code/message, never the error object (could carry query
+  params → email/hash).
+- **`ALLOWED_ORIGINS`** env added (`.env`/`.env.example`) — the CSRF/CSWSH allowlist. Fails OPEN
+  with a startup warning if unset, so a misconfig degrades to "no check" not "total lockout".
+- **Residual (documented, needs infra):** email verification (fully fixes register-time email
+  enumeration), HIBP breach check, Redis-backed rate-limit/sessions for multi-instance, password
+  reset. Broader WS message-flood rate limiting also still open (see §9 draw-flood note).
+
 **2026-07-17 (later) — accounts, presence, live cursors, full colour picker.**
 Six verified features (A–F). New migrations 004 (users+sessions) and 005 (saved_colors).
 

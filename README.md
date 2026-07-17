@@ -200,6 +200,15 @@ httpOnly, SameSite cookie — the database stores only a hash of that token, so 
 leak can't be replayed as live logins. The saved colour palette is per-account (the
 `/api/colors` endpoints); guests keep theirs in the browser.
 
+**Security hardening.** The auth surface defends against the usual web attacks: login and
+register are rate-limited per IP; the WebSocket upgrade and state-changing API requests are
+checked against an `ALLOWED_ORIGINS` allowlist (blocking cross-site WebSocket hijacking and
+CSRF on top of the SameSite cookie); passwords are checked against a common-password
+blocklist; presence broadcasts carry no account identifier; and nginx serves a
+Content-Security-Policy plus HSTS, `X-Frame-Options`, and `nosniff`. Known remaining work —
+email verification, a breached-password (HIBP) check, and a Redis-backed store so rate
+limiting and sessions work across multiple backend instances — is noted in `CLAUDE.md`.
+
 ## Project structure
 
 This is a monorepo full-stack application. All server-side and client-side code is shared here.

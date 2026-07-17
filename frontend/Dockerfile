@@ -78,6 +78,8 @@ FROM nginx:1.29-alpine AS prod
 
 # Rendered by the nginx image's entrypoint via envsubst at container start.
 COPY frontend/nginx.conf.template /etc/nginx/templates/default.conf.template
+# Security headers snippet, `include`d by the config (see nginx.conf.template).
+COPY frontend/security-headers.conf /etc/nginx/security-headers.conf
 COPY --from=build /app/dist /usr/share/nginx/html
 
 EXPOSE 80

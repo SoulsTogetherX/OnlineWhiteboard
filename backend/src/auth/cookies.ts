@@ -7,7 +7,13 @@
 // Express-specific.
 //#endregion
 
-export const SESSION_COOKIE = "sid"
+// The `__Host-` prefix is a browser-enforced hardening: a cookie with this
+// prefix is only accepted if it is Secure, has Path=/, and has NO Domain — which
+// pins it to exactly this host and blocks a subdomain from setting or
+// overwriting it. It REQUIRES Secure, so it can only be used over HTTPS; in dev
+// (plain HTTP) the browser would reject it, so we use the bare name there.
+export const SESSION_COOKIE =
+  process.env.NODE_ENV === "production" ? "__Host-sid" : "sid"
 
 export function parseCookies(
   header: string | undefined,

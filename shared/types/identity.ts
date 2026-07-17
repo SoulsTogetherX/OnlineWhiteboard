@@ -14,10 +14,15 @@ export type AuthUser = {
 
 // Everyone in a room has an identity for presence — registered or guest. The
 // connectionId identifies a single live socket (a user with two tabs open is
-// two participants); userId is null for guests.
+// two participants).
+//
+// Deliberately NO account id here: this object is broadcast to every other
+// person in the room, and exposing a stable per-account identifier would let
+// anyone correlate the same user across rooms and sessions — a needless
+// deanonymisation vector. Presence needs a display name and a colour, nothing
+// that ties back to the account.
 export type Participant = {
   connectionId: string
-  userId: string | null
   name: string
   color: string
   isGuest: boolean

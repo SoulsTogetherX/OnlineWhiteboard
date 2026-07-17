@@ -4,6 +4,7 @@ import WebSocket, { WebSocketServer } from "ws"
 
 import RoomManager from "./roomManager"
 import { resolveConnectionIdentity } from "@/auth/connectionIdentity"
+import { isAllowedOrigin } from "@/security/origin"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
@@ -22,6 +23,17 @@ export default function configure(
     const url = new URL(request.url ?? "", "http://localhost")
 
     if (url.pathname !== "/ws") {
+      socket.destroy()
+      return
+    }
+
+    // Cross-Site WebSocket Hijacking defence. The handshake carries the visitor's
+    // session cookie, and SameSite does not reliably cover WebSocket upgrades, so
+    // without this any origin could open an authenticated socket AS the visitor
+    // and act under their identity. Reject a browser upgrade from an origin we
+    // don't recognise before it ever becomes a WebSocket.
+    if (!isAllowedOrigin(request.headers.origin)) {
+      console.warn(`Rejected WS upgrade from origin: ${request.headers.origin}`)
       socket.destroy()
       return
     }

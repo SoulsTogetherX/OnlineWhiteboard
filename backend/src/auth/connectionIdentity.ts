@@ -30,7 +30,6 @@ export async function resolveConnectionIdentity(
   if (user) {
     return {
       connectionId,
-      userId: user.id,
       name: user.username,
       color: user.color,
       isGuest: false,
@@ -39,7 +38,6 @@ export async function resolveConnectionIdentity(
 
   return {
     connectionId,
-    userId: null,
     name: randomGuestName(),
     color: randomIdentityColor(),
     isGuest: true,

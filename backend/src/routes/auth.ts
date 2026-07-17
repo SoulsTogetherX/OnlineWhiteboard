@@ -21,8 +21,21 @@ import {
   emailExists,
   findUserByEmail,
 } from "@/db/userRepository"
+import { rateLimit } from "@/security/rateLimit"
 
 import type { User } from "@/db/userRepository"
+//#endregion
+
+//#region Rate limiters
+// Tight limits on the two endpoints an attacker hammers: login (password
+// guessing / credential stuffing) and register (account-spam and email
+// enumeration). Per IP.
+const loginLimiter = rateLimit({ name: "login", windowMs: 15 * 60_000, max: 10 })
+const registerLimiter = rateLimit({
+  name: "register",
+  windowMs: 60 * 60_000,
+  max: 5,
+})
 //#endregion
 
 //#region Helpers
@@ -43,7 +56,7 @@ function publicUser(user: User) {
 //#region Routes
 export default function configureAuthRoutes(app: Express): void {
   // --- Register --------------------------------------------------------------
-  app.post("/api/auth/register", async (req: Request, res: Response) => {
+  app.post("/api/auth/register", registerLimiter, async (req: Request, res: Response) => {
     const email = validateEmail(req.body?.email)
     if (!email.ok) {
       return res.status(400).json({ error: email.error })
@@ -81,13 +94,17 @@ export default function configureAuthRoutes(app: Express): void {
           .status(409)
           .json({ error: "That email is already registered." })
       }
-      console.error("register failed:", error)
+      // Log only the message/code, never the error object — a database error can
+      // carry the failing query's parameters (email, password hash), which
+      // should not land in server logs.
+      const e = error as { message?: string; code?: string }
+      console.error(`register failed: ${e.code ?? ""} ${e.message ?? ""}`.trim())
       return res.status(500).json({ error: "Could not create account." })
     }
   })
 
   // --- Login -----------------------------------------------------------------
-  app.post("/api/auth/login", async (req: Request, res: Response) => {
+  app.post("/api/auth/login", loginLimiter, async (req: Request, res: Response) => {
     const email = validateEmail(req.body?.email)
     const password = req.body?.password
 
