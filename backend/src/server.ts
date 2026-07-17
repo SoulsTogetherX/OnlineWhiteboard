@@ -21,7 +21,7 @@ server.listen(port, async () => {
 //#endregion
 
 //#region Configure
-app.use(express.json())
+// Body parsing lives in configureRoutes alongside the routes that need it.
 configureRoutes(app)
 configureWebSockets(wss, server)
 //#endregion

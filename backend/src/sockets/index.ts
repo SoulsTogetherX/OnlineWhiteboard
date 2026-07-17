@@ -39,7 +39,19 @@ export default function configure(wss: WebSocketServer, server: Server) {
       return
     }
 
-    void roomManager.addClient(ws as ClientSocket, roomId)
+    // addClient is async and hits Postgres (loadCanvas). `void`-ing it here
+    // meant any DB failure surfaced as an unhandled rejection, which Node
+    // treats as fatal — so one client failing to join killed the whole process
+    // and disconnected every user in every room. Catching it keeps the blast
+    // radius at the one socket that actually failed.
+    //
+    // 1011 = "internal error" in the WebSocket close-code registry. The client's
+    // autoReconnect (useWebSocket) then retries with backoff, so a transient DB
+    // blip self-heals instead of taking the server down.
+    roomManager.addClient(ws as ClientSocket, roomId).catch((error) => {
+      console.error(`Failed to add client to room "${roomId}":`, error)
+      ws.close(1011, "Failed to join room")
+    })
   })
 }
 //#endregion

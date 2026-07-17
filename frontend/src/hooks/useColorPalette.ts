@@ -4,7 +4,11 @@ import { useCallback, type RefObject } from "react"
 import { DEFAULT_COLOR_PALLET } from "@/constants/ui"
 import { useSessionStorageRef } from "@/hooks/useSessionStorage"
 
-import type { ColorType, ColorPallet, ColorPalletKeys } from "@/types/primitive"
+import type {
+  ColorType,
+  ColorPallet,
+  ColorPalletKeys,
+} from "@shared/types/primitive"
 //#endregion
 
 //#region Type Def
@@ -55,7 +59,6 @@ export default function useColorPalette(): UseColorPaletteResult {
       const next = { ...colorPallet.current }
       next[type] = { ...color }
 
-      console.log(colorPallet, next)
       setColorPallet(next)
     },
     [colorPallet, setColorPallet],

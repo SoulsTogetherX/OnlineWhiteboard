@@ -1,19 +1,23 @@
 //#region Imports
 import {
   getCanvasState,
-  getDirectColor,
   getDrawerMethod,
   getIdxFromVec,
   getLookAtMethod,
   getPosCorrected,
-  getToolColor,
   updateCanvas,
+  withRecording,
 } from "./helperProtocallMethods"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../constants/canvas"
+import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
 
-import type { FillAction, FillInstruction } from "../types/drawProtocol"
-import type { ColorPallet, ColorType } from "../types/primitive"
+import type {
+  BaseInstruction,
+  FillAction,
+  FillInstruction,
+  PatchEntry,
+} from "../types/drawProtocol"
+import type { ColorType } from "../types/primitive"
 //#endregion
 
 //#region Helper Method
@@ -21,6 +25,7 @@ function setPixelFill(
   action: FillAction,
   newColor: ColorType,
   imageData: ImageData | Uint8ClampedArray<ArrayBufferLike>,
+  record?: PatchEntry[],
 ): void {
   // Get Data
   const startPos = action.pos ?? [0, 0]
@@ -35,7 +40,10 @@ function setPixelFill(
     )
   }
   const getColor = getLookAtMethod(action.type, imageData)
-  const setColor = getDrawerMethod(action.type, imageData)
+  let setColor = getDrawerMethod(action.type, imageData)
+  if (record) {
+    setColor = withRecording(getColor, setColor, record)
+  }
 
   // Get Info
   const startIdx = getIdxFromVec(startPos)
@@ -79,11 +87,14 @@ function setPixelFill(
   }
 }
 
-function createInstruction(da: FillAction, color: ColorType): FillInstruction {
+function createInstruction(
+  da: FillAction,
+  base: BaseInstruction,
+): FillInstruction {
   return {
+    ...base,
     type: da.type,
     pos: da.pos,
-    color,
   } as FillInstruction
 }
 //#endregion
@@ -91,17 +102,18 @@ function createInstruction(da: FillAction, color: ColorType): FillInstruction {
 //#region Handle Methods
 export function handleDrawFillStart(
   _canvas: HTMLCanvasElement,
+  _base: BaseInstruction,
   _da: FillAction,
-  _cp: ColorPallet,
   _ev: PointerEvent,
 ): FillInstruction | null {
   return null
 }
 export function handleDrawFillFinish(
   canvas: HTMLCanvasElement,
+  base: BaseInstruction,
   da: FillAction,
-  cp: ColorPallet,
   ev: PointerEvent,
+  record?: PatchEntry[],
 ): FillInstruction | null {
   const next = getPosCorrected(ev, canvas)
   da.pos = next[0]
@@ -114,23 +126,22 @@ export function handleDrawFillFinish(
     return null
   }
 
-  const color = getToolColor(da.type, getDirectColor(cp, ev))
-  setPixelFill(da, color, canvasState.imageData)
+  setPixelFill(da, base.color ?? DEFAULT_COLOR, canvasState.imageData, record)
   updateCanvas(canvas)
-  return createInstruction(da, color)
+  return createInstruction(da, base)
 }
 export function handleDrawFillMotion(
   _canvas: HTMLCanvasElement,
+  _base: BaseInstruction,
   _da: FillAction,
-  _cp: ColorPallet,
   _ev: PointerEvent,
 ): FillInstruction | null {
   return null
 }
 export function handleDrawFillLeave(
   _canvas: HTMLCanvasElement,
+  _base: BaseInstruction,
   _da: FillAction,
-  _cp: ColorPallet,
   _ev: PointerEvent,
 ): FillInstruction | null {
   return null
@@ -139,6 +150,6 @@ export function handleDrawFillInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: FillInstruction,
 ): void {
-  setPixelFill(inst, inst.color, pixels)
+  setPixelFill(inst, inst.color ?? DEFAULT_COLOR, pixels)
 }
 //#endregion

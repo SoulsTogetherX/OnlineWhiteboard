@@ -1,0 +1,100 @@
+# Production web server for the built frontend.
+#
+# WHY THIS FILE EXISTS
+# --------------------
+# In development, `vite.config.ts` declares a `server.proxy` that forwards
+# /api and /ws to the backend. That proxy is a feature of the *Vite dev
+# server* — it does not survive `vite build`. In production the dev server is
+# gone, so something else has to do the same job or the client's relative
+# "/ws" request 404s against the static file server and realtime collaboration
+# silently dies. That something is this file.
+#
+# Keeping the client on a relative "/ws" (rather than an absolute wss://host)
+# is what lets one built artifact run in any environment without a rebuild:
+# whatever origin serves the page also proxies the socket.
+#
+# TEMPLATING
+# ----------
+# This is a .template, not a .conf. The official nginx image runs envsubst over
+# /etc/nginx/templates/*.template at container start and writes the result to
+# /etc/nginx/conf.d/. That keeps BACKEND_PORT single-sourced from .env instead
+# of being duplicated here.
+#
+# envsubst only substitutes variables that actually exist in the environment,
+# which is why nginx's own runtime variables ($host, $uri, $http_upgrade) pass
+# through untouched — they are not env vars.
+
+# WebSocket upgrades need the Connection header forwarded. Connection is a
+# hop-by-hop header, so a proxy strips it by default; this map re-adds it only
+# when the client actually asked to upgrade, and says "close" otherwise.
+# `map` is an http-context directive, and conf.d/*.conf is included inside the
+# http block, so it is legal here.
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+server {
+    listen      80;
+    server_name _;
+
+    root  /usr/share/nginx/html;
+    index index.html;
+
+    # Basic hardening: don't advertise the nginx version, and refuse to be
+    # framed by another origin.
+    server_tokens off;
+    add_header X-Frame-Options        "SAMEORIGIN" always;
+    add_header X-Content-Type-Options "nosniff"    always;
+
+    # index.html is the ONLY file whose name is not content-hashed, so a cached
+    # copy would pin a user to an old bundle forever. Never cache it.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+        try_files $uri =404;
+    }
+
+    # Vite emits every asset with a content hash in its filename
+    # (index-DEiSurug.js). A given URL's bytes therefore can never change, which
+    # makes them safe to cache forever. This is the payoff for Rollup's hashing
+    # and is impossible to do safely without it.
+    location /assets/ {
+        add_header Cache-Control "public, max-age=31536000, immutable";
+        try_files $uri =404;
+    }
+
+    # The realtime channel — the replacement for Vite's `proxy: { "/ws": { ws: true } }`.
+    location /ws {
+        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade    $http_upgrade;
+        proxy_set_header Connection $connection_upgrade;
+        proxy_set_header Host       $host;
+        proxy_set_header X-Real-IP  $remote_addr;
+
+        # A whiteboard socket is idle whenever nobody is drawing. The app
+        # heartbeats every 10s so a dead peer is still detected quickly, but
+        # keep a generous ceiling here so a quiet room is never dropped by the
+        # proxy itself. nginx's default is 60s, which would sever idle rooms.
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    location /api {
+        proxy_pass http://backend:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host      $host;
+        proxy_set_header X-Real-IP $remote_addr;
+    }
+
+    # SPA fallback: React owns client-side routing, so an unknown path must
+    # return index.html rather than a 404.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    gzip            on;
+    gzip_vary       on;
+    gzip_min_length 1024;
+    gzip_types      text/plain text/css application/javascript application/json image/svg+xml;
+}

@@ -3,124 +3,49 @@ import {
   createImageDataFromBase64,
   getCanvasState,
 } from "./helperProtocallMethods"
-import {
-  handleDrawLineFinish,
-  handleDrawLineInstruction,
-  handleDrawLineLeave,
-  handleDrawLineMotion,
-  handleDrawLineStart,
-} from "./handleLineProtocall"
-import {
-  handleDrawFillFinish,
-  handleDrawFillInstruction,
-  handleDrawFillLeave,
-  handleDrawFillMotion,
-  handleDrawFillStart,
-} from "./handleFillProtocall"
+import { handleDrawLineInstruction } from "./handleLineProtocall"
+import { handleDrawFillInstruction } from "./handleFillProtocall"
+import { handleDrawPatchInstruction } from "./handlePatchProtocol"
+import { isValidDrawInstruction } from "./validateInstruction"
 
-import type { DrawAction, DrawInstruction } from "../types/drawProtocol"
-import type { ColorPallet } from "../types/primitive"
-//#endregion
-
-//#region Type Def
-type DrawHandlerMethod = (
-  da: DrawAction,
-  cp: ColorPallet,
-  ev: PointerEvent,
-) => DrawInstruction | null
-//#endregion
-
-//#region Settup Method
-export default function settupDrawActions(
-  canvas: HTMLCanvasElement,
-): [
-  DrawHandlerMethod,
-  DrawHandlerMethod,
-  DrawHandlerMethod,
-  DrawHandlerMethod,
-] {
-  // Gets Canvas State
-  const canvasState = getCanvasState(canvas)
-  if (!canvasState) {
-    const emptyFunction = (): DrawInstruction | null => null
-    return [emptyFunction, emptyFunction, emptyFunction, emptyFunction]
-  }
-
-  const handleDrawActionStart = (
-    da: DrawAction,
-    cp: ColorPallet,
-    ev: PointerEvent,
-  ): DrawInstruction | null => {
-    switch (da.type) {
-      case "pencil":
-      case "eraser":
-        return handleDrawLineStart(canvas, da, cp, ev)
-      case "bucket":
-        return handleDrawFillStart(canvas, da, cp, ev)
-    }
-  }
-  const handleDrawActionFinish = (
-    da: DrawAction,
-    cp: ColorPallet,
-    ev: PointerEvent,
-  ): DrawInstruction | null => {
-    switch (da.type) {
-      case "pencil":
-      case "eraser":
-        return handleDrawLineFinish(canvas, da, cp, ev)
-      case "bucket":
-        return handleDrawFillFinish(canvas, da, cp, ev)
-    }
-  }
-  const handleDrawActionMotion = (
-    da: DrawAction,
-    cp: ColorPallet,
-    ev: PointerEvent,
-  ): DrawInstruction | null => {
-    switch (da.type) {
-      case "pencil":
-      case "eraser":
-        return handleDrawLineMotion(canvas, da, cp, ev)
-      case "bucket":
-        return handleDrawFillMotion(canvas, da, cp, ev)
-    }
-  }
-  const handleDrawActionLeave = (
-    da: DrawAction,
-    cp: ColorPallet,
-    ev: PointerEvent,
-  ): DrawInstruction | null => {
-    switch (da.type) {
-      case "pencil":
-      case "eraser":
-        return handleDrawLineLeave(canvas, da, cp, ev)
-      case "bucket":
-        return handleDrawFillLeave(canvas, da, cp, ev)
-    }
-  }
-
-  return [
-    handleDrawActionStart,
-    handleDrawActionFinish,
-    handleDrawActionMotion,
-    handleDrawActionLeave,
-  ]
-}
+import type { DrawInstruction } from "../types/drawProtocol"
 //#endregion
 
 //#region Server-Driven Canvas Methods
+// Applies inst and returns what actually happened. For pencil/eraser/bucket
+// this is unconditional — the whole instruction always applies, so it's
+// just handed back. For patch (undo/redo) it's conditional — only entries
+// that passed the compare-and-swap check applied, so a new instruction
+// carrying just that subset is returned, or null if nothing applied at all.
+//
+// This is the single fan-in point for every instruction that arrives over the
+// network — the server calls it from RoomManager.applyInstruction, and clients
+// call it for each broadcast they receive. That makes it the right and only
+// place to validate untrusted input: returning null here means the canvas is
+// untouched, the revision does not advance, and nothing is broadcast.
 export function applyDrawInstructionToCanvas(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: DrawInstruction,
-): void {
+): DrawInstruction | null {
+  if (!isValidDrawInstruction(inst)) {
+    return null
+  }
+
   switch (inst.type) {
     case "pencil":
     case "eraser":
       handleDrawLineInstruction(pixels, inst)
-      break
+      return inst
     case "bucket":
       handleDrawFillInstruction(pixels, inst)
-      break
+      return inst
+    case "patch": {
+      const applied = handleDrawPatchInstruction(pixels, inst)
+      if (applied.length === 0) {
+        return null
+      }
+      return { ...inst, entries: applied }
+    }
   }
 }
 

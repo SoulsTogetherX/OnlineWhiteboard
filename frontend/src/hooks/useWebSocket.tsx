@@ -1,5 +1,5 @@
 //#region Imports
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
@@ -14,8 +14,8 @@ export type WebSocketPayload = WebSocketMessage | Record<string, unknown>
 
 export type WebSocketResult = {
   status: React.RefObject<WebSocketStatus>
-  data: React.RefObject<any>
-  send: (data: any) => boolean
+  data: React.RefObject<WebSocketMessage | undefined>
+  send: (data: WebSocketPayload) => boolean
   open: () => void
   close: () => void
   ws: React.RefObject<ClientSocket | null>
@@ -48,7 +48,7 @@ export type WebSocketOptions = {
 //#endregion
 
 //#region Helper Methods
-function isReactRef(value: any): value is React.RefObject<any> {
+function isReactRef(value: unknown): value is React.RefObject<unknown> {
   return value !== null && typeof value === "object" && "current" in value
 }
 
@@ -83,7 +83,7 @@ function toWebSocketUrl(url: WebSocketURL, roomId: string): string | undefined {
   return resolved.toString()
 }
 
-function serializeSocketPayload(payload: any): WebSocketMessage {
+function serializeSocketPayload(payload: WebSocketPayload): WebSocketMessage {
   if (typeof payload === "object" && payload !== null) {
     return JSON.stringify(payload)
   }
@@ -119,12 +119,21 @@ export default function useWebSocket(
     heartbeat = false,
   } = options ?? {}
 
-  const reconnectOptions =
-    typeof autoReconnect === "boolean" ? {} : autoReconnect
-  const heartbeatOptions = typeof heartbeat === "boolean" ? {} : heartbeat
+  // Memoized because the boolean branch allocates a FRESH `{}` on every render.
+  // That made these unstable identities, which cascaded: every useCallback that
+  // depends on them was rebuilt each render, which rebuilt `open`, which
+  // re-ran the connect effect. Memoizing pins them to the actual option value.
+  const reconnectOptions = useMemo(
+    () => (typeof autoReconnect === "boolean" ? {} : autoReconnect),
+    [autoReconnect],
+  )
+  const heartbeatOptions = useMemo(
+    () => (typeof heartbeat === "boolean" ? {} : heartbeat),
+    [heartbeat],
+  )
 
   const status = useRef<WebSocketStatus>("CLOSED")
-  const data = useRef<any>(undefined)
+  const data = useRef<WebSocketMessage | undefined>(undefined)
   const ws = useRef<ClientSocket | null>(null)
 
   const manualClose = useRef(false)
@@ -138,7 +147,7 @@ export default function useWebSocket(
     return resolveMaybeRef(socketUrl)
   }, [socketUrl])
 
-  const send = useCallback((payload: any): boolean => {
+  const send = useCallback((payload: WebSocketPayload): boolean => {
     const socket = ws.current
     if (!socket || socket.readyState !== WebSocket.OPEN) return false
 
@@ -321,7 +330,14 @@ export default function useWebSocket(
     ws.current?.close()
   }, [clearHeartbeat])
 
-  openRef.current = open
+  // `open` and `scheduleReconnect` are mutually recursive: reconnecting has to
+  // call `open`, but `open` is defined in terms of `scheduleReconnect`. This ref
+  // breaks that cycle. Assigned in an effect rather than during render, since a
+  // render that React discards must not leave the ref pointing at it. The only
+  // reader is the reconnect timer, which can't fire before mount.
+  useEffect(() => {
+    openRef.current = open
+  }, [open])
 
   useEffect(() => {
     if (!autoClose) {

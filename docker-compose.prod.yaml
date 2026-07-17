@@ -1,0 +1,99 @@
+# PRODUCTION stack: nginx serving the Rollup bundle + compiled backend + Postgres.
+#
+#   docker compose -f docker-compose.prod.yaml up --build -d   -> http://localhost:8080
+#   docker compose -f docker-compose.prod.yaml down
+#
+# This is a STANDALONE file, not an override of docker-compose.yaml. Compose
+# merges list-valued keys like `volumes` and `ports` by APPENDING, so an
+# override could never remove the dev bind mounts — production would silently
+# keep mounting host source over the built image. Two explicit files are a
+# little more verbose and far harder to get wrong.
+#
+# Differences from the dev stack, all deliberate:
+#   * frontend runs nginx over the built assets, not the Vite dev server
+#   * backend runs `node dist/server.js` as an unprivileged user, not tsx watch
+#   * no bind mounts anywhere — the images are self-contained and immutable
+#   * backend and database publish NO host ports; only nginx is reachable
+#   * everything restarts unless explicitly stopped
+#
+# `name` isolates this project from whiteboard-dev so the two don't collide.
+
+name: whiteboard-prod
+
+services:
+  frontend:
+    build:
+      context: .
+      dockerfile: ./frontend/Dockerfile
+      target: prod
+    environment:
+      # Substituted into nginx.conf.template by the nginx image's entrypoint,
+      # so the proxy port stays single-sourced from .env.
+      BACKEND_PORT: ${BACKEND_PORT}
+    ports:
+      # The ONLY port exposed to the host. Everything else talks over the
+      # private compose network. Override with PROD_PORT in .env.
+      - "${PROD_PORT:-8080}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+      target: prod
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    # No `ports:` — the backend is reachable only as http://backend:3000 from
+    # inside the compose network, which is exactly what nginx proxies to.
+    # Not publishing it means it cannot be hit directly from outside at all.
+    depends_on:
+      database:
+        condition: service_healthy
+    restart: unless-stopped
+
+  database:
+    build:
+      context: ./database
+      dockerfile: Dockerfile
+    env_file: .env
+    networks:
+      default:
+        aliases:
+          # backend/src/db/pool.ts dials POSTGRES_HOST (= postgres-c), so that
+          # exact name must resolve on this network. The dev stack gets it for
+          # free from `container_name: ${POSTGRES_HOST}`, but container names are
+          # global to the Docker daemon — reusing one here would collide with the
+          # dev stack. A network alias is scoped to this project's network, so
+          # both stacks can define `postgres-c` and neither interferes with the
+          # other. Without this the backend crash-loops on ENOTFOUND.
+          - ${POSTGRES_HOST}
+    # No `ports:` either — nothing outside this network needs Postgres. The dev
+    # stack publishes 5432 for convenience; production should not.
+    volumes:
+      # Parent of PGDATA — see the note in docker-compose.yaml. Postgres 18 uses
+      # /var/lib/postgresql/18/docker, so mounting /var/lib/postgresql/data
+      # (the pre-18 convention) would persist NOTHING and silently lose every
+      # canvas on restart.
+      - database-prod-v:/var/lib/postgresql
+    command: ["postgres", "-p", "${POSTGRES_PORT}"]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
+        ]
+      start_period: 0s
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  # Separate from the dev volume on purpose: production data should never share
+  # a disk with whatever you've been scribbling in dev.
+  database-prod-v:
+    name: "whiteboard-database-prod-v"

@@ -13,6 +13,10 @@ export type ClientSocketMessage =
       type: "ping"
       sentAt: number
     }
+  | {
+      type: "resync"
+      roomId: string
+    }
 
 export type ServerSocketMessage =
   | {
@@ -34,6 +38,16 @@ export type ServerSocketMessage =
       width: number
       height: number
       data: string
+    }
+  | {
+      // Tiny periodic heartbeat replacing the old full-canvas broadcast.
+      // Clients compare this to their own last-applied revision and only
+      // ask for a real snapshot (via "resync") if they've actually fallen
+      // behind — so the common case costs a few dozen bytes, not the whole
+      // canvas, and that cost doesn't grow with canvas size at all.
+      type: "revision_check"
+      roomId: string
+      revision: number
     }
   | {
       type: "presence"

@@ -24,7 +24,12 @@ function setSessionValue<T>(key: string, val: T, useJson?: boolean): void {
     } else if (typeof val === "string") {
       sessionStorage.setItem(key, val)
     }
-  } catch {}
+  } catch {
+    // Intentionally ignored. sessionStorage.setItem throws when storage is full
+    // or blocked entirely (Safari private mode, cookies-disabled). Persistence
+    // is a convenience here — the caller's in-memory state is still correct, so
+    // failing to save must not break the app.
+  }
 }
 //#endregion
 

@@ -1,27 +1,55 @@
+# DEVELOPMENT stack: Vite dev server (HMR) + tsx watch + Postgres.
+#
+#   docker compose up --build         -> http://localhost:5173
+#
+# For the production stack see docker-compose.prod.yaml.
+# Do not run both at once — they'd fight over the same host ports.
+
+name: whiteboard-dev
+
 services:
   frontend:
     build:
       context: .
       dockerfile: ./frontend/Dockerfile
+      # Stop at the `dev` stage: Vite dev server, not the nginx build.
+      target: dev
     container_name: ${FRONTEND_HOST}
     volumes:
+      # Bind mounts: edits on the host appear instantly in the container, which
+      # is what drives HMR. Only src/ and shared/ are mounted, so the image's
+      # own vite.config.ts / package.json are used.
       - ./frontend/src:/app/src
       - ./shared:/shared
+      # Anonymous volume masking the host's node_modules. Without this, a host
+      # node_modules (Windows binaries) could shadow the container's Linux ones.
       - /app/node_modules
     environment:
+      # Consumed by vite.config.ts as the dev proxy target. "backend" is the
+      # compose service name — Compose runs a DNS server on the shared network
+      # that resolves service names to container IPs.
       VITE_API_BASE: "http://backend:${BACKEND_PORT}"
       VITE_PUBLIC_SITE_URL: "${PUBLIC_SITE_URL}"
+      # File-change events don't cross the Windows/WSL2 boundary reliably, so
+      # the watcher polls instead. Costs some CPU; required on Windows.
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "300"
     ports:
       - "${FRONTEND_PORT}:${FRONTEND_PORT}"
     depends_on:
       - backend
+    develop:
+      watch:
+        - action: rebuild
+          path: ./frontend/package.json
+        - action: rebuild
+          path: ./frontend/Dockerfile
 
   backend:
     build:
       context: .
       dockerfile: ./backend/Dockerfile
+      target: dev
     container_name: ${BACKEND_HOST}
     volumes:
       - ./backend/src:/app/src
@@ -32,10 +60,20 @@ services:
       CHOKIDAR_USEPOLLING: "true"
       CHOKIDAR_INTERVAL: "300"
     ports:
+      # Published so the loadtest harness can reach ws://localhost:3000/ws.
+      # The production stack deliberately does NOT publish this.
       - "${BACKEND_PORT}:${BACKEND_PORT}"
     depends_on:
       database:
+        # Waits for the healthcheck to pass, not merely for the container to
+        # start. Plain `depends_on` would let the backend race an unready DB.
         condition: service_healthy
+    develop:
+      watch:
+        - action: rebuild
+          path: ./backend/package.json
+        - action: rebuild
+          path: ./backend/Dockerfile
 
   database:
     build:
@@ -46,6 +84,9 @@ services:
     ports:
       - "${POSTGRES_PORT}:${POSTGRES_PORT}"
     volumes:
+      # NOTE: mounts the PARENT of PGDATA on purpose. Postgres 18 moved PGDATA
+      # to /var/lib/postgresql/18/docker (it is no longer /var/lib/postgresql/data).
+      # Mounting the parent keeps the versioned directory inside the volume.
       - database-v:/var/lib/postgresql
     command: ["postgres", "-p", "${POSTGRES_PORT}"]
     healthcheck:
