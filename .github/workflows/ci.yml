@@ -29,6 +29,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
+    # An ephemeral Postgres for the backend's repository integration tests. This
+    # is the standard GitHub Actions way to give a job a real database — the
+    # runner starts the container, maps 5432 to localhost, and the `options`
+    # health check gates the job's steps until it's actually accepting
+    # connections. It mirrors exactly how these tests are run locally against a
+    # throwaway `docker run postgres`, and is isolated per run so tests never see
+    # stale data.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgre
+          POSTGRES_PASSWORD: ci-throwaway-password
+          POSTGRES_DB: info_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgre"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - uses: actions/checkout@v4
 
@@ -84,6 +106,22 @@ jobs:
       - name: Typecheck backend
         run: npm run typecheck
         working-directory: backend
+
+      # Integration tests against the postgres service above. The repository
+      # layer's real SQL — migrations, upserts, the ON DELETE CASCADE, the
+      # snapshot pruning — can only be verified against a real database; the
+      # pure unit tests at the repo root deliberately never touch one. The env
+      # here matches the service's credentials, and POSTGRES_PASSWORD being set
+      # is what un-skips the suite (see the gate in the test file).
+      - name: Integration test backend (Postgres)
+        run: npm test
+        working-directory: backend
+        env:
+          POSTGRES_HOST: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: postgre
+          POSTGRES_PASSWORD: ci-throwaway-password
+          POSTGRES_DB: info_db
 
       # --- loadtest ----------------------------------------------------------
       # It imports the same shared/ types as the app, so typechecking it is what

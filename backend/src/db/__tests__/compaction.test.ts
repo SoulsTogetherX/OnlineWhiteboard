@@ -1,0 +1,152 @@
+//#region Imports
+import { randomUUID } from "node:crypto"
+
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+
+import { db } from "../pool"
+import { loadCanvas, saveCanvas } from "../canvasRepository"
+import {
+  appendDrawEvents,
+  ensureRoom,
+  loadEventsSince,
+  type DrawEvent,
+} from "../eventRepository"
+import { runMigrations } from "../migrate"
+import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { CANVAS_BYTES } from "@shared/constants/canvas"
+
+import type { DrawInstruction } from "@shared/types/drawProtocol"
+//#endregion
+
+//#region Gate
+const DB_CONFIGURED = Boolean(process.env.POSTGRES_PASSWORD)
+//#endregion
+
+//#region Helpers
+let counter = 0
+const pencil = (n: number): DrawInstruction => ({
+  type: "pencil",
+  prevPos: [n % 100, 0],
+  nextPos: [(n % 100) + 5, 5],
+  color: { r: 255, g: 0, b: 0, a: 255 },
+  instructionId: counter++,
+  sessionId: "compaction-test",
+})
+const event = (revision: number): DrawEvent => ({
+  revision,
+  instruction: pencil(revision),
+})
+
+// Count remaining events for a room — the thing compaction is supposed to bound.
+async function eventCount(roomId: string): Promise<number> {
+  const rows = await loadEventsSince(roomId, 0)
+  return rows.length
+}
+//#endregion
+
+//#region Tests
+describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
+  const createdRooms: string[] = []
+  const freshRoomId = (): string => {
+    const id = `cmp-${randomUUID()}`
+    createdRooms.push(id)
+    return id
+  }
+
+  beforeAll(async () => {
+    await runMigrations()
+  })
+
+  afterAll(async () => {
+    for (const id of createdRooms) {
+      await db.deleteFrom("rooms").where("id", "=", id).execute()
+    }
+    await db.destroy()
+  })
+
+  it("deletes events at or below the snapshot revision when a checkpoint is written", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId)
+    await appendDrawEvents(roomId, [event(1), event(2), event(3), event(4), event(5)])
+    expect(await eventCount(roomId)).toBe(5)
+
+    // Checkpoint at revision 3: events 1..3 are now baked into the snapshot.
+    await saveCanvas(roomId, new Uint8ClampedArray(CANVAS_BYTES), 3)
+
+    // Only events strictly newer than the snapshot survive.
+    const remaining = await loadEventsSince(roomId, 0)
+    expect(remaining.map((e) => e.revision)).toEqual([4, 5])
+  })
+
+  it("keeps the event log bounded across many checkpoints", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId)
+
+    let revision = 0
+    // Simulate 10 rounds of "draw 20 strokes, then checkpoint".
+    for (let round = 0; round < 10; round += 1) {
+      const batch: DrawEvent[] = []
+      for (let i = 0; i < 20; i += 1) {
+        revision += 1
+        batch.push(event(revision))
+      }
+      await appendDrawEvents(roomId, batch)
+      await saveCanvas(roomId, new Uint8ClampedArray(CANVAS_BYTES), revision)
+
+      // After each checkpoint the log is empty — everything drawn this round was
+      // folded into the snapshot. It never grows with total drawing, only with
+      // drawing-since-last-checkpoint.
+      expect(await eventCount(roomId)).toBe(0)
+    }
+
+    // 200 strokes drawn, zero events retained.
+    expect(await eventCount(roomId)).toBe(0)
+  })
+
+  it("still recovers the exact canvas after compaction (snapshot + surviving events)", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId)
+
+    // Build a canvas by applying 3 strokes, then checkpoint it at revision 3.
+    const canvas = new Uint8ClampedArray(CANVAS_BYTES)
+    for (let r = 1; r <= 3; r += 1) {
+      applyDrawInstructionToCanvas(canvas, pencilAt(r))
+    }
+    await appendDrawEvents(roomId, [evAt(1), evAt(2), evAt(3)])
+    await saveCanvas(roomId, canvas, 3) // compacts events 1..3 away
+
+    // Two more strokes drawn AFTER the checkpoint — these live only in the log.
+    applyDrawInstructionToCanvas(canvas, pencilAt(4))
+    applyDrawInstructionToCanvas(canvas, pencilAt(5))
+    await appendDrawEvents(roomId, [evAt(4), evAt(5)])
+
+    // Recover exactly as the room manager does: snapshot + events after it.
+    const stored = await loadCanvas(roomId)
+    const recovered = new Uint8ClampedArray(stored.pixels)
+    const survivors = await loadEventsSince(roomId, stored.revision)
+    for (const e of survivors) {
+      applyDrawInstructionToCanvas(recovered, e.instruction)
+    }
+
+    expect(stored.revision).toBe(3) // recovered from the compacted snapshot
+    expect(survivors.map((e) => e.revision)).toEqual([4, 5])
+    expect(Array.from(recovered)).toEqual(Array.from(canvas))
+  })
+})
+
+// Deterministic stroke keyed by revision, so the "expected" and "recovered"
+// canvases apply identical instructions.
+function pencilAt(r: number): DrawInstruction {
+  return {
+    type: "pencil",
+    prevPos: [r, r],
+    nextPos: [r + 8, r + 3],
+    color: { r: 10 * r, g: 0, b: 0, a: 255 },
+    instructionId: r,
+    sessionId: "cmp",
+  }
+}
+function evAt(r: number): DrawEvent {
+  return { revision: r, instruction: pencilAt(r) }
+}
+//#endregion

@@ -15,6 +15,7 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 
 * Real-time shared drawing across users in the same room
 * Undo/redo that is safe under concurrent editing
+* Durable canvases — survive server restarts and hard crashes with sub-second data loss
 * Desktop and mobile-friendly interface
 * Live room-based synchronization
 * Responsive UI for collaborative use
@@ -23,7 +24,8 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 
 * Frontend: React + Vite
 * Backend: Express + Node.js + WebSockets (`ws`)
-* Database: PostgreSQL
+* Database: PostgreSQL, accessed with [Kysely](https://kysely.dev/) (typed SQL query builder)
+  and evolved through a tracked, ordered migration system
 * Language: TypeScript
 * Deployment: Docker (multi-stage) + nginx
 
@@ -169,15 +171,25 @@ expected previous color. If a collaborator has painted over that area in the mea
 affected entries are skipped rather than clobbering their work, and the user is told the
 undo applied only partially.
 
+**Durable by event sourcing.** The database does not just store the latest picture. Every
+applied instruction is appended to a `draw_events` log, and full-canvas **snapshots** are
+written periodically as checkpoints. Recovery after a crash is "load the latest snapshot,
+then replay every event newer than it" — so a hard `docker kill` loses at most the events
+buffered in the last ~250 ms, not the 15 s between snapshots. When a snapshot is written it
+also **compacts** the log (deletes the events it now supersedes), keeping storage bounded.
+On a clean shutdown (`SIGTERM`) the server flushes every room before exiting, so a normal
+deploy loses nothing at all. The schema — `rooms`, `canvas_snapshots`, `draw_events` — is
+created and evolved by ordered SQL migrations that run automatically on startup.
+
 ## Project structure
 
 This is a monorepo full-stack application. All server-side and client-side code is shared here.
 
 ```
 ├── frontend/     React + Vite SPA, nginx config for production
-├── backend/      Express + ws server; mediates all database access
+├── backend/      Express + ws server; owns the DB schema (migrations) and all access
 ├── shared/       Drawing protocol + algorithms, imported by BOTH sides
-├── database/     PostgreSQL schema
+├── database/     Stock PostgreSQL image (schema lives in backend/src/db/migrations)
 └── loadtest/     Standalone WebSocket load-testing harness
 ```
 
@@ -185,21 +197,38 @@ This is a monorepo full-stack application. All server-side and client-side code 
 
 ## Tests
 
-The `shared/` drawing protocol is covered by [Vitest](https://vitest.dev/). It is the
-highest-value code in the repo to test: it is pure, dependency-free and deterministic
-(no DOM, no network, no database), and **both** the browser and the server execute it —
-so a bug there desynchronises every client from the server's authoritative canvas.
+Two layers, matched to what each is best at.
+
+**Unit tests** cover the `shared/` drawing protocol with [Vitest](https://vitest.dev/). It is
+the highest-value code in the repo to test: pure, dependency-free and deterministic (no DOM,
+no network, no database), and **both** the browser and the server execute it — so a bug
+there desynchronises every client from the server's authoritative canvas.
 
 ```bash
 npm ci             # once, at the repo root
-npm test           # 51 tests
+npm test           # 71 unit tests
 npm run test:watch
 npm run test:coverage
 ```
 
-Tests live next to the code they cover, in `shared/utils/__tests__/`. They cover
-Bresenham line drawing, flood fill, the compare-and-swap patch logic behind undo, and
-rejection of malformed input from the network.
+They live next to the code they cover, in `shared/utils/__tests__/`, covering Bresenham
+line drawing, flood fill, the compare-and-swap patch logic behind undo, and rejection of
+malformed input from the network.
+
+**Integration tests** cover the database repository layer against a real PostgreSQL —
+migrations, upserts, event append/replay, compaction, and `ON DELETE CASCADE`. These can
+only be verified against a real database, so they are gated on one being reachable and skip
+otherwise.
+
+```bash
+cd backend && npm ci
+# point at any Postgres (e.g. a throwaway container) and run:
+POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=postgre \
+POSTGRES_PASSWORD=... POSTGRES_DB=info_db npm test
+```
+
+CI runs both layers on every pull request, then builds the production images and drives the
+whole stack end-to-end over HTTP and WebSocket (`.github/workflows/ci.yml`).
 
 ## Development reference
 
@@ -227,6 +256,7 @@ npm run dev        # tsx watch
 npm run typecheck  # tsc --noEmit
 npm run build      # esbuild bundle -> dist/server.js
 npm start          # node dist/server.js
+npm test           # repository integration tests (needs a reachable Postgres)
 
 # Load testing (see loadtest/README.md)
 cd loadtest
@@ -242,9 +272,9 @@ npm run ramp -- --room demo --levels 5,10,25,50,100,200
 
 ## Future improvements
 
-* CI (typecheck + lint + test on every PR)
-* Graceful shutdown — flush unsaved canvases on SIGTERM
-* Horizontal scaling — room state is currently an in-process `Map`
+* Horizontal scaling — room state is currently an in-process `Map`; broadcasting across
+  instances would need a shared bus (e.g. Redis pub/sub)
+* Accounts and authentication, with a per-room presence display
 * Eyedropper Tool
 * Stroke Size Controls
 * More shortcuts
