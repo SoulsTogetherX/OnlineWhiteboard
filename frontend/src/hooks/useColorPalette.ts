@@ -59,7 +59,6 @@ export default function useColorPalette(): UseColorPaletteResult {
       const next = { ...colorPallet.current }
       next[type] = { ...color }
 
-      console.log(colorPallet, next)
       setColorPallet(next)
     },
     [colorPallet, setColorPallet],

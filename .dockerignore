@@ -1,5 +1,26 @@
-# The build context is the repo root, so ignore patterns here apply to
-# every service built from it (frontend, backend).
+# The build context is the repo root, so these patterns apply to every service
+# built from it (frontend, backend).
+#
+# Two reasons this matters beyond image size:
+#   1. Anything not excluded is uploaded to the Docker daemon on every build and
+#      participates in cache keys — a stray file churns the cache.
+#   2. Host artifacts must never leak into an image. A Windows-built
+#      node_modules or a stale dist/ inside a Linux image fails in confusing ways.
 
 **/node_modules
 **/.git
+
+# Build output — always produced fresh inside the build stage.
+**/dist
+
+# Secrets. The backend receives these via compose `env_file` at RUN time; they
+# must never be baked into an image layer (layers are readable by anyone who
+# pulls the image, and deleting a file in a later layer does not remove it).
+.env
+.env.*
+!.env.example
+
+# Not part of any image.
+loadtest
+**/*.md
+!README.md

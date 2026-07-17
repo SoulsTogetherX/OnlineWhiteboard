@@ -1,5 +1,34 @@
 {
+  // Standalone typecheck for shared/ and its tests (`npm run typecheck:shared`
+  // from the repo root).
+  //
+  // shared/ has no package.json — it is joined to frontend/backend purely by
+  // path aliases — so before the tests existed this file was a 3-line stub that
+  // never had to resolve a real dependency. Pulling vitest in exposed that:
+  // without skipLibCheck/moduleResolution/types it drowned in errors from
+  // node_modules type definitions.
+  //
+  // frontend and backend still typecheck shared/ themselves (they pull it in
+  // through their @shared imports), so this is a third opinion, not the only
+  // one. Deliberately the strictest of the three.
   "compilerOptions": {
-    "lib": ["DOM", "ES2022"]
-  }
+    "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+
+    "strict": true,
+    "noEmit": true,
+    // Don't typecheck other people's .d.ts files — that's their CI's job, and
+    // vite/rollup ship types that assume their own tsconfig.
+    "skipLibCheck": true,
+
+    "verbatimModuleSyntax": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noFallthroughCasesInSwitch": true,
+    "noImplicitOverride": true
+  },
+  "include": ["**/*.ts"]
 }

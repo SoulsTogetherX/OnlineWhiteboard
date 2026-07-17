@@ -1,5 +1,5 @@
 //#region Imports
-import { useEffect, useMemo, useState } from "react"
+import { useState } from "react"
 
 import PopupBase from "@/components/Popups/PopupBase"
 
@@ -9,8 +9,25 @@ import type { ColorType } from "@shared/types/primitive"
 import "./styles.css"
 //#endregion
 
+//#region Constants
+// Spelled-out names for screen readers. "R" reads as the letter R, which tells
+// a non-sighted user nothing about what the control does.
+const CHANNEL_NAMES: Record<keyof ColorType, string> = {
+  r: "Red",
+  g: "Green",
+  b: "Blue",
+  a: "Alpha",
+}
+//#endregion
+
 //#region Helper Methods
 function clampColorValue(value: number): number {
+  // Math.round(NaN) is NaN, and every comparison against NaN is false — so
+  // without this guard a NaN would sail through both clamps and land in the
+  // palette as NaN, painting garbage.
+  if (!Number.isFinite(value)) {
+    return 0
+  }
   return Math.max(0, Math.min(255, Math.round(value)))
 }
 
@@ -50,13 +67,23 @@ export default function ColorPopup({
   onApply,
 }: ColorPopupProps) {
   const [draftColor, setDraftColor] = useState<ColorType>(currentColor)
-  const cssPreview = useMemo(() => colorTypeToString(draftColor), [draftColor])
+  const cssPreview = colorTypeToString(draftColor)
 
-  useEffect(() => {
+  // Re-seed the draft each time the popup opens, so it always reflects the
+  // swatch you actually clicked and discards any cancelled edit. Needed because
+  // PopupBase only toggles a class — it never unmounts its children, so the
+  // useState initializer above runs exactly once, at App mount.
+  //
+  // Adjusted DURING RENDER rather than in an effect: React discards this render
+  // and re-runs with the new state before painting, so the wrong color is never
+  // shown. See RoomPopup for the same pattern.
+  const [wasOpen, setWasOpen] = useState<boolean>(isOpen)
+  if (isOpen !== wasOpen) {
+    setWasOpen(isOpen)
     if (isOpen) {
       setDraftColor(currentColor)
     }
-  }, [currentColor, isOpen])
+  }
 
   const setComponent = (component: keyof ColorType, value: number) => {
     setDraftColor((current) => ({
@@ -66,15 +93,17 @@ export default function ColorPopup({
   }
 
   return (
-    <PopupBase isOpen={isOpen} onClose={onClose}>
+    <PopupBase isOpen={isOpen} onClose={onClose} label="Choose a color">
       <div className="color-picker-module">
         <header className="color-picker-header">
-          <div>
-            <p>RGBA values are saved for this browser session.</p>
-          </div>
+          <p>RGBA values are saved for this browser session.</p>
           <div
             className="color-preview"
             style={{ backgroundColor: cssPreview }}
+            // A bare styled div is invisible to assistive tech; without a role
+            // and label there was no way to know a preview existed at all.
+            role="img"
+            aria-label="Preview of the selected color"
           ></div>
         </header>
 
@@ -91,31 +120,41 @@ export default function ColorPopup({
         </label>
 
         <div className="rgba-grid">
-          {(["r", "g", "b", "a"] as const).map((component) => (
-            <label className="rgba-control" key={component}>
-              <span>{component.toUpperCase()}</span>
-              <input
-                name={`${component}-hue-amount-slider`}
-                type="range"
-                min="0"
-                max="255"
-                value={draftColor[component]}
-                onChange={(ev) =>
-                  setComponent(component, Number(ev.target.value))
-                }
-              />
-              <input
-                name={`${component}-hue-amount-numerical`}
-                type="number"
-                min="0"
-                max="255"
-                value={draftColor[component]}
-                onChange={(ev) =>
-                  setComponent(component, Number(ev.target.value))
-                }
-              />
-            </label>
-          ))}
+          {(["r", "g", "b", "a"] as const).map((component) => {
+            // A <label> associates with only its FIRST labelable descendant.
+            // This used to be one <label> wrapping BOTH the slider and the
+            // number input, so "R"/"G"/"B"/"A" named the slider and the number
+            // field was left with no accessible name at all. Naming each input
+            // explicitly fixes that, and lets the two carry distinct names.
+            const name = CHANNEL_NAMES[component]
+            return (
+              <div className="rgba-control" key={component}>
+                <span aria-hidden="true">{component.toUpperCase()}</span>
+                <input
+                  name={`${component}-hue-amount-slider`}
+                  type="range"
+                  min="0"
+                  max="255"
+                  value={draftColor[component]}
+                  aria-label={`${name} slider`}
+                  onChange={(ev) =>
+                    setComponent(component, Number(ev.target.value))
+                  }
+                />
+                <input
+                  name={`${component}-hue-amount-numerical`}
+                  type="number"
+                  min="0"
+                  max="255"
+                  value={draftColor[component]}
+                  aria-label={`${name} value`}
+                  onChange={(ev) =>
+                    setComponent(component, Number(ev.target.value))
+                  }
+                />
+              </div>
+            )
+          })}
         </div>
 
         <footer className="color-popup-actions">

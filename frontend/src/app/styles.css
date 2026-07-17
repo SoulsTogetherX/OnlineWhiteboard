@@ -7,3 +7,25 @@
   pointer-events: all;
   background-color: var(--room-background);
 }
+
+.undo-notice {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%);
+
+  z-index: 2;
+
+  max-width: 90vw;
+  padding: 0.6em 1em;
+
+  border-radius: 8px;
+  border: var(--border-color) solid 1px;
+
+  background-color: var(--popup-background);
+  color: var(--text-color);
+  font-size: 0.9em;
+
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+}

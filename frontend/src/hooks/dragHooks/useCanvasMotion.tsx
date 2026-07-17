@@ -56,7 +56,7 @@ export default function useCanvasMotion(
 
     element.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
     element.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
-  }, [])
+  }, [dragElementRef])
   const optionalCheck = useCallback((ev: PointerEvent): boolean => {
     return ev.buttons === 4
   }, [])
@@ -89,7 +89,7 @@ export default function useCanvasMotion(
       element.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
       checkResetPos()
     },
-    [dragElementRef],
+    [dragElementRef, checkResetPos],
   )
 
   const onScrollWheel = useCallback(
@@ -107,7 +107,7 @@ export default function useCanvasMotion(
       element.style.setProperty(SCROLL_KEY, `${scale.current}`)
       checkResetPos()
     },
-    [dragElementRef],
+    [dragElementRef, checkResetPos],
   )
 
   useScrollWheel(dragFrameRef, onScrollWheel, true)

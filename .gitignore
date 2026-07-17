@@ -143,6 +143,12 @@ vite.config.ts.timestamp-*
 .vite/
 
 # Other files
-*.js
+# NOTE: this used to be a blanket `*.js`, which silently excluded
+# frontend/eslint.config.js from the repo — so a fresh clone had a broken
+# `npm run lint`. The rule was presumably meant to catch stray `tsc` output;
+# the real build emits to dist/ (ignored above), so scope it to the source
+# trees where an accidental compile would land instead.
+backend/src/**/*.js
+shared/**/*.js
+
 .env
-loadtest/

@@ -17,6 +17,12 @@ import type { DrawInstruction } from "@shared/types/drawProtocol"
 const SAVE_INTERVAL_MS = 15_000
 const SNAPSHOT_INTERVAL_MS = 10_000
 const HEARTBEAT_INTERVAL_MS = 30_000
+
+// Cap on messages buffered while a room loads from Postgres (see addClient).
+// A well-behaved client sends one ping and maybe a stroke or two in that
+// window; anything past this is a client that isn't waiting for "ready", and
+// buffering it without limit would be a memory-growth vector on a slow DB.
+const MAX_PENDING_MESSAGES = 64
 //#endregion
 
 //#region Type Defs
@@ -60,6 +66,21 @@ export default class RoomManager {
     })
   }
 
+  // Loading a room can hit Postgres, so this is async — and that `await` used
+  // to sit BETWEEN the socket opening and its "message" listener being
+  // attached. Anything the client sent in that window had no listener and was
+  // silently dropped by ws.
+  //
+  // That is not a rare race. Clients ping the instant the socket opens, and a
+  // room only loads from the database when it is NOT already cached — i.e. for
+  // the first client into a room, every time. The dropped ping got no pong, the
+  // client's 5s heartbeat timeout fired, it closed with code 4000 and
+  // reconnected — and because it was the only client, leaving evicted the room
+  // from the cache, so the next attempt was cold again and hit the same race.
+  // A reconnect loop, and in production a user's first strokes vanishing.
+  //
+  // Fix: attach every listener synchronously, before any await, and buffer what
+  // arrives until the room is ready.
   async addClient(socket: ClientSocket, roomId: string): Promise<void> {
     socket.roomId = roomId
     socket.isAlive = true
@@ -67,14 +88,38 @@ export default class RoomManager {
       socket.isAlive = true
     })
 
-    const room = await this.getOrCreateRoom(roomId)
-    room.clients.add(socket)
+    const pending: RawData[] = []
+    let isReady = false
 
-    socket.on("message", (raw) => void this.handleMessage(socket, raw))
+    socket.on("message", (raw) => {
+      if (isReady) {
+        void this.handleMessage(socket, raw)
+        return
+      }
+      if (pending.length < MAX_PENDING_MESSAGES) {
+        pending.push(raw)
+      }
+    })
+    // Also registered before the await: a client that disconnects mid-load
+    // would otherwise never fire removeClient, and the code below would add its
+    // dead socket to the room — leaving a room that can never empty, with its
+    // save/snapshot timers running forever.
     socket.on("close", () => void this.removeClient(socket))
     socket.on("error", (error) => {
       console.error("WebSocket client error:", error)
     })
+
+    const room = await this.getOrCreateRoom(roomId)
+
+    // The client may have gone away while we were loading. Don't add a dead
+    // socket, and don't leave a freshly-created empty room behind holding
+    // timers.
+    if (socket.readyState !== socket.OPEN) {
+      this.disposeIfEmpty(room)
+      return
+    }
+
+    room.clients.add(socket)
 
     this.send(socket, {
       type: "ready",
@@ -84,6 +129,14 @@ export default class RoomManager {
     })
     this.sendSnapshot(socket, room)
     this.broadcastPresence(room)
+
+    // Drain in arrival order, then switch to handling inline. Draining before
+    // flipping the flag would let a message that arrives mid-drain jump ahead
+    // of the queue and apply out of order.
+    isReady = true
+    for (const raw of pending) {
+      await this.handleMessage(socket, raw)
+    }
   }
 
   private async getOrCreateRoom(roomId: string): Promise<RoomState> {
@@ -104,7 +157,7 @@ export default class RoomManager {
         SAVE_INTERVAL_MS,
       ),
       snapshotTimer: setInterval(
-        () => this.broadcastSnapshot(roomId),
+        () => this.broadcastRevisionCheck(roomId),
         SNAPSHOT_INTERVAL_MS,
       ),
     }
@@ -139,6 +192,11 @@ export default class RoomManager {
       return
     }
 
+    if (message.type === "resync") {
+      this.sendSnapshot(socket, room)
+      return
+    }
+
     this.applyInstruction(room, message.instruction)
   }
 
@@ -155,14 +213,18 @@ export default class RoomManager {
     room: RoomState,
     instruction: DrawInstruction,
   ): void {
-    applyDrawInstructionToCanvas(room.pixels, instruction)
+    const applied = applyDrawInstructionToCanvas(room.pixels, instruction)
+    if (!applied) {
+      return
+    }
+
     room.revision += 1
     room.isDirty = true
 
     this.broadcast(room, {
       type: "draw",
       roomId: room.roomId,
-      instruction,
+      instruction: applied,
       revision: room.revision,
     })
   }
@@ -178,10 +240,21 @@ export default class RoomManager {
 
     if (room.clients.size === 0) {
       await this.saveRoom(room.roomId)
-      clearInterval(room.saveTimer)
-      clearInterval(room.snapshotTimer)
-      this.rooms.delete(room.roomId)
+      this.disposeIfEmpty(room)
     }
+  }
+
+  // Tears down a room's timers and drops it from the cache, but only if nobody
+  // is left in it. Shared by removeClient and by addClient's mid-load bail-out,
+  // so there is exactly one place that stops those intervals — an in-memory room
+  // whose timers keep firing is a leak that survives every client leaving.
+  private disposeIfEmpty(room: RoomState): void {
+    if (room.clients.size > 0) {
+      return
+    }
+    clearInterval(room.saveTimer)
+    clearInterval(room.snapshotTimer)
+    this.rooms.delete(room.roomId)
   }
 
   private async saveRoom(roomId: string): Promise<void> {
@@ -206,12 +279,16 @@ export default class RoomManager {
     })
   }
 
-  private broadcastSnapshot(roomId: string): void {
+  private broadcastRevisionCheck(roomId: string): void {
     const room = this.rooms.get(roomId)
     if (!room) {
       return
     }
-    this.broadcast(room, this.makeSnapshotMessage(room))
+    this.broadcast(room, {
+      type: "revision_check",
+      roomId: room.roomId,
+      revision: room.revision,
+    })
   }
 
   private sendSnapshot(socket: ClientSocket, room: RoomState): void {
@@ -230,14 +307,19 @@ export default class RoomManager {
   }
 
   private broadcast(room: RoomState, message: ServerSocketMessage): void {
-    room.clients.forEach((client) => this.send(client, message))
+    const payload = JSON.stringify(message)
+    room.clients.forEach((client) => this.sendRaw(client, payload))
   }
 
   private send(socket: ClientSocket, message: ServerSocketMessage): void {
+    this.sendRaw(socket, JSON.stringify(message))
+  }
+
+  private sendRaw(socket: ClientSocket, payload: string): void {
     if (socket.readyState !== socket.OPEN) {
       return
     }
-    socket.send(JSON.stringify(message))
+    socket.send(payload)
   }
 }
 //#endregion

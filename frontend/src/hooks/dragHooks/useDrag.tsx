@@ -110,6 +110,19 @@ export default function useDrag(
       document.removeEventListener("pointermove", onDragMotionAdditional)
       document.removeEventListener("pointercancel", onDragFinishAdditional)
     }
-  }, [ref, onDragStart, onDragFinish, onDragMotion, onDragLeave, mouseButtons])
+    // optionalCheck was missing: a caller that changed its predicate (e.g. to
+    // gate dragging on a mode) would have kept the listener bound to the old
+    // one. Every current caller passes a stable useCallback, so this is a
+    // latent bug rather than an active one — but the deps must describe what
+    // the effect actually closes over.
+  }, [
+    ref,
+    optionalCheck,
+    onDragStart,
+    onDragFinish,
+    onDragMotion,
+    onDragLeave,
+    mouseButtons,
+  ])
 }
 //#endregion

@@ -1,72 +1,45 @@
 //#region Imports
-import settupDrawActions from "@shared/utils/handleCanvasProtocol"
+import useDrag from "./useDrag"
+import useDrawActions, { type OnCommitAction } from "../useDrawActions"
 
 import type { DrawAction, DrawInstruction } from "@shared/types/drawProtocol"
 import type { ColorPallet } from "@shared/types/primitive"
-import useDrag from "./useDrag"
 //#endregion
 
 //#region Hook Def
+// Adapts raw drag events into draw actions.
+//
+// This used to stash the four handlers in a `canvasMethods` ref and assign into
+// it during render, purely to work around useDrawActions taking the canvas
+// *element* (which is null on the first render). Now that useDrawActions takes
+// the ref and resolves it at event time, that indirection is unnecessary — the
+// handlers are just called directly.
 export default function useCanvasDrawing(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   drawAction: React.RefObject<DrawAction>,
   colorPallet: React.RefObject<ColorPallet>,
   onDrawInstruction: (action: DrawInstruction) => void,
+  onCommitAction?: OnCommitAction,
 ): void {
-  const canvas = canvasRef.current
-  if (!canvas) {
-    useDrag(canvasRef)
-    return
-  }
+  const [start, finish, motion, leave] = useDrawActions(
+    canvasRef,
+    onCommitAction,
+  )
 
-  const [
-    handleDrawActionStart,
-    handleDrawActionFinish,
-    handleDrawActionMotion,
-    handleDrawActionLeave,
-  ] = settupDrawActions(canvas)
-
-  const onDrawStart = (ev: PointerEvent) => {
-    const instruction = handleDrawActionStart(
-      drawAction.current,
-      colorPallet.current,
-      ev,
-    )
-    if (instruction) {
-      onDrawInstruction(instruction)
-    }
-  }
-  const onDrawLeave = (ev: PointerEvent) => {
-    const instruction = handleDrawActionLeave(
-      drawAction.current,
-      colorPallet.current,
-      ev,
-    )
+  // Each of these runs from a pointer event, so reading `.current` here is
+  // correct — it picks up the tool and palette as they are at gesture time
+  // rather than whatever they were when this hook last rendered.
+  const emit = (instruction: DrawInstruction | null) => {
     if (instruction) {
       onDrawInstruction(instruction)
     }
   }
 
-  const onDrawFinish = (ev: PointerEvent) => {
-    const instruction = handleDrawActionFinish(
-      drawAction.current,
-      colorPallet.current,
-      ev,
-    )
-    if (instruction) {
-      onDrawInstruction(instruction)
-    }
-  }
-  const onDrawMotion = (ev: PointerEvent) => {
-    const instruction = handleDrawActionMotion(
-      drawAction.current,
-      colorPallet.current,
-      ev,
-    )
-    if (instruction) {
-      onDrawInstruction(instruction)
-    }
-  }
+  const onDrawStart = (ev: PointerEvent) =>
+    emit(start(drawAction.current, colorPallet.current, ev))
+  const onDrawFinish = (ev: PointerEvent) => emit(finish(drawAction.current, ev))
+  const onDrawMotion = (ev: PointerEvent) => emit(motion(drawAction.current, ev))
+  const onDrawLeave = (ev: PointerEvent) => emit(leave(drawAction.current, ev))
 
   useDrag(
     canvasRef,

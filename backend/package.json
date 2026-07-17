@@ -1,6 +1,9 @@
 {
   "scripts": {
-    "dev": "tsx watch src/server.ts"
+    "dev": "tsx watch src/server.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "esbuild src/server.ts --bundle --platform=node --target=node22 --format=cjs --packages=external --sourcemap --outfile=dist/server.js",
+    "start": "node dist/server.js"
   },
   "dependencies": {
     "express": "^5.2.1",
@@ -12,6 +15,7 @@
     "@types/node": "^24.0.0",
     "@types/pg": "^8.20.0",
     "@types/ws": "^8.18.1",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0",
     "typescript": "^5.8.0"
   }

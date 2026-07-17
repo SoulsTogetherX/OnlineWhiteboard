@@ -14,6 +14,7 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 ## Features
 
 * Real-time shared drawing across users in the same room
+* Undo/redo that is safe under concurrent editing
 * Desktop and mobile-friendly interface
 * Live room-based synchronization
 * Responsive UI for collaborative use
@@ -21,10 +22,10 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 ## Tech Stack
 
 * Frontend: React + Vite
-* Backend: Express + Node.js + WebSockets
+* Backend: Express + Node.js + WebSockets (`ws`)
 * Database: PostgreSQL
 * Language: TypeScript
-* Deployment: Docker
+* Deployment: Docker (multi-stage) + nginx
 
 ## Requirements
 
@@ -32,21 +33,87 @@ Built for desktop and mobile, with tools for freehand drawing, filling areas, an
 
 ## Running the project
 
-This project is currently supported through Docker.
+The project ships two stacks: a **development** stack with hot reload, and a **production**
+stack that serves an optimized build behind nginx.
 
-To use the project:
+Both read configuration from a single `.env` file at the repository root.
 
-* Install Docker Desktop from their [official website](https://docs.docker.com/desktop/). Follow the setup instructions to get the application running on your machine.
-* Clone the repository to your local machine.
-* At the root of the repository, there should be a file named `.env.example`. Rename it to `.env` and open it in your text editor of choice.
-* Set the environment variable `POSTGRES_PASSWORD` to a PostgreSQL password you have access to.
-* While still in the root folder, open a terminal window and run the following command.
+### First-time setup
+
+1. Install [Docker Desktop](https://docs.docker.com/desktop/) and make sure it is running.
+2. Clone the repository.
+3. Copy `.env.example` to `.env`, then open it and set `POSTGRES_PASSWORD` to a password of
+   your choice. (`.env` is gitignored and never baked into an image.)
+
+### Development
+
+Hot reload for both the frontend (Vite HMR) and the backend (`tsx watch`). Source is
+bind-mounted, so edits on your machine apply immediately inside the containers.
 
 ```bash
 docker compose up --build
 ```
 
-After building, open the app in your browser at the local address shown in the terminal.
+Open **http://localhost:5173**.
+
+```bash
+docker compose logs -f frontend   # follow logs for one service
+docker compose down               # stop (keeps saved canvases)
+docker compose down -v            # stop AND delete the database volume
+```
+
+### Production
+
+Serves the minified, content-hashed Rollup bundle from nginx, with the backend compiled to
+a single JavaScript file and run as an unprivileged user.
+
+```bash
+docker compose -f docker-compose.prod.yaml up --build -d
+```
+
+Open **http://localhost:8080** (change with `PROD_PORT` in `.env`).
+
+```bash
+docker compose -f docker-compose.prod.yaml logs -f
+docker compose -f docker-compose.prod.yaml down
+```
+
+> Run one stack at a time. They use separate database volumes, so canvases drawn in
+> development do not appear in production.
+
+**What the production stack does differently:**
+
+| | Development | Production |
+|---|---|---|
+| Frontend | Vite dev server, HMR, unminified | nginx serving a Rollup bundle (~69 KB gzipped) |
+| Backend | `tsx watch`, types stripped unchecked | `tsc --noEmit` + esbuild bundle, run as `node` user |
+| `/api` + `/ws` proxy | Vite `server.proxy` | nginx `proxy_pass` |
+| Source on disk | bind-mounted | none — images are self-contained |
+| Exposed ports | 5173, 3000, 5432 | **8080 only** |
+| Image size | ~509 MB frontend | **~93 MB** frontend |
+
+### Deploying to a server
+
+The production stack is self-contained and runs anywhere Docker runs — a VPS, a
+DigitalOcean droplet, an EC2 instance, or any platform that accepts a `docker-compose.yaml`.
+
+The client connects to a **relative** `/ws` path rather than a hardcoded host, so the same
+built image works on any domain with no rebuild: whatever origin serves the page also
+proxies the WebSocket.
+
+To deploy:
+
+1. Copy the repository (or just the compose file and Dockerfiles) to the host.
+2. Create `.env` there with a **strong** `POSTGRES_PASSWORD`.
+3. Set `PROD_PORT=80` (or keep 8080 and put a reverse proxy in front).
+4. `docker compose -f docker-compose.prod.yaml up --build -d`
+
+For a public deployment, terminate TLS in front of the stack — for example with
+[Caddy](https://caddyserver.com/) or nginx on the host, or Cloudflare. The app already
+upgrades `http:`→`ws:` and `https:`→`wss:` automatically based on the page's origin, so no
+code changes are needed to run behind HTTPS.
+
+Health endpoint for load balancers and platform probes: **`GET /api/health`**.
 
 ## How to use
 
@@ -67,35 +134,120 @@ The "Room Info" shows the current room details.
 
 ### Desktop Shortcuts
 * Left-click will use the primary color, while right-click will use the secondary color.
+* Middle-click and drag to pan the canvas; scroll to zoom.
+* `Ctrl/Cmd + Z` to undo, `Ctrl/Cmd + Shift + Z` to redo.
 
 More shortcuts will be added in the future.
 
 ## How it works
 
-The application uses a client-server architecture.
+The application uses a client-server architecture in which **the server owns an
+authoritative pixel buffer** for every room — not a list of shapes.
 
-When a user joins a room, the backend loads the room state from cache or database and sends it to the client. Drawing actions are converted into events and broadcast to other connected users in the same room. Each client applies those events locally so the Canvas stays synchronized across all users. Room state is periodically saved to the database to prevent data loss.
+When a user joins a room, the backend loads that room's canvas from its in-memory cache or
+from PostgreSQL and sends it as a one-time snapshot. Drawing gestures are converted into
+small instructions (`pencil`, `eraser`, `bucket`) and broadcast to everyone in the room;
+each client applies the instruction locally so all canvases stay in sync. Room state is
+saved to the database periodically and whenever the last client leaves.
+
+Two details are worth calling out:
+
+**Shared drawing code.** The `shared/` folder holds the pixel algorithms — Bresenham line
+drawing, flood fill, patch application — and is imported and executed by *both* the browser
+and the Node server. There is one implementation rather than two that must be kept in sync,
+which is what lets the server maintain a canvas provably identical to what clients render.
+
+**Cheap synchronization.** Rather than periodically broadcasting the whole canvas, the
+server sends a tiny `revision_check` heartbeat. Clients compare it against their own last
+applied revision, and only a client that has actually fallen behind requests a fresh
+snapshot — so the common case costs a few dozen bytes instead of the full canvas, and that
+cost does not grow with canvas size.
+
+**Concurrency-safe undo.** Undo/redo is expressed as compare-and-swap patches: each entry
+records the pixel's previous and next color, and only applies if the pixel still holds the
+expected previous color. If a collaborator has painted over that area in the meantime, the
+affected entries are skipped rather than clobbering their work, and the user is told the
+undo applied only partially.
 
 ## Project structure
 
 This is a monorepo full-stack application. All server-side and client-side code is shared here.
 
-The "backend" folder holds all server logic, and acts as a mediator for any client accessing the database.
+```
+├── frontend/     React + Vite SPA, nginx config for production
+├── backend/      Express + ws server; mediates all database access
+├── shared/       Drawing protocol + algorithms, imported by BOTH sides
+├── database/     PostgreSQL schema
+└── loadtest/     Standalone WebSocket load-testing harness
+```
 
-The "frontend" folder holds all frontend code, used for user interactions.
+`CLAUDE.md` at the repository root holds detailed architecture notes.
 
-The "shared" folder is accessed by both the "backend" and "frontend" folders to handle drawing protocols and defines basic types.
+## Tests
 
-The "database" folder holds the schema for the PostgreSQL database used.
+The `shared/` drawing protocol is covered by [Vitest](https://vitest.dev/). It is the
+highest-value code in the repo to test: it is pure, dependency-free and deterministic
+(no DOM, no network, no database), and **both** the browser and the server execute it —
+so a bug there desynchronises every client from the server's authoritative canvas.
+
+```bash
+npm ci             # once, at the repo root
+npm test           # 51 tests
+npm run test:watch
+npm run test:coverage
+```
+
+Tests live next to the code they cover, in `shared/utils/__tests__/`. They cover
+Bresenham line drawing, flood fill, the compare-and-swap patch logic behind undo, and
+rejection of malformed input from the network.
+
+## Development reference
+
+Docker is the supported way to run the app, but these scripts are useful when working on
+the code directly.
+
+```bash
+# Root — tests for the shared protocol
+npm ci
+npm test
+npm run typecheck:shared
+
+# Frontend
+cd frontend
+npm ci
+npm run dev        # Vite dev server
+npm run build      # tsc -b && vite build  -> dist/
+npm run preview    # serve dist/ locally to check the real bundle
+npm run lint
+
+# Backend
+cd backend
+npm ci
+npm run dev        # tsx watch
+npm run typecheck  # tsc --noEmit
+npm run build      # esbuild bundle -> dist/server.js
+npm start          # node dist/server.js
+
+# Load testing (see loadtest/README.md)
+cd loadtest
+npm ci
+npm run run -- --clients 50 --room demo --durationMs 30000
+npm run ramp -- --room demo --levels 5,10,25,50,100,200
+```
+
+> **Note:** Vite and `tsx` strip TypeScript types *without checking them*. Only
+> `npm run build` (frontend) and `npm run typecheck` (backend) actually verify types, and
+> both now run inside the production image build — so a type error fails the build instead
+> of shipping.
 
 ## Future improvements
 
-* Undo/redo
-* Eyedropper Tool 
+* CI (typecheck + lint + test on every PR)
+* Graceful shutdown — flush unsaved canvases on SIGTERM
+* Horizontal scaling — room state is currently an in-process `Map`
+* Eyedropper Tool
 * Stroke Size Controls
-* Shortcuts
-* Add a button to hide/show Room information.
-* Include an icon that displays what tool is currently selected.
-* Set the Room ID prompt to match the current room by default
+* More shortcuts
+* Add a button to hide/show Room information
 * Export/import Canvas
-* Prompt for a room ID before loading the Canvas (i.e., removing the default 'TestRoom').
+* Prompt for a room ID before loading the Canvas (i.e., removing the default 'TestRoom')

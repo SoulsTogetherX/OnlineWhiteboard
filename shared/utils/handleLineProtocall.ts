@@ -1,16 +1,24 @@
 //#region Imports
 import {
+  clipSegmentToCanvas,
   getCanvasState,
-  getDirectColor,
   getDrawerMethod,
   getIdxFromVec,
-  getPosCorrected,
-  getToolColor,
+  getPos,
   updateCanvas,
+  withRecording,
+  getLookAtMethod,
 } from "./helperProtocallMethods"
 
-import type { LineAction, LineInstruction } from "../types/drawProtocol"
-import type { ColorPallet, ColorType } from "../types/primitive"
+import { DEFAULT_COLOR } from "../constants/canvas"
+
+import type {
+  BaseInstruction,
+  LineAction,
+  LineInstruction,
+  PatchEntry,
+} from "../types/drawProtocol"
+import type { ColorType, Vec } from "../types/primitive"
 //#endregion
 
 //#region Helper Method
@@ -53,90 +61,121 @@ function setPixelLine(
   }
 }
 
-function createInstruction(da: LineAction, color: ColorType): LineInstruction {
+// Builds the wire instruction from an already-clipped segment, NOT from the
+// action's raw positions — those may be off-canvas, and the protocol requires
+// in-bounds endpoints (see validateInstruction).
+function createInstruction(
+  da: LineAction,
+  base: BaseInstruction,
+  prevPos: Vec,
+  nextPos: Vec,
+): LineInstruction {
   return {
+    ...base,
     type: da.type,
-    nextPos: da.nextPos,
-    prevPos: da.prevPos,
-    color,
+    prevPos,
+    nextPos,
   } as LineInstruction
+}
+
+function handleDraw(
+  canvas: HTMLCanvasElement,
+  base: BaseInstruction,
+  da: LineAction,
+  ev: PointerEvent,
+  record?: PatchEntry[],
+): LineInstruction | null {
+  // RAW position, deliberately unclamped. The action tracks where the pointer
+  // actually is — including off-canvas — because the next segment's geometry
+  // depends on it: coming back on-screen from (200, 60) must re-enter at the
+  // point the real line crosses the edge, which is unknowable if we only stored
+  // a clamped (119, 60).
+  const rawNext = getPos(ev, canvas)
+
+  da.prevPos = da.nextPos ?? rawNext
+  da.nextPos = rawNext
+
+  // Previously this bailed out whenever the pointer was outside the canvas
+  // (`if (next[1] === false) return null`), which is why a stroke stopped at the
+  // last in-bounds sample instead of running to the edge. Now the segment is
+  // clipped to the canvas and the visible part is drawn; only a segment that
+  // misses the canvas completely (both ends outside, e.g. moving around beyond
+  // the edge) draws nothing.
+  const segment = clipSegmentToCanvas(da.prevPos, da.nextPos)
+  if (segment === null) {
+    return null
+  }
+
+  const canvasState = getCanvasState(canvas)
+  if (canvasState === null) {
+    return null
+  }
+
+  let drawer = getDrawerMethod(da.type, canvasState.imageData)
+  if (record) {
+    const getColor = getLookAtMethod(da.type, canvasState.imageData)
+    drawer = withRecording(getColor, drawer, record)
+  }
+
+  const [prevPos, nextPos] = segment
+  setPixelLine(
+    { ...da, prevPos, nextPos },
+    base.color ?? DEFAULT_COLOR,
+    drawer,
+  )
+  updateCanvas(canvas)
+  return createInstruction(da, base, prevPos, nextPos)
 }
 //#endregion
 
 //#region Handle Methods
 export function handleDrawLineStart(
   canvas: HTMLCanvasElement,
+  base: BaseInstruction,
   da: LineAction,
-  _cp: ColorPallet,
   ev: PointerEvent,
+  record?: PatchEntry[],
 ): LineInstruction | null {
-  const next = getPosCorrected(ev, canvas)
+  // A gesture always starts on the canvas — useDrag binds pointerdown to the
+  // canvas element itself — so this is in-bounds by construction. Seed both
+  // ends to it so the first handleDraw paints a single dot.
+  const start = getPos(ev, canvas)
 
-  da.prevPos = undefined
-  da.nextPos = next[0]
-  return null
+  da.prevPos = start
+  da.nextPos = start
+  return handleDraw(canvas, base, da, ev, record)
 }
 export function handleDrawLineFinish(
   _canvas: HTMLCanvasElement,
+  _base: BaseInstruction,
   _da: LineAction,
-  _cp: ColorPallet,
   _ev: PointerEvent,
 ): LineInstruction | null {
   return null
 }
 export function handleDrawLineMotion(
   canvas: HTMLCanvasElement,
+  base: BaseInstruction,
   da: LineAction,
-  cp: ColorPallet,
   ev: PointerEvent,
+  record?: PatchEntry[],
 ): LineInstruction | null {
-  const next = getPosCorrected(ev, canvas)
-
-  da.prevPos = da.nextPos
-  da.nextPos = next[0]
-  if (next[1] === false) {
-    return null
-  }
-
-  const canvasState = getCanvasState(canvas)
-  if (canvasState === null) {
-    return null
-  }
-
-  const drawer = getDrawerMethod(da.type, canvasState.imageData)
-  const color = getToolColor(da.type, getDirectColor(cp, ev))
-
-  setPixelLine(da, color, drawer)
-  updateCanvas(canvas)
-  return createInstruction(da, color)
+  return handleDraw(canvas, base, da, ev, record)
 }
 export function handleDrawLineLeave(
   canvas: HTMLCanvasElement,
+  base: BaseInstruction,
   da: LineAction,
-  cp: ColorPallet,
   ev: PointerEvent,
+  record?: PatchEntry[],
 ): LineInstruction | null {
-  const next = getPosCorrected(ev, canvas)
-  da.prevPos = da.nextPos
-  da.nextPos = next[0]
-
-  const canvasState = getCanvasState(canvas)
-  if (canvasState === null) {
-    return null
-  }
-
-  const drawer = getDrawerMethod(da.type, canvasState.imageData)
-  const color = getToolColor(da.type, getDirectColor(cp, ev))
-
-  setPixelLine(da, color, drawer)
-  updateCanvas(canvas)
-  return createInstruction(da, color)
+  return handleDraw(canvas, base, da, ev, record)
 }
 export function handleDrawLineInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: LineInstruction,
 ): void {
   const drawer = getDrawerMethod(inst.type, pixels)
-  setPixelLine(inst, inst.color, drawer)
+  setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer)
 }
 //#endregion

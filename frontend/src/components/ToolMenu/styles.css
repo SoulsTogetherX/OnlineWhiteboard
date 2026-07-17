@@ -14,11 +14,13 @@
 
   background-color: var(--toolbar-background);
 }
-@media screen and (min-width: 1024px) {
-  .tool-menu {
-    transform: translateX(0%);
-  }
-}
+/* Visibility is driven ONLY by .tool-open now. There used to be a
+   `@media (min-width: 1024px) { transform: translateX(0%) }` override here,
+   which meant the menu was visible on desktop even when React thought it was
+   closed. That divergence hid the broken hamburger for months. App.tsx now
+   derives `isToolbarVisible = isDesktop || isToolbarOpen` via useMediaQuery
+   (DESKTOP_MEDIA_QUERY, kept in sync with the 1024px breakpoint below), so one
+   boolean drives both the class and `inert`. */
 .tool-menu.tool-open {
   transform: translateX(0%);
 }
@@ -103,7 +105,21 @@
   border-right: 16px solid black;
 }
 
-.tool-button:hover {
+/* The selected tool. Previously impossible to express: the tool lived in a ref,
+   so picking one triggered no re-render and nothing could reflect it. */
+.tool-button-active {
+  border-radius: 25%;
+  background-color: hsl(from var(--border-color) h s l / 0.28);
+  outline: 2px solid var(--border-color);
+}
+.tool-button-active .button-icon {
+  transform: scale(1.25);
+}
+
+/* Show the tooltip on keyboard focus too, not just hover — the tooltip text IS
+   each button's accessible name, so keyboard users had no visible label. */
+.tool-button:hover,
+.tool-button:focus-visible {
   .button-icon {
     transform: scale(1.5);
   }
@@ -111,4 +127,11 @@
     transform: translate(15px, -50%) rotate(0deg);
     opacity: 1;
   }
+}
+.tool-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.tool-button:disabled:hover .button-icon {
+  transform: scale(1);
 }

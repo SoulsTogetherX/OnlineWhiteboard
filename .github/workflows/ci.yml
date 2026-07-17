@@ -1,0 +1,150 @@
+name: CI
+
+# Runs on every push to a long-lived branch and on every PR into one. The PR
+# trigger is the important half: it gates merges into main.
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main, dev]
+
+# A new push to the same branch makes the in-flight run obsolete — cancel it
+# rather than paying for a result nobody will read.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: this workflow only ever reads the repo.
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Fast feedback: everything that needs no Docker and no network services.
+  # Runs first so an obvious type error fails in ~1 minute instead of after an
+  # image build.
+  # ---------------------------------------------------------------------------
+  verify:
+    name: Typecheck, lint & unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # Matches the Node in both Dockerfiles. CI drifting off the runtime
+          # version is how "works in CI, breaks in prod" starts.
+          node-version: 22
+          cache: npm
+          # This repo is four npm packages joined by path aliases, not a
+          # workspace — so every lockfile has to be listed for the cache key.
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+            backend/package-lock.json
+            loadtest/package-lock.json
+
+      # --- shared: the protocol both sides execute ---------------------------
+      # `npm ci` everywhere, never `npm install`: ci installs exactly what the
+      # lockfile pins and fails if the lockfile is out of sync with
+      # package.json. install would happily resolve something newer and make CI
+      # test a different tree than the one you committed.
+      - name: Install root tooling
+        run: npm ci
+
+      - name: Test shared protocol
+        run: npm test
+
+      - name: Typecheck shared
+        run: npm run typecheck:shared
+
+      # --- frontend ----------------------------------------------------------
+      - name: Install frontend
+        run: npm ci
+        working-directory: frontend
+
+      # `tsc -b` is the ONLY thing that typechecks the frontend: Vite and
+      # esbuild strip types without checking them, which is exactly how this
+      # repo once accumulated type errors while appearing to run fine.
+      - name: Typecheck frontend
+        run: npx tsc -b
+        working-directory: frontend
+
+      - name: Lint frontend
+        run: npm run lint
+        working-directory: frontend
+
+      # --- backend -----------------------------------------------------------
+      - name: Install backend
+        run: npm ci
+        working-directory: backend
+
+      - name: Typecheck backend
+        run: npm run typecheck
+        working-directory: backend
+
+      # --- loadtest ----------------------------------------------------------
+      # It imports the same shared/ types as the app, so typechecking it is what
+      # catches the harness silently drifting out of date with the protocol.
+      - name: Install loadtest
+        run: npm ci
+        working-directory: loadtest
+
+      - name: Typecheck loadtest
+        run: npm run typecheck
+        working-directory: loadtest
+
+  # ---------------------------------------------------------------------------
+  # The real thing: build the production images and run the whole stack —
+  # nginx + compiled backend + Postgres — then drive it over HTTP and
+  # WebSocket. This is what proves the pieces agree, which unit tests cannot.
+  # ---------------------------------------------------------------------------
+  e2e:
+    name: Production stack e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Don't burn minutes building images if the types are already broken.
+    needs: verify
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          # The smoke test has zero dependencies — it uses Node 22's global
+          # fetch and global WebSocket — so there is nothing to install here.
+          node-version: 22
+
+      # docker-compose.prod.yaml reads every port, hostname and credential from
+      # .env. Real secrets would come from GitHub Secrets; this stack is
+      # ephemeral and unreachable from outside the runner, so a throwaway
+      # password is honest and keeps the workflow self-contained.
+      - name: Create CI .env
+        run: |
+          cp .env.example .env
+          sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-throwaway-password/' .env
+
+      # Reuse layers across runs. Without this every run re-downloads and
+      # re-installs node_modules inside the image.
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and start the production stack
+        # --wait blocks until every service reports healthy, using the
+        # HEALTHCHECKs in the Dockerfiles and the pg_isready check in compose.
+        # That removes the "sleep 30 and hope" flakiness this kind of job
+        # usually has.
+        run: docker compose -f docker-compose.prod.yaml up --build --wait --wait-timeout 180 -d
+
+      - name: Smoke test
+        run: node scripts/smoke-test.mjs http://localhost:8080
+
+      # Only on failure, and only then — a green run should stay quiet.
+      - name: Dump logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yaml logs --no-color --tail 200
+
+      - name: Tear down
+        if: always()
+        run: docker compose -f docker-compose.prod.yaml down -v

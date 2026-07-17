@@ -22,6 +22,15 @@
   border-width: 2px;
 }
 
+/* The toolbar is permanently visible at this width (see ToolMenu/styles.css and
+   DESKTOP_MEDIA_QUERY in constants/ui.ts), so the hamburger has nothing to do.
+   It used to remain on screen at all sizes: visible, focusable, and inert. */
+@media screen and (min-width: 1024px) {
+  .hamburger-button {
+    display: none;
+  }
+}
+
 .hamburger-button span {
   width: 70%;
   height: 0.2em;
