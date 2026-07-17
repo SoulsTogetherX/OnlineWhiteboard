@@ -9,6 +9,7 @@ import {
   loadEventsSince,
   type DrawEvent,
 } from "@/db/eventRepository"
+import { pruneStaleRooms } from "@/db/roomRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 
 import type { ClientSocket } from "@/types/ClientSocket"
@@ -41,6 +42,16 @@ const MAX_EVENT_BUFFER = 200
 // window; anything past this is a client that isn't waiting for "ready", and
 // buffering it without limit would be a memory-growth vector on a slow DB.
 const MAX_PENDING_MESSAGES = 64
+
+// A room whose last save is older than this and that nobody is in gets deleted
+// (with its snapshots and events, via ON DELETE CASCADE). This is the only
+// unbounded table left — a row per room ever visited — so it needs an explicit
+// retention policy the way the event log and snapshots don't.
+const ROOM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
+
+// How often the cleanup sweep runs. Daily is plenty — retention is measured in
+// months, so the exact cadence doesn't matter, only that it happens.
+const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 //#endregion
 
 //#region Type Defs
@@ -65,6 +76,7 @@ type RoomState = {
 export default class RoomManager {
   private rooms = new Map<string, RoomState>()
   private heartbeatTimer?: NodeJS.Timeout
+  private cleanupTimer?: NodeJS.Timeout
 
   constructor(private readonly wss: WebSocketServer) {}
 
@@ -88,6 +100,39 @@ export default class RoomManager {
         clearInterval(this.heartbeatTimer)
       }
     })
+  }
+
+  // Starts the stale-room cleanup sweep. Kept separate from start() and called
+  // by the server only AFTER migrations have run, because — unlike the heartbeat
+  // — this touches the database, and start() runs before the schema exists
+  // (it's wired up during configureWebSockets, ahead of runMigrations). Runs
+  // once now to clear anything accumulated while the server was down, then daily.
+  startCleanup(): void {
+    void this.cleanupStaleRooms()
+    this.cleanupTimer = setInterval(
+      () => void this.cleanupStaleRooms(),
+      CLEANUP_INTERVAL_MS,
+    )
+  }
+
+  private async cleanupStaleRooms(): Promise<void> {
+    const cutoff = new Date(Date.now() - ROOM_RETENTION_MS)
+    // Never delete a room someone is currently in — see pruneStaleRooms.
+    const activeRoomIds = [...this.rooms.keys()]
+
+    try {
+      const deleted = await pruneStaleRooms(cutoff, activeRoomIds)
+      if (deleted > 0) {
+        console.log(
+          `cleanup: removed ${deleted} room(s) untouched since ` +
+            cutoff.toISOString(),
+        )
+      }
+    } catch (error) {
+      // A failed sweep is not fatal — the rows are harmless and the next sweep
+      // retries. Log and carry on rather than taking the server down.
+      console.error("Stale-room cleanup failed:", error)
+    }
   }
 
   // Loading a room can hit Postgres, so this is async — and that `await` used
@@ -361,6 +406,7 @@ export default class RoomManager {
   // nothing reschedules while we drain.
   async shutdown(): Promise<void> {
     clearInterval(this.heartbeatTimer)
+    clearInterval(this.cleanupTimer)
     for (const room of this.rooms.values()) {
       clearInterval(room.saveTimer)
       clearInterval(room.snapshotTimer)

@@ -71,6 +71,11 @@ process.on("SIGINT", () => void shutdown("SIGINT"))
 async function start(): Promise<void> {
   await runMigrations()
 
+  // Only now that the schema exists is it safe to start the cleanup sweep, which
+  // queries the rooms table. (The heartbeat, started earlier in
+  // configureWebSockets, touches no database and so runs before this.)
+  roomManager.startCleanup()
+
   server.listen(port, () => {
     console.log(`Server is running on ${process.env.API_BASE}:${port}`)
   })
