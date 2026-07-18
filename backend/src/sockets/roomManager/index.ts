@@ -14,8 +14,17 @@ import {
 import { pruneStaleRooms } from "@/db/roomRepository"
 import { deleteExpiredSessions } from "@/db/sessionRepository"
 import { ensureMembership } from "@/db/roomMembersRepository"
+import {
+  countCheckpoints,
+  createCheckpoint,
+  deleteCheckpoint,
+  listCheckpoints,
+  loadCheckpoint,
+  maxCheckpointsPerRoom,
+  oldestCheckpointRevision,
+} from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { canDraw } from "@shared/types/identity"
+import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
@@ -254,6 +263,9 @@ export default class RoomManager {
       participants: this.roster(room),
     })
     this.sendSnapshot(socket, room)
+    // The room's saved versions, so the client can populate its checkpoint panel
+    // and offer playback immediately.
+    void this.sendCheckpoints(socket, room)
     this.broadcastPresence(room)
 
     // Drain in arrival order, then switch to handling inline. Draining before
@@ -367,6 +379,23 @@ export default class RoomManager {
 
     if (message.type === "vote") {
       this.handleVote(socket, room, message.voteId, message.approve)
+      return
+    }
+
+    if (message.type === "create_checkpoint") {
+      void this.handleCreateCheckpoint(socket, room, message.name)
+      return
+    }
+    if (message.type === "restore_checkpoint") {
+      void this.handleRestoreCheckpoint(socket, room, message.checkpointId)
+      return
+    }
+    if (message.type === "delete_checkpoint") {
+      void this.handleDeleteCheckpoint(socket, room, message.checkpointId)
+      return
+    }
+    if (message.type === "request_playback") {
+      void this.handlePlayback(socket, room, message.fromCheckpointId)
       return
     }
 
@@ -627,6 +656,202 @@ export default class RoomManager {
   }
   //#endregion
 
+  //#region Checkpoints & playback
+  // Saves the current canvas as a named, durable version. Editors only. The
+  // pixels + revision are captured SYNCHRONOUSLY before any await, so a stroke
+  // arriving mid-save can't make the stored bytes and revision disagree. Pending
+  // events are flushed first so the log is consistent up to this point.
+  private async handleCreateCheckpoint(
+    socket: ClientSocket,
+    room: RoomState,
+    name: string,
+  ): Promise<void> {
+    if (!hasEditAuthority(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only editors can save checkpoints.",
+      })
+      return
+    }
+    const trimmed = typeof name === "string" ? name.trim().slice(0, 60) : ""
+    if (trimmed.length === 0) {
+      this.send(socket, { type: "error", message: "Checkpoint needs a name." })
+      return
+    }
+
+    const pixels = new Uint8ClampedArray(room.pixels)
+    const revision = room.revision
+
+    try {
+      if ((await countCheckpoints(room.roomId)) >= maxCheckpointsPerRoom()) {
+        this.send(socket, {
+          type: "error",
+          message: `A room can keep at most ${maxCheckpointsPerRoom()} checkpoints — delete one first.`,
+        })
+        return
+      }
+      await this.flushEvents(room.roomId)
+      await createCheckpoint({
+        roomId: room.roomId,
+        name: trimmed,
+        revision,
+        pixels,
+        createdBy: socket.userId,
+      })
+      await this.broadcastCheckpoints(room)
+    } catch (error) {
+      console.error(`Failed to create checkpoint in ${room.roomId}:`, error)
+      this.send(socket, {
+        type: "error",
+        message: "Could not save checkpoint.",
+      })
+    }
+  }
+
+  // Jumps the live canvas back to a saved version. Editors only. The restore is
+  // applied as a fresh authoritative state: set the pixels, advance the revision,
+  // persist a snapshot, and broadcast that snapshot so every client replaces
+  // their canvas. It is NOT logged as an instruction — the new snapshot IS the
+  // state, and recovery uses the latest snapshot, so this stays consistent.
+  private async handleRestoreCheckpoint(
+    socket: ClientSocket,
+    room: RoomState,
+    checkpointId: string,
+  ): Promise<void> {
+    if (!hasEditAuthority(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only editors can restore checkpoints.",
+      })
+      return
+    }
+
+    try {
+      const checkpoint = await loadCheckpoint(room.roomId, checkpointId)
+      if (!checkpoint) {
+        this.send(socket, {
+          type: "error",
+          message: "That checkpoint no longer exists.",
+        })
+        return
+      }
+
+      room.pixels.set(checkpoint.pixels)
+      room.revision += 1
+      room.isDirty = true
+      room.recentEditors.set(socket.connectionId, Date.now())
+
+      // Persist immediately so the restore is durable and becomes the new base,
+      // then push it to everyone as a snapshot.
+      await this.saveRoom(room.roomId)
+      this.broadcast(room, this.makeSnapshotMessage(room))
+    } catch (error) {
+      console.error(`Failed to restore checkpoint in ${room.roomId}:`, error)
+      this.send(socket, { type: "error", message: "Could not restore." })
+    }
+  }
+
+  private async handleDeleteCheckpoint(
+    socket: ClientSocket,
+    room: RoomState,
+    checkpointId: string,
+  ): Promise<void> {
+    if (!hasEditAuthority(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only editors can delete checkpoints.",
+      })
+      return
+    }
+    try {
+      await deleteCheckpoint(room.roomId, checkpointId)
+      await this.broadcastCheckpoints(room)
+    } catch (error) {
+      console.error(`Failed to delete checkpoint in ${room.roomId}:`, error)
+    }
+  }
+
+  // Sends the requester the data to animate history: a base canvas plus the
+  // events after it. Read-only, so anyone in the room (including viewers) may
+  // watch. From a checkpoint, the base is that checkpoint; otherwise the latest
+  // rolling snapshot (i.e. "replay what happened since the last save").
+  private async handlePlayback(
+    socket: ClientSocket,
+    room: RoomState,
+    fromCheckpointId: string | undefined,
+  ): Promise<void> {
+    try {
+      // Flush so the log the client replays is up to date.
+      await this.flushEvents(room.roomId)
+
+      let base: Uint8ClampedArray
+      let baseRevision: number
+      if (fromCheckpointId) {
+        const checkpoint = await loadCheckpoint(room.roomId, fromCheckpointId)
+        if (!checkpoint) {
+          this.send(socket, {
+            type: "error",
+            message: "That checkpoint no longer exists.",
+          })
+          return
+        }
+        base = checkpoint.pixels
+        baseRevision = checkpoint.revision
+      } else {
+        const stored = await loadCanvas(room.roomId)
+        base = stored.pixels
+        baseRevision = stored.revision
+      }
+
+      const events = await loadEventsSince(room.roomId, baseRevision)
+      this.send(socket, {
+        type: "playback",
+        roomId: room.roomId,
+        base: Buffer.from(base).toString("base64"),
+        baseRevision,
+        steps: events.map((event) => ({
+          revision: event.revision,
+          instruction: event.instruction,
+        })),
+      })
+    } catch (error) {
+      console.error(`Failed to build playback for ${room.roomId}:`, error)
+      this.send(socket, { type: "error", message: "Could not load history." })
+    }
+  }
+
+  private async broadcastCheckpoints(room: RoomState): Promise<void> {
+    const checkpoints = await this.checkpointList(room.roomId)
+    this.broadcast(room, {
+      type: "checkpoints",
+      roomId: room.roomId,
+      checkpoints,
+    })
+  }
+
+  private async sendCheckpoints(
+    socket: ClientSocket,
+    room: RoomState,
+  ): Promise<void> {
+    this.send(socket, {
+      type: "checkpoints",
+      roomId: room.roomId,
+      checkpoints: await this.checkpointList(room.roomId),
+    })
+  }
+
+  // Metadata list with createdAt serialised to an ISO string for the wire.
+  private async checkpointList(roomId: string) {
+    const rows = await listCheckpoints(roomId)
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      revision: row.revision,
+      createdAt: row.createdAt.toISOString(),
+    }))
+  }
+  //#endregion
+
   // Writes the room's buffered events to the log in one batch. Kept safe against
   // overlap (the flush timer can fire while a previous flush is still awaiting)
   // by an isFlushing guard, and against loss by putting a failed batch back at
@@ -743,7 +968,10 @@ export default class RoomManager {
     }
 
     try {
-      await saveCanvas(room.roomId, room.pixels, room.revision)
+      // Keep events newer than the oldest checkpoint so history stays replayable
+      // from it; with no checkpoints this is null and compaction is fully bounded.
+      const retainAfter = await oldestCheckpointRevision(room.roomId)
+      await saveCanvas(room.roomId, room.pixels, room.revision, retainAfter)
       room.isDirty = false
     } catch (error) {
       console.error(`Failed to save room ${room.roomId}:`, error)

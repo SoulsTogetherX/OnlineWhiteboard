@@ -55,10 +55,16 @@ export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
 // mid-save can never leave a room without a snapshot, two snapshots both
 // claiming to be current, or (the compaction hazard) events deleted before the
 // snapshot that replaced them was durably committed.
+// `retainEventsAfter` is the compaction floor for the event log: events with a
+// revision GREATER than it are kept even though the snapshot supersedes them.
+// The room manager passes the oldest checkpoint's revision here, which is what
+// lets history be replayed forward from any checkpoint. null (no checkpoints) =
+// prune everything the snapshot covers, the original bounded behaviour.
 export async function saveCanvas(
   roomId: string,
   pixels: Uint8ClampedArray,
   revision: number,
+  retainEventsAfter: number | null = null,
 ): Promise<void> {
   const buffer = Buffer.from(pixels)
 
@@ -106,22 +112,25 @@ export async function saveCanvas(
       .where("revision", "<", revision)
       .execute()
 
-    // COMPACTION. Every event at or below this revision is now baked into the
-    // snapshot we just wrote, so it can never be needed again: recovery is
-    // "latest snapshot + events with revision > snapshot.revision", and these
-    // are ≤ it. Deleting them here bounds the event log to just the drawing done
-    // since the last checkpoint (~one save interval) instead of growing without
-    // limit. It's inside the same transaction as the snapshot write, so the log
-    // is only ever trimmed once its replacement is durably committed.
+    // COMPACTION. Every event at or below the snapshot revision is baked into
+    // the snapshot, so recovery ("latest snapshot + events after it") never needs
+    // them. Normally we delete all of them, bounding the log.
     //
-    // Tradeoff worth naming: this discards fine-grained history older than the
-    // last snapshot. That's the right call for a whiteboard (bounded storage
-    // beats server-side infinite undo); a system that wanted time-travel would
-    // keep these rows and snapshot without pruning.
+    // BUT for time-travel we keep the events newer than the oldest checkpoint, so
+    // history can be replayed forward from that checkpoint. The prune ceiling is
+    // therefore min(revision, oldest-checkpoint-revision): with no checkpoints it
+    // stays `revision` (fully bounded); with checkpoints it drops to the oldest
+    // one, retaining the events between it and now. Storage is then bounded by
+    // how far back the oldest checkpoint is — which an editor controls by
+    // deleting old checkpoints. Atomic with the snapshot write, as before.
+    const pruneCeiling =
+      retainEventsAfter === null
+        ? revision
+        : Math.min(revision, retainEventsAfter)
     await trx
       .deleteFrom("draw_events")
       .where("room_id", "=", roomId)
-      .where("revision", "<=", revision)
+      .where("revision", "<=", pruneCeiling)
       .execute()
   })
 }

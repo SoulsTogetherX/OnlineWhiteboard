@@ -18,7 +18,9 @@ import {
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
+  CheckpointInfo,
   ClientSocketMessage,
+  PlaybackStep,
   RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
@@ -46,6 +48,13 @@ export interface ActiveVote {
   deadline: number
 }
 
+// The payload to animate a history playback.
+export interface PlaybackData {
+  base: string
+  baseRevision: number
+  steps: PlaybackStep[]
+}
+
 export interface UseRoomConnectionResult {
   roomId: string
   setRoomId: (val: string) => void
@@ -59,6 +68,15 @@ export interface UseRoomConnectionResult {
   activeVote: ActiveVote | null
   requestClear: () => void
   castVote: (approve: boolean) => void
+  // Checkpoints (saved versions) + history playback.
+  checkpoints: CheckpointInfo[]
+  createCheckpoint: (name: string) => void
+  restoreCheckpoint: (checkpointId: string) => void
+  deleteCheckpoint: (checkpointId: string) => void
+  requestPlayback: (fromCheckpointId?: string) => void
+  // The data for the current playback (base canvas + steps to animate), or null.
+  playback: PlaybackData | null
+  clearPlayback: () => void
   // Live cursor positions keyed by connectionId. A REF, not state: cursor moves
   // arrive many times a second and must not trigger a React render each time —
   // the overlay reads this directly in a requestAnimationFrame loop.
@@ -88,6 +106,8 @@ export default function useRoomConnection(
   const [self, setSelf] = useState<Participant | null>(null)
   const [socketLabel, setSocketLabel] = useState<string>("Connecting")
   const [activeVote, setActiveVote] = useState<ActiveVote | null>(null)
+  const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([])
+  const [playback, setPlayback] = useState<PlaybackData | null>(null)
 
   // Cursor positions live in a ref (mutated on every move, no render); cursorIds
   // is the render-driving set that only changes on appear/disappear.
@@ -226,6 +246,22 @@ export default function useRoomConnection(
           )
           break
 
+        case "checkpoints":
+          if (message.roomId === roomId) {
+            setCheckpoints(message.checkpoints)
+          }
+          break
+
+        case "playback":
+          if (message.roomId === roomId) {
+            setPlayback({
+              base: message.base,
+              baseRevision: message.baseRevision,
+              steps: message.steps,
+            })
+          }
+          break
+
         case "error":
           console.error(message.message)
           break
@@ -308,6 +344,32 @@ export default function useRoomConnection(
     [roomId, send],
   )
 
+  const createCheckpoint = useCallback(
+    (name: string) => {
+      send({ type: "create_checkpoint", roomId, name })
+    },
+    [roomId, send],
+  )
+  const restoreCheckpoint = useCallback(
+    (checkpointId: string) => {
+      send({ type: "restore_checkpoint", roomId, checkpointId })
+    },
+    [roomId, send],
+  )
+  const deleteCheckpoint = useCallback(
+    (checkpointId: string) => {
+      send({ type: "delete_checkpoint", roomId, checkpointId })
+    },
+    [roomId, send],
+  )
+  const requestPlayback = useCallback(
+    (fromCheckpointId?: string) => {
+      send({ type: "request_playback", roomId, fromCheckpointId })
+    },
+    [roomId, send],
+  )
+  const clearPlayback = useCallback(() => setPlayback(null), [])
+
   const loadRoom = useCallback(
     (nextRoomId: string) => {
       const trimmedRoomId = nextRoomId.trim()
@@ -322,6 +384,8 @@ export default function useRoomConnection(
       setParticipants([])
       setSelf(null)
       setActiveVote(null)
+      setCheckpoints([])
+      setPlayback(null)
       cursorsRef.current.clear()
       setCursorIds([])
       setSocketLabel("Connecting")
@@ -342,6 +406,13 @@ export default function useRoomConnection(
     activeVote,
     requestClear,
     castVote,
+    checkpoints,
+    createCheckpoint,
+    restoreCheckpoint,
+    deleteCheckpoint,
+    requestPlayback,
+    playback,
+    clearPlayback,
     cursorsRef,
     cursorIds,
   }

@@ -13,6 +13,8 @@ import RoomStatus from "@/components/RoomStatus"
 import PresenceRoster from "@/components/PresenceRoster"
 import VotePrompt from "@/components/VotePrompt"
 import Dashboard from "@/components/Dashboard"
+import CheckpointsPopup from "@/components/Popups/CheckpointsPopup"
+import PlaybackViewer from "@/components/PlaybackViewer"
 import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
@@ -33,6 +35,8 @@ import { DEFAULT_DRAW_ACTION, DESKTOP_MEDIA_QUERY } from "@/constants/ui"
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
+
+import { hasEditAuthority } from "@shared/types/identity"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
 import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
@@ -112,6 +116,7 @@ export default function App() {
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
   const [isMembersOpen, setIsMembersOpen] = useState<boolean>(false)
   const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false)
+  const [isCheckpointsOpen, setIsCheckpointsOpen] = useState<boolean>(false)
   const {
     roomId,
     participants,
@@ -123,6 +128,13 @@ export default function App() {
     activeVote,
     requestClear,
     castVote,
+    checkpoints,
+    createCheckpoint,
+    restoreCheckpoint,
+    deleteCheckpoint,
+    requestPlayback,
+    playback,
+    clearPlayback,
     cursorsRef,
     cursorIds,
   } = useRoomConnection(canvasRef, () => setIsRoomOpen(false), user?.id ?? null)
@@ -197,6 +209,14 @@ export default function App() {
         participants={participants}
         selfConnectionId={self?.connectionId ?? null}
       />
+      {/* History is available to everyone — replay is read-only. */}
+      <button
+        type="button"
+        className="history-button"
+        onClick={() => setIsCheckpointsOpen(true)}
+      >
+        History
+      </button>
       {user && (
         <>
           <button
@@ -296,6 +316,20 @@ export default function App() {
           setIsDashboardOpen(false)
         }}
       />
+      <CheckpointsPopup
+        isOpen={isCheckpointsOpen}
+        checkpoints={checkpoints}
+        canEdit={hasEditAuthority(self?.role ?? "guest")}
+        onClose={() => setIsCheckpointsOpen(false)}
+        onCreate={createCheckpoint}
+        onRestore={restoreCheckpoint}
+        onDelete={deleteCheckpoint}
+        onReplay={(id) => {
+          requestPlayback(id)
+          setIsCheckpointsOpen(false)
+        }}
+      />
+      <PlaybackViewer playback={playback} onClose={clearPlayback} />
       <AuthPopup
         isOpen={isAuthOpen}
         onClose={() => setIsAuthOpen(false)}

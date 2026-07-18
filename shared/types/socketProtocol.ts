@@ -44,10 +44,53 @@ export type ClientSocketMessage =
       voteId: string
       approve: boolean
     }
+  | {
+      // Save the current canvas as a named, durable version. Editors only.
+      type: "create_checkpoint"
+      roomId: string
+      name: string
+    }
+  | {
+      // Jump the live canvas back to a saved version. Editors only; broadcast to
+      // everyone as a fresh snapshot.
+      type: "restore_checkpoint"
+      roomId: string
+      checkpointId: string
+    }
+  | {
+      // Delete a saved version. Editors only.
+      type: "delete_checkpoint"
+      roomId: string
+      checkpointId: string
+    }
+  | {
+      // Ask for the data to animate history: a base canvas plus the events after
+      // it. `fromCheckpointId` chooses the starting point; omitted means "the
+      // earliest history the server still retains".
+      type: "request_playback"
+      roomId: string
+      fromCheckpointId?: string
+    }
 
 // Room-wide actions that require consensus. Kept as its own type so resize
 // (P1d) slots in beside clear without touching the message shapes.
 export type RoomAction = "clear"
+
+// A saved version's metadata as seen by clients (no pixel bytes — those are only
+// materialised on restore/playback). createdAt is an ISO string over the wire.
+export type CheckpointInfo = {
+  id: string
+  name: string
+  revision: number
+  createdAt: string
+}
+
+// One step in a playback: the instruction that was applied and the revision it
+// produced. The client animates by applying these onto the base in order.
+export type PlaybackStep = {
+  revision: number
+  instruction: DrawInstruction
+}
 
 export type ServerSocketMessage =
   | {
@@ -128,6 +171,22 @@ export type ServerSocketMessage =
       roomId: string
       voteId: string
       approved: boolean
+    }
+  | {
+      // The room's saved versions. Sent on join and whenever the list changes
+      // (a checkpoint is created, restored-from, or deleted).
+      type: "checkpoints"
+      roomId: string
+      checkpoints: CheckpointInfo[]
+    }
+  | {
+      // The data to animate history, sent only to the requester: a base canvas
+      // (base64 RGBA) at baseRevision, plus the ordered events to replay onto it.
+      type: "playback"
+      roomId: string
+      base: string
+      baseRevision: number
+      steps: PlaybackStep[]
     }
   | {
       type: "pong"
