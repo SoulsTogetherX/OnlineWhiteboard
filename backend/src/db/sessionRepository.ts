@@ -5,7 +5,8 @@ import type { User } from "./userRepository"
 //#endregion
 
 //#region Repository
-// Stores the HASH of a session token as the primary key (see migration 004).
+// Stores the HASH of a session token as the primary key (see the sessions table
+// in 001_initial_schema).
 // The caller hashes the raw cookie token before calling in, so this layer never
 // sees the token itself.
 export async function createSession(input: {

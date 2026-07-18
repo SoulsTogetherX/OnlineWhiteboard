@@ -32,8 +32,7 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>
 // is the room's current head — the count of applied instructions — kept in sync
 // with the in-memory RoomState.
 //
-// Ownership/membership attaches via the room_members table (migration 006), not
-// here. `title` is provisioned but not yet written by any code path: the read
+// Ownership/membership attaches via the room_members table, not here. `title` is provisioned but not yet written by any code path: the read
 // path (listRoomsForUser) already selects it, so adding a "name your room"
 // feature is a UI change rather than a migration. It reads as null today.
 export interface RoomsTable {
@@ -91,7 +90,8 @@ export interface UsersTable {
 }
 
 // Server-side session store. `id` is the SHA-256 hash of the cookie token, not
-// the token itself (see migration 004). A row exists only while a login is live.
+// the token itself (see 001_initial_schema). A row exists only while a login is
+// live.
 export interface SessionsTable {
   id: string
   user_id: string
@@ -107,7 +107,8 @@ export interface SavedColorsTable {
 }
 
 // A user's role in a room (the users<->rooms many-to-many). `role` is one of
-// owner/editor/viewer, constrained in the database (migration 006).
+// owner/editor/viewer, constrained in the database by a CHECK constraint, with
+// a partial unique index enforcing at most one owner per room.
 export interface RoomMembersTable {
   room_id: string
   user_id: string
@@ -116,7 +117,7 @@ export interface RoomMembersTable {
   updated_at: Timestamp
 }
 
-// A durable, named full-canvas version (migration 007). rgba is the pixel buffer
+// A durable, named full-canvas version. rgba is the pixel buffer
 // at `revision`. created_by is nullable (ON DELETE SET NULL) — the version
 // outlives the user who made it.
 export interface CheckpointsTable {
@@ -134,8 +135,9 @@ export interface CheckpointsTable {
 
 //#region Database
 // The top-level shape Kysely is generic over: property name = table name.
-// `canvases` is intentionally absent — migration 002 drops it after moving its
-// data into rooms + canvas_snapshots.
+// There is intentionally no `canvases` table: the original single-table design
+// was superseded by rooms + canvas_snapshots before the migrations were squashed
+// into one baseline, so it never exists on a database built from this schema.
 export interface Database {
   rooms: RoomsTable
   canvas_snapshots: CanvasSnapshotsTable

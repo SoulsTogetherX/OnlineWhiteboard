@@ -18,13 +18,7 @@ import { Migrator, type Migration, type MigrationProvider } from "kysely"
 
 import { db } from "./pool"
 
-import * as m001 from "./migrations/001_baseline"
-import * as m002 from "./migrations/002_normalize"
-import * as m003 from "./migrations/003_draw_events"
-import * as m004 from "./migrations/004_auth"
-import * as m005 from "./migrations/005_saved_colors"
-import * as m006 from "./migrations/006_room_members"
-import * as m007 from "./migrations/007_checkpoints"
+import * as m001 from "./migrations/001_initial_schema"
 //#endregion
 
 //#region Provider
@@ -32,14 +26,13 @@ import * as m007 from "./migrations/007_checkpoints"
 // sorts lexicographically — hence the zero-padded numeric prefix. Never rename
 // a key once it has run anywhere: Kysely would see the old name as a migration
 // that has vanished and refuse to proceed.
+//
+// There is one entry because the original seven incremental migrations were
+// squashed into a single baseline (no deployed database needed their
+// step-by-step history). Adding the NEXT schema change means adding
+// 002_*.ts here — not editing 001, which has now run.
 const migrations: Record<string, Migration> = {
-  "001_baseline": m001,
-  "002_normalize": m002,
-  "003_draw_events": m003,
-  "004_auth": m004,
-  "005_saved_colors": m005,
-  "006_room_members": m006,
-  "007_checkpoints": m007,
+  "001_initial_schema": m001,
 }
 
 class ExplicitMigrationProvider implements MigrationProvider {
