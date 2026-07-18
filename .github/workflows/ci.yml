@@ -98,6 +98,14 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
+      # The frontend's own unit tests (its pure colour-space maths). These
+      # existed and passed locally but were never executed here, so nothing
+      # would have caught them breaking — a test CI doesn't run is a test that
+      # rots silently.
+      - name: Test frontend
+        run: npm test
+        working-directory: frontend
+
       # --- backend -----------------------------------------------------------
       - name: Install backend
         run: npm ci
