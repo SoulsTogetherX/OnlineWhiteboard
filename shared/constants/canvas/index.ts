@@ -17,6 +17,14 @@ const DEFAULT_STROKE_SIZE = 1
 const MAX_STROKE_SIZE = 32
 //#endregion
 
+//#region Spray
+// The spray can scatters `density` pixels within `radius` of the pointer per
+// puff. Both are capped so a crafted instruction can't ask for a huge radius or
+// a thousand pixels per puff and turn one message into a fill.
+const MAX_SPRAY_RADIUS = 40
+const MAX_SPRAY_DENSITY = 64
+//#endregion
+
 //#region Exports
 export {
   CANVAS_WIDTH,
@@ -25,5 +33,7 @@ export {
   DEFAULT_COLOR,
   DEFAULT_STROKE_SIZE,
   MAX_STROKE_SIZE,
+  MAX_SPRAY_RADIUS,
+  MAX_SPRAY_DENSITY,
 }
 //#endregion

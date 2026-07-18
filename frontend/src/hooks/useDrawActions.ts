@@ -16,6 +16,12 @@ import {
   handleDrawFillStart,
 } from "@shared/utils/handleFillProtocall"
 import {
+  handleDrawSprayFinish,
+  handleDrawSprayLeave,
+  handleDrawSprayMotion,
+  handleDrawSprayStart,
+} from "@shared/utils/handleSprayProtocol"
+import {
   getDirectColor,
   getToolColor,
 } from "@shared/utils/helperProtocallMethods"
@@ -115,6 +121,14 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillStart(canvas, baseInstruction.current, da, ev)
+      case "spray":
+        return handleDrawSprayStart(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+          record.current,
+        )
     }
   }
   const handleDrawActionFinish = (
@@ -146,6 +160,14 @@ export default function useDrawActions(
           record.current,
         )
         break
+      case "spray":
+        instruction = handleDrawSprayFinish(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+        )
+        break
     }
 
     if (record.current.length > 0) {
@@ -175,6 +197,14 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillMotion(canvas, baseInstruction.current, da, ev)
+      case "spray":
+        return handleDrawSprayMotion(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+          record.current,
+        )
     }
   }
   const handleDrawActionLeave = (
@@ -198,6 +228,14 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillLeave(canvas, baseInstruction.current, da, ev)
+      case "spray":
+        return handleDrawSprayLeave(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+          record.current,
+        )
     }
   }
 

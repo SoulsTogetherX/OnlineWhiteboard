@@ -3,6 +3,8 @@ import {
   CANVAS_BYTES,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  MAX_SPRAY_DENSITY,
+  MAX_SPRAY_RADIUS,
   MAX_STROKE_SIZE,
 } from "../constants/canvas"
 
@@ -74,6 +76,23 @@ function isValidSize(value: unknown): boolean {
   )
 }
 
+// Bounded positive integer, used for the spray radius/density. The upper bound
+// is the abuse guard — same reasoning as the stroke-size cap.
+function isBoundedInt(value: unknown, min: number, max: number): boolean {
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= min &&
+    value <= max
+  )
+}
+
+// The spray seed is any 32-bit unsigned integer (it just drives the PRNG); the
+// only requirement is that it's a finite non-negative integer in range.
+function isValidSeed(value: unknown): boolean {
+  return isBoundedInt(value, 0, 0xffffffff)
+}
+
 // A patch index is a raw byte offset into the RGBA buffer, so it must be in
 // range AND 4-byte aligned — an unaligned index would smear one color across
 // two pixels' channels.
@@ -128,6 +147,20 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
       return isValidVec(candidate.prevPos) && isValidVec(candidate.nextPos)
     case "bucket":
       return isValidVec(candidate.pos)
+    case "spray": {
+      const spray = candidate as {
+        pos?: unknown
+        radius?: unknown
+        density?: unknown
+        seed?: unknown
+      }
+      return (
+        isValidVec(spray.pos) &&
+        isBoundedInt(spray.radius, 1, MAX_SPRAY_RADIUS) &&
+        isBoundedInt(spray.density, 1, MAX_SPRAY_DENSITY) &&
+        isValidSeed(spray.seed)
+      )
+    }
     case "patch":
       return (
         Array.isArray(candidate.entries) && candidate.entries.every(isValidPatchEntry)

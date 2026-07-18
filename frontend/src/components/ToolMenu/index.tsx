@@ -125,6 +125,24 @@ export default function ToolMenu({
         <li>
           <button
             type="button"
+            className={toolClass("spray")}
+            aria-pressed={selectedTool === "spray"}
+            onClick={() => setTool("spray")}
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M3 2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5a1 1 0 0 1 .5.866l.5.289a2 2 0 0 1 1 1.732V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.387a2 2 0 0 1 1-1.732l.5-.289A1 1 0 0 1 5 3.5V2zm7.5 1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m2-1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-2 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m3 0a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1.5 2.5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0M14 5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0" />
+            </svg>
+            <span className="tool-tip">Spray Can</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
             className={toolClass("eyedropper")}
             aria-pressed={selectedTool === "eyedropper"}
             onClick={() => setTool("eyedropper")}
