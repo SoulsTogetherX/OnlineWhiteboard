@@ -28,10 +28,14 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>
 //#endregion
 
 //#region Table Rows
-// A room's identity and metadata, split apart from its pixel data. This is
-// where per-room settings live now (title) and where ownership/membership will
-// attach later. `revision` is the room's current head — the count of applied
-// instructions — kept in sync with the in-memory RoomState.
+// A room's identity and metadata, split apart from its pixel data. `revision`
+// is the room's current head — the count of applied instructions — kept in sync
+// with the in-memory RoomState.
+//
+// Ownership/membership attaches via the room_members table (migration 006), not
+// here. `title` is provisioned but not yet written by any code path: the read
+// path (listRoomsForUser) already selects it, so adding a "name your room"
+// feature is a UI change rather than a migration. It reads as null today.
 export interface RoomsTable {
   id: string
   title: ColumnType<string | null, string | null | undefined, string | null>

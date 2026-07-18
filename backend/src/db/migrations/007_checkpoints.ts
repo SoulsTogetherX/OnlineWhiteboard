@@ -37,8 +37,15 @@ export async function up(db: Kysely<unknown>): Promise<void> {
     );
   `.execute(db)
 
-  // Listing a room's checkpoints newest-first, and finding the oldest one (for
-  // the compaction floor), both key off (room_id, created_at).
+  // Serves the common query: listing a room's checkpoints newest-first.
+  //
+  // It does NOT serve the compaction floor lookup, which orders by `revision`
+  // rather than created_at and therefore sorts. That is deliberate and cheap:
+  // checkpoints per room are hard-capped (see checkpointRepository), so that
+  // sort is over a handful of rows. The two orderings agree anyway — a
+  // checkpoint captures the current, monotonically increasing revision at an
+  // increasing wall-clock time, so oldest-by-revision and oldest-by-created_at
+  // are always the same row.
   await sql`
     CREATE INDEX checkpoints_room_idx ON checkpoints (room_id, created_at);
   `.execute(db)

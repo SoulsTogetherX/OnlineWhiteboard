@@ -62,7 +62,9 @@ export function canDraw(role: ConnectionRole): boolean {
 
 // Does this role have EDIT AUTHORITY — the bar for making/restoring checkpoints
 // and other member-only actions? Owners and editors only; guests and viewers
-// are excluded. This is the helper the time-travel checkpoints will gate on.
+// are excluded. This is what the time-travel checkpoints gate on, on both sides:
+// RoomManager rejects create/restore/delete without it, and CheckpointsPopup
+// hides those controls with the same call.
 export function hasEditAuthority(role: ConnectionRole): boolean {
   return role === "owner" || role === "editor"
 }

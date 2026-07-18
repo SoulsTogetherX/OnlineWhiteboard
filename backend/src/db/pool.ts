@@ -8,8 +8,11 @@ import type { Database } from "./schema"
 //#region Pool
 // The raw pg Pool is still the thing that actually holds TCP connections to
 // Postgres. Kysely does not manage connections itself — it borrows them from a
-// pool you give it, via a "dialect". So there is exactly one pool process-wide,
-// shared by Kysely and by any remaining raw `pool.query` callers.
+// pool you give it, via a "dialect". So there is exactly one pool process-wide.
+//
+// Every query now goes through Kysely; nothing issues raw `pool.query` any more.
+// The default export is kept only so shutdown and test teardown can close the
+// pool directly.
 const pool = new Pool({
   host: process.env.POSTGRES_HOST ?? "localhost",
   port: Number(process.env.POSTGRES_PORT ?? 5432),
