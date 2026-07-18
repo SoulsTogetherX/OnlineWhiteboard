@@ -3,7 +3,16 @@
 // presence roster can't drift apart.
 
 // A user's stored role in a room. Ordered by authority: owner > editor > viewer.
-export type RoomRole = "owner" | "editor" | "viewer"
+//
+// Declared as a const array with the union DERIVED from it, rather than the
+// other way round, because both sides need the list at RUNTIME: the backend
+// validates an incoming role against it, and the client renders it as a role
+// dropdown. Both had grown their own copy of the same three strings. Deriving
+// the type from the array means the list and the union can never drift — add a
+// role here and every exhaustive switch over RoomRole stops compiling until it
+// handles the new case.
+export const ROLES = ["owner", "editor", "viewer"] as const
+export type RoomRole = (typeof ROLES)[number]
 
 // A connection's effective role. Guests aren't members, so they get "guest" —
 // which the authorisation helpers treat as "can draw in an open room, but has no

@@ -11,13 +11,15 @@ import {
 } from "@/db/roomMembersRepository"
 import { loadCanvas } from "@/db/canvasRepository"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { ROLES, canManageRoom } from "@shared/types/identity"
 
 import type { User } from "@/db/userRepository"
 import type { RoomRole } from "@shared/types/identity"
 //#endregion
 
 //#region Validation
-const ROLES: readonly RoomRole[] = ["owner", "editor", "viewer"]
+// ROLES is the shared list, so this validation and the client's role dropdown
+// are driven by the same source and cannot disagree about what roles exist.
 function isValidRole(input: unknown): input is RoomRole {
   return typeof input === "string" && (ROLES as readonly string[]).includes(input)
 }
@@ -98,7 +100,7 @@ export default function configureRoomRoutes(app: Express): void {
       return res.status(400).json({ error: "Invalid role." })
     }
     const callerRole = await resolveRole(roomId, user.id)
-    if (callerRole !== "owner") {
+    if (!callerRole || !canManageRoom(callerRole)) {
       return res.status(403).json({ error: "Only the owner can change roles." })
     }
 
@@ -119,7 +121,7 @@ export default function configureRoomRoutes(app: Express): void {
     const { roomId, userId } = req.params
 
     const callerRole = await resolveRole(roomId, user.id)
-    if (callerRole !== "owner") {
+    if (!callerRole || !canManageRoom(callerRole)) {
       return res.status(403).json({ error: "Only the owner can remove members." })
     }
 

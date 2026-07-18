@@ -36,7 +36,7 @@ import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
-import { hasEditAuthority } from "@shared/types/identity"
+import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
 import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
@@ -160,7 +160,10 @@ export default function App() {
   // Canvas Settup
   useCanvasMotion(frameRef, canvasRef)
   // Keep the drawing lock in step with this connection's role.
-  const isViewer = self?.role === "viewer"
+  // Uses the shared canDraw rule rather than re-testing for "viewer" inline, so
+  // the client's drawing lock and the server's rejection path can never disagree
+  // about who is allowed to draw.
+  const isViewer = !canDraw(self?.role ?? "guest")
   useEffect(() => {
     viewOnlyRef.current = isViewer
   }, [isViewer])

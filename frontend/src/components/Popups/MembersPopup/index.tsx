@@ -2,6 +2,8 @@
 import PopupBase from "@/components/Popups/PopupBase"
 import useRoomMembers from "@/hooks/useRoomMembers"
 
+import { ROLES, canManageRoom } from "@shared/types/identity"
+
 import type { RoomRole } from "@shared/types/identity"
 
 import "./styles.css"
@@ -13,8 +15,6 @@ export interface MembersPopupProps {
   roomId: string
   onClose: () => void
 }
-
-const ASSIGNABLE_ROLES: RoomRole[] = ["owner", "editor", "viewer"]
 
 // Lists a room's members. The owner gets a role dropdown and a remove button per
 // member; everyone else sees a read-only roster. All decisions are enforced
@@ -28,7 +28,10 @@ export default function MembersPopup({
     roomId,
     isOpen,
   )
-  const isOwner = myRole === "owner"
+  // Same rule the server enforces (routes/rooms.ts uses canManageRoom too), so
+  // the UI can't drift from the authorisation it is reflecting. A non-member
+  // (myRole null) is treated as a guest: no management controls.
+  const isOwner = canManageRoom(myRole ?? "guest")
 
   return (
     <PopupBase isOpen={isOpen} onClose={onClose} label="Room members">
@@ -65,7 +68,7 @@ export default function MembersPopup({
                           )
                         }
                       >
-                        {ASSIGNABLE_ROLES.map((role) => (
+                        {ROLES.map((role) => (
                           <option key={role} value={role}>
                             {role}
                           </option>
