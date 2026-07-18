@@ -111,6 +111,21 @@ export interface RoomMembersTable {
   created_at: Timestamp
   updated_at: Timestamp
 }
+
+// A durable, named full-canvas version (migration 007). rgba is the pixel buffer
+// at `revision`. created_by is nullable (ON DELETE SET NULL) — the version
+// outlives the user who made it.
+export interface CheckpointsTable {
+  id: Generated<string>
+  room_id: string
+  name: string
+  revision: number
+  width: number
+  height: number
+  rgba: Buffer
+  created_by: string | null
+  created_at: Timestamp
+}
 //#endregion
 
 //#region Database
@@ -125,5 +140,6 @@ export interface Database {
   sessions: SessionsTable
   saved_colors: SavedColorsTable
   room_members: RoomMembersTable
+  checkpoints: CheckpointsTable
 }
 //#endregion

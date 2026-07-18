@@ -24,6 +24,7 @@ import * as m003 from "./migrations/003_draw_events"
 import * as m004 from "./migrations/004_auth"
 import * as m005 from "./migrations/005_saved_colors"
 import * as m006 from "./migrations/006_room_members"
+import * as m007 from "./migrations/007_checkpoints"
 //#endregion
 
 //#region Provider
@@ -38,6 +39,7 @@ const migrations: Record<string, Migration> = {
   "004_auth": m004,
   "005_saved_colors": m005,
   "006_room_members": m006,
+  "007_checkpoints": m007,
 }
 
 class ExplicitMigrationProvider implements MigrationProvider {
