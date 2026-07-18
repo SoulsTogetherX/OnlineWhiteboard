@@ -2,12 +2,18 @@
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import ToolMenu from "@/components/ToolMenu"
+import type { AppTool } from "@/components/ToolMenu"
 import CanvasBoard from "@/components/CanvasBoard"
+import CursorOverlay from "@/components/CursorOverlay"
 import RoomPopup from "@/components/Popups/RoomPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
 import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
+import PresenceRoster from "@/components/PresenceRoster"
+import VotePrompt from "@/components/VotePrompt"
 import HamburgerButton from "@/components/HamburgerButton"
+import AuthControl from "@/components/AuthControl"
+import AuthPopup from "@/components/Popups/AuthPopup"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
@@ -15,11 +21,19 @@ import useRoomConnection from "@/hooks/useRoomConnection"
 import useColorPalette from "@/hooks/useColorPalette"
 import useUndoRedo from "@/hooks/useUndoRedo"
 import useMediaQuery from "@/hooks/useMediaQuery"
+import useAuth from "@/hooks/useAuth"
+import useCursorBroadcast from "@/hooks/useCursorBroadcast"
+import useRecentColors from "@/hooks/useRecentColors"
+import useSavedColors from "@/hooks/useSavedColors"
+import useEyedropper from "@/hooks/useEyedropper"
 
 import { DEFAULT_DRAW_ACTION, DESKTOP_MEDIA_QUERY } from "@/constants/ui"
+import { colorToHex8 } from "@/utils/color"
+import { downloadCanvasImage } from "@/utils/downloadImage"
+import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
-import type { ColorPalletKeys } from "@shared/types/primitive"
+import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
 
 import "./styles.css"
 //#endregion
@@ -49,28 +63,78 @@ export default function App() {
   //   - the state is what lets the toolbar render which tool is active.
   // Keeping the pair here, in one place, is what lets ToolMenu stay a plain
   // presentational component instead of writing to a ref it was handed.
-  const [selectedTool, setSelectedTool] = useState<ToolType>(
+  const [selectedTool, setSelectedTool] = useState<AppTool>(
     DEFAULT_DRAW_ACTION.type,
   )
-  const selectTool = useCallback((type: ToolType) => {
-    drawAction.current = { type }
+  // The eyedropper is a mode, not a draw action: while it's on, drawing is
+  // suppressed (eyedropperActive gates useCanvasDrawing) and a click samples
+  // instead. lastDrawTool remembers what to switch back to after a pick.
+  const eyedropperActive = useRef<boolean>(false)
+  const lastDrawTool = useRef<ToolType>(DEFAULT_DRAW_ACTION.type)
+  const selectTool = useCallback((type: AppTool) => {
+    if (type === "eyedropper") {
+      eyedropperActive.current = true
+    } else {
+      lastDrawTool.current = type
+      eyedropperActive.current = false
+      drawAction.current = { type }
+    }
     setSelectedTool(type)
   }, [])
+
+  // Stroke size. The ref is what the pointer handlers read at gesture start; the
+  // state drives the slider. Same ref+state split as the tool selection.
+  const strokeSizeRef = useRef<number>(DEFAULT_STROKE_SIZE)
+  const [strokeSize, setStrokeSizeState] = useState<number>(DEFAULT_STROKE_SIZE)
+  const setStrokeSize = useCallback((size: number) => {
+    strokeSizeRef.current = size
+    setStrokeSizeState(size)
+  }, [])
+
+  // Auth
+  const { user, isLoading: authLoading, login, register, logout } = useAuth()
+  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false)
 
   // Color
   const [isColorOpen, setIsColorOpen] = useState<boolean>(false)
   const [selectedColor, setSelectedColor] = useState<ColorPalletKeys>("primary")
   const { colorPallet, setColor, swapColors } = useColorPalette()
+  const { recent, addRecent } = useRecentColors()
+  const { saved, addSaved, removeSaved } = useSavedColors(user)
 
   // Room
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
-  const { roomId, activeUsers, socketLabel, sendDrawInstruction, loadRoom } =
-    useRoomConnection(canvasRef, () => setIsRoomOpen(false))
+  const {
+    roomId,
+    participants,
+    self,
+    socketLabel,
+    sendDrawInstruction,
+    loadRoom,
+    sendCursor,
+    activeVote,
+    requestClear,
+    castVote,
+    cursorsRef,
+    cursorIds,
+  } = useRoomConnection(canvasRef, () => setIsRoomOpen(false), user?.id ?? null)
 
   // Undo/Redo
   const { pushAction, undo, redo, canUndo, canRedo, notice } = useUndoRedo(
     canvasRef,
     sendDrawInstruction,
+  )
+
+  // Eyedropper: sample a canvas pixel into the primary color, then revert to the
+  // last drawing tool. Defined here because it needs the palette and recent-color
+  // setters as well as the tool selection.
+  const onEyedropperPick = useCallback(
+    (color: ColorType) => {
+      setColor("primary", color)
+      addRecent(colorToHex8(color))
+      selectTool(lastDrawTool.current)
+    },
+    [setColor, addRecent, selectTool],
   )
 
   // Canvas Settup
@@ -81,7 +145,11 @@ export default function App() {
     colorPallet,
     sendDrawInstruction,
     pushAction,
+    eyedropperActive,
+    strokeSizeRef,
   )
+  useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
+  useCursorBroadcast(canvasRef, sendCursor)
 
   // Keyboard shortcuts (desktop only — mobile uses the toolbar buttons)
   useEffect(() => {
@@ -109,10 +177,16 @@ export default function App() {
       className="app-wrapper"
       onClick={() => setIsToolbarOpen(false)}
     >
-      <RoomStatus
-        roomId={roomId}
-        activeUsers={activeUsers}
-        socketLabel={socketLabel}
+      <RoomStatus roomId={roomId} socketLabel={socketLabel} />
+      <PresenceRoster
+        participants={participants}
+        selfConnectionId={self?.connectionId ?? null}
+      />
+      <AuthControl
+        user={user}
+        isLoading={authLoading}
+        onOpenAuth={() => setIsAuthOpen(true)}
+        onLogout={logout}
       />
       <HamburgerButton
         isOpen={isToolbarOpen}
@@ -122,13 +196,28 @@ export default function App() {
         isOpen={isToolbarVisible}
         selectedTool={selectedTool}
         onSelectTool={selectTool}
+        strokeSize={strokeSize}
+        onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
+        onClear={requestClear}
+        onDownload={() => {
+          if (canvasRef.current) {
+            downloadCanvasImage(canvasRef.current, roomId)
+          }
+        }}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
       />
+      <VotePrompt vote={activeVote} onVote={castVote} />
       <CanvasBoard canvasRef={canvasRef} />
+      <CursorOverlay
+        canvasRef={canvasRef}
+        cursorsRef={cursorsRef}
+        cursorIds={cursorIds}
+        participants={participants}
+      />
       {notice && <div className="undo-notice">{notice}</div>}
       <ColorSelector
         colorPallet={colorPallet}
@@ -146,14 +235,25 @@ export default function App() {
         currentColor={colorPallet.current[selectedColor]}
         onApply={(color) => {
           setColor(selectedColor, color)
+          addRecent(colorToHex8(color))
           setIsColorOpen(false)
         }}
+        recent={recent}
+        saved={saved}
+        onSaveColor={addSaved}
+        onRemoveSavedColor={removeSaved}
       />
       <RoomPopup
         isOpen={isRoomOpen}
         roomId={roomId}
         onClose={() => setIsRoomOpen(false)}
         onLoad={loadRoom}
+      />
+      <AuthPopup
+        isOpen={isAuthOpen}
+        onClose={() => setIsAuthOpen(false)}
+        onLogin={login}
+        onRegister={register}
       />
     </div>
   )

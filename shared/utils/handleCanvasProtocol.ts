@@ -5,6 +5,7 @@ import {
 } from "./helperProtocallMethods"
 import { handleDrawLineInstruction } from "./handleLineProtocall"
 import { handleDrawFillInstruction } from "./handleFillProtocall"
+import { handleDrawSprayInstruction } from "./handleSprayProtocol"
 import { handleDrawPatchInstruction } from "./handlePatchProtocol"
 import { isValidDrawInstruction } from "./validateInstruction"
 
@@ -39,6 +40,15 @@ export function applyDrawInstructionToCanvas(
     case "bucket":
       handleDrawFillInstruction(pixels, inst)
       return inst
+    case "spray":
+      handleDrawSprayInstruction(pixels, inst)
+      return inst
+    case "clear": {
+      // Blank every byte — R, G, B and A all to 0 (fully transparent).
+      const buffer = pixels instanceof Uint8ClampedArray ? pixels : pixels.data
+      buffer.fill(0)
+      return inst
+    }
     case "patch": {
       const applied = handleDrawPatchInstruction(pixels, inst)
       if (applied.length === 0) {

@@ -41,15 +41,29 @@ server {
     root  /usr/share/nginx/html;
     index index.html;
 
-    # Basic hardening: don't advertise the nginx version, and refuse to be
-    # framed by another origin.
     server_tokens off;
-    add_header X-Frame-Options        "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff"    always;
+
+    # --- Security headers ---------------------------------------------------
+    # NGINX add_header GOTCHA: add_header directives are inherited by a location
+    # ONLY IF that location declares no add_header of its own — the moment a
+    # location adds one header, it drops ALL inherited ones. The two cache
+    # locations below set Cache-Control, so they must RE-DECLARE these headers or
+    # they'd be served without them. To keep that in one place, it lives in an
+    # included snippet pulled into the server block and each overriding location.
+    #
+    #   Content-Security-Policy — the main anti-XSS control. 'unsafe-inline' is
+    #     needed for style-src only because the app uses inline style={{}} (cursor
+    #     positions, colour swatches); scripts stay 'self' (no inline scripts).
+    #     connect-src 'self' covers the same-origin WebSocket. frame-ancestors
+    #     'none' is the modern anti-clickjacking directive.
+    #   Strict-Transport-Security — browsers honour it only over HTTPS, so it's
+    #     inert on a plain-HTTP localhost run and takes effect behind TLS.
+    include /etc/nginx/security-headers.conf;
 
     # index.html is the ONLY file whose name is not content-hashed, so a cached
     # copy would pin a user to an old bundle forever. Never cache it.
     location = /index.html {
+        include /etc/nginx/security-headers.conf; # re-declare (see gotcha above)
         add_header Cache-Control "no-cache";
         try_files $uri =404;
     }
@@ -59,6 +73,7 @@ server {
     # makes them safe to cache forever. This is the payoff for Rollup's hashing
     # and is impossible to do safely without it.
     location /assets/ {
+        include /etc/nginx/security-headers.conf; # re-declare (see gotcha above)
         add_header Cache-Control "public, max-age=31536000, immutable";
         try_files $uri =404;
     }

@@ -1,5 +1,7 @@
 //#region Imports
 import type { DrawInstruction } from "./drawProtocol"
+import type { Participant } from "./identity"
+import type { Vec } from "./primitive"
 //#endregion
 
 //#region Socket Message Types
@@ -17,13 +19,46 @@ export type ClientSocketMessage =
       type: "resync"
       roomId: string
     }
+  | {
+      // The client's cursor position in canvas coordinates, or null when the
+      // pointer leaves the canvas. High-frequency and ephemeral: the server
+      // relays it and forgets it — never applied to the canvas, never logged,
+      // never persisted.
+      type: "cursor"
+      roomId: string
+      pos: Vec | null
+    }
+  | {
+      // Request a room-wide destructive action (currently only "clear"). If the
+      // requester is the only recent editor the server applies it immediately;
+      // otherwise it opens a vote among the recent editors.
+      type: "request_action"
+      roomId: string
+      action: RoomAction
+    }
+  | {
+      // A recent editor's vote on an open request. The server tallies these and
+      // resolves the vote when everyone has approved (or anyone rejects).
+      type: "vote"
+      roomId: string
+      voteId: string
+      approve: boolean
+    }
+
+// Room-wide actions that require consensus. Kept as its own type so resize
+// (P1d) slots in beside clear without touching the message shapes.
+export type RoomAction = "clear"
 
 export type ServerSocketMessage =
   | {
       type: "ready"
       roomId: string
       revision: number
-      activeUsers: number
+      // Who the server decided this connection is (account or guest), plus the
+      // current roster. `self` lets a guest client learn its generated name and
+      // colour, which it has no other way of knowing.
+      self: Participant
+      participants: Participant[]
     }
   | {
       type: "draw"
@@ -50,9 +85,49 @@ export type ServerSocketMessage =
       revision: number
     }
   | {
+      // Broadcast whenever the roster changes (someone joins or leaves). Carries
+      // the full participant list; the client derives the count from its length.
       type: "presence"
       roomId: string
-      activeUsers: number
+      participants: Participant[]
+    }
+  | {
+      // A relayed cursor from another connection. The client already has each
+      // participant's colour and name from the roster, so this carries only the
+      // connectionId to look them up by, and the position.
+      type: "cursor"
+      roomId: string
+      connectionId: string
+      pos: Vec | null
+    }
+  | {
+      // A vote has opened. Sent to every recent editor (the voters). `voters` is
+      // the number whose approval is needed; the initiator is counted as already
+      // approving. `deadline` is an epoch-ms timestamp after which it auto-fails.
+      type: "vote_started"
+      roomId: string
+      voteId: string
+      action: RoomAction
+      initiatorName: string
+      voters: number
+      approvals: number
+      deadline: number
+    }
+  | {
+      // Running tally as votes come in.
+      type: "vote_update"
+      roomId: string
+      voteId: string
+      voters: number
+      approvals: number
+    }
+  | {
+      // The vote ended. `approved` true means the action was applied (the canvas
+      // change arrives separately as the normal "draw"/"clear" broadcast).
+      type: "vote_resolved"
+      roomId: string
+      voteId: string
+      approved: boolean
     }
   | {
       type: "pong"

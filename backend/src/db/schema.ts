@@ -74,6 +74,33 @@ export interface DrawEventsTable {
   session_id: string | null
   created_at: Timestamp
 }
+
+// A registered account. `password_hash` is a self-describing scrypt string
+// (never the password); `color` is the identity colour shown in presence.
+export interface UsersTable {
+  id: Generated<string>
+  email: string
+  username: string
+  password_hash: string
+  color: string
+  created_at: Timestamp
+}
+
+// Server-side session store. `id` is the SHA-256 hash of the cookie token, not
+// the token itself (see migration 004). A row exists only while a login is live.
+export interface SessionsTable {
+  id: string
+  user_id: string
+  expires_at: Timestamp
+  created_at: Timestamp
+}
+
+// One saved palette swatch for one user, as a "#rrggbbaa" string.
+export interface SavedColorsTable {
+  user_id: string
+  color: string
+  created_at: Timestamp
+}
 //#endregion
 
 //#region Database
@@ -84,5 +111,8 @@ export interface Database {
   rooms: RoomsTable
   canvas_snapshots: CanvasSnapshotsTable
   draw_events: DrawEventsTable
+  users: UsersTable
+  sessions: SessionsTable
+  saved_colors: SavedColorsTable
 }
 //#endregion

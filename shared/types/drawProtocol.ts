@@ -5,15 +5,21 @@ import type { Vec, ColorType } from "./primitive"
 //#region Summery Types
 export type LineToolType = "pencil" | "eraser"
 export type FillToolType = "bucket"
-export type ToolType = LineToolType | FillToolType
+export type SprayToolType = "spray"
+export type ToolType = LineToolType | FillToolType | SprayToolType
 
 export type LineAction = PencilAction | EraseAction
 export type FillAction = BucketAction
-export type DrawAction = LineAction | FillAction
+export type DrawAction = LineAction | FillAction | SprayAction
 
 export type LineInstruction = PencilInstruction | EraseInstruction
 export type FillInstruction = BucketInstruction
-export type DrawInstruction = LineInstruction | FillInstruction | PatchInstruction
+export type DrawInstruction =
+  | LineInstruction
+  | FillInstruction
+  | SprayInstruction
+  | PatchInstruction
+  | ClearInstruction
 //#endregion
 
 //#region Base Draw Action Types
@@ -22,6 +28,10 @@ export type BaseAction = {
 }
 export type BaseInstruction = {
   color?: ColorType
+  // Brush diameter in canvas pixels. Optional on the wire (absent means 1, the
+  // original single-pixel behaviour), and only the line tools and the spray can
+  // read it — bucket and patch ignore it.
+  size?: number
   instructionId: number
   sessionId: string
 }
@@ -73,6 +83,25 @@ export type BucketInstruction = BucketShared &
   BaseInstruction &
   BaseAction &
   BucketPositions
+
+// The spray can. A gesture emits one "puff" per pointer sample: `density`
+// pixels scattered within `radius` of `pos`, positioned by a seeded PRNG. The
+// `seed` is the whole trick — it's chosen on the client and sent, so the server
+// and every other client reproduce the identical splatter (see utils/random.ts).
+type SprayShared = {
+  type: "spray"
+}
+type SprayFields = {
+  pos: Vec
+  radius: number
+  density: number
+  seed: number
+}
+export type SprayAction = SprayShared & BaseAction & Partial<SprayFields>
+export type SprayInstruction = SprayShared &
+  BaseInstruction &
+  BaseAction &
+  SprayFields
 //#endregion
 
 //#region Patch Instruction (undo/redo)
@@ -89,5 +118,17 @@ export type PatchEntry = {
 export type PatchInstruction = {
   type: "patch"
   entries: PatchEntry[]
+} & BaseInstruction
+//#endregion
+
+//#region Clear Instruction (room action)
+// Blanks the whole canvas. Like patch it isn't a toolbar tool — it is applied by
+// the SERVER after a vote resolves, then flows through the event log and
+// broadcast as a normal "draw" so recovery and every client handle it the same
+// way as any other instruction. Clients are NOT allowed to send this directly
+// (the server rejects a client-originated clear); the only path to it is the
+// vote flow, which is what stops one person wiping a shared board.
+export type ClearInstruction = {
+  type: "clear"
 } & BaseInstruction
 //#endregion

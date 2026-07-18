@@ -66,6 +66,27 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
     expect(inst.entries).toHaveLength(2)
   })
 
+  it("clears the whole canvas on a clear instruction", () => {
+    const pixels = makeCanvas()
+    // Paint something first.
+    applyDrawInstructionToCanvas(pixels, {
+      type: "bucket",
+      pos: [0, 0],
+      color: RED,
+      ...BASE,
+    } as DrawInstruction)
+    expect(paintedCount(pixels)).toBeGreaterThan(0)
+
+    const applied = applyDrawInstructionToCanvas(pixels, {
+      type: "clear",
+      ...BASE,
+    } as DrawInstruction)
+
+    expect(applied).not.toBeNull()
+    expect(paintedCount(pixels)).toBe(0)
+    expect(pixels.every((byte) => byte === 0)).toBe(true)
+  })
+
   it("returns null when a patch applies nothing, so nothing is broadcast", () => {
     const pixels = makeCanvas()
     setPixel(pixels, 0, 0, GREEN)
@@ -192,6 +213,40 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
 
     expect(applied).toBeNull()
     expect(paintedCount(pixels)).toBe(0)
+  })
+
+  it("rejects a stroke size that is out of range or non-integer", () => {
+    const pixels = makeCanvas()
+
+    for (const size of [0, -1, 33, 1.5, NaN, Infinity]) {
+      const applied = applyDrawInstructionToCanvas(pixels, {
+        type: "pencil",
+        prevPos: [0, 0],
+        nextPos: [1, 1],
+        color: RED,
+        size,
+        ...BASE,
+      } as unknown as DrawInstruction)
+
+      expect(applied).toBeNull()
+    }
+    expect(paintedCount(pixels)).toBe(0)
+  })
+
+  it("accepts a valid in-range stroke size", () => {
+    const pixels = makeCanvas()
+
+    const applied = applyDrawInstructionToCanvas(pixels, {
+      type: "pencil",
+      prevPos: [10, 10],
+      nextPos: [10, 10],
+      color: RED,
+      size: 5,
+      ...BASE,
+    } as DrawInstruction)
+
+    expect(applied).not.toBeNull()
+    expect(paintedCount(pixels)).toBeGreaterThan(1)
   })
 
   it("still accepts a legitimate edge-of-canvas instruction", () => {

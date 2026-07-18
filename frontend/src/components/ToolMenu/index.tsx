@@ -1,4 +1,6 @@
 //#region Imports
+import { MAX_STROKE_SIZE } from "@shared/constants/canvas"
+
 import type { ToolType } from "@shared/types/drawProtocol"
 
 import "./styles.css"
@@ -11,12 +13,23 @@ const OPEN_TOOL_CLASS = "tool-open"
 export const TOOL_MENU_ID = "tool-menu"
 //#endregion
 
+//#region Types
+// The toolbar's selectable tools. "eyedropper" is a frontend-only tool — it
+// samples a colour rather than producing a draw instruction — so it lives here
+// alongside the real ToolTypes rather than in the shared draw protocol.
+export type AppTool = ToolType | "eyedropper"
+//#endregion
+
 //#region Component Def
 export interface ToolMenuProps {
   isOpen: boolean
-  selectedTool: ToolType
-  onSelectTool: (type: ToolType) => void
+  selectedTool: AppTool
+  onSelectTool: (type: AppTool) => void
+  strokeSize: number
+  onStrokeSizeChange: (size: number) => void
   openRoomPicker: () => void
+  onClear: () => void
+  onDownload: () => void
   onUndo: () => void
   onRedo: () => void
   canUndo: boolean
@@ -33,15 +46,19 @@ export default function ToolMenu({
   isOpen,
   selectedTool,
   onSelectTool,
+  strokeSize,
+  onStrokeSizeChange,
   openRoomPicker,
+  onClear,
+  onDownload,
   onUndo,
   onRedo,
   canUndo,
   canRedo,
 }: ToolMenuProps) {
-  const setTool = (type: ToolType) => onSelectTool(type)
+  const setTool = (type: AppTool) => onSelectTool(type)
 
-  const toolClass = (type: ToolType) =>
+  const toolClass = (type: AppTool) =>
     `tool-button${selectedTool === type ? " tool-button-active" : ""}`
 
   return (
@@ -112,6 +129,42 @@ export default function ToolMenu({
         <li>
           <button
             type="button"
+            className={toolClass("spray")}
+            aria-pressed={selectedTool === "spray"}
+            onClick={() => setTool("spray")}
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M3 2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5a1 1 0 0 1 .5.866l.5.289a2 2 0 0 1 1 1.732V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.387a2 2 0 0 1 1-1.732l.5-.289A1 1 0 0 1 5 3.5V2zm7.5 1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m2-1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-2 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m3 0a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1.5 2.5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0M14 5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0" />
+            </svg>
+            <span className="tool-tip">Spray Can</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            className={toolClass("eyedropper")}
+            aria-pressed={selectedTool === "eyedropper"}
+            onClick={() => setTool("eyedropper")}
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM10.293 7 3.293 14H2v-1.293l7-7z" />
+            </svg>
+            <span className="tool-tip">Eyedropper</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
             className="tool-button"
             disabled={!canUndo}
             onClick={onUndo}
@@ -166,7 +219,58 @@ export default function ToolMenu({
             <span className="tool-tip">Room Id</span>
           </button>
         </li>
+        <li>
+          <button
+            type="button"
+            className="tool-button"
+            onClick={onClear}
+            title="Clear the canvas (needs a vote if others drew recently)"
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+            </svg>
+            <span className="tool-tip">Clear Canvas</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            className="tool-button"
+            onClick={onDownload}
+            title="Download the canvas as a PNG image"
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M.5 9.9a.5.5 0 0 1 .5.5v2.5a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-2.5a.5.5 0 0 1 1 0v2.5a2 2 0 0 1-2 2H2a2 2 0 0 1-2-2v-2.5a.5.5 0 0 1 .5-.5" />
+              <path d="M7.646 11.854a.5.5 0 0 0 .708 0l3-3a.5.5 0 0 0-.708-.708L8.5 10.293V1.5a.5.5 0 0 0-1 0v8.793L5.354 8.146a.5.5 0 1 0-.708.708z" />
+            </svg>
+            <span className="tool-tip">Download Image</span>
+          </button>
+        </li>
       </ul>
+
+      <div className="stroke-size-control">
+        <label htmlFor="stroke-size">Size: {strokeSize}px</label>
+        <input
+          id="stroke-size"
+          type="range"
+          min={1}
+          max={MAX_STROKE_SIZE}
+          value={strokeSize}
+          onChange={(ev) => onStrokeSizeChange(Number(ev.target.value))}
+          aria-label="Brush size"
+        />
+      </div>
     </nav>
   )
 }

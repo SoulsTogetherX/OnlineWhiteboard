@@ -2,16 +2,18 @@
 import { useState } from "react"
 
 import PopupBase from "@/components/Popups/PopupBase"
+import HsvPicker from "@/components/HsvPicker"
+import SwatchRow from "./SwatchRow"
 
+import { colorToHex, colorToHex8, hexToColor } from "@/utils/color"
 import { colorTypeToString } from "@shared/types/primitive"
+
 import type { ColorType } from "@shared/types/primitive"
 
 import "./styles.css"
 //#endregion
 
 //#region Constants
-// Spelled-out names for screen readers. "R" reads as the letter R, which tells
-// a non-sighted user nothing about what the control does.
 const CHANNEL_NAMES: Record<keyof ColorType, string> = {
   r: "Red",
   g: "Green",
@@ -20,35 +22,12 @@ const CHANNEL_NAMES: Record<keyof ColorType, string> = {
 }
 //#endregion
 
-//#region Helper Methods
+//#region Helpers
 function clampColorValue(value: number): number {
-  // Math.round(NaN) is NaN, and every comparison against NaN is false — so
-  // without this guard a NaN would sail through both clamps and land in the
-  // palette as NaN, painting garbage.
   if (!Number.isFinite(value)) {
     return 0
   }
   return Math.max(0, Math.min(255, Math.round(value)))
-}
-
-function componentToHex(value: number): string {
-  return clampColorValue(value).toString(16).padStart(2, "0")
-}
-
-function colorToHex(color: ColorType): string {
-  return `#${componentToHex(color.r)}${componentToHex(color.g)}${componentToHex(
-    color.b,
-  )}`
-}
-
-function hexToColor(hex: string, alpha: number): ColorType {
-  const cleanHex = hex.replace("#", "")
-  return {
-    r: parseInt(cleanHex.slice(0, 2), 16),
-    g: parseInt(cleanHex.slice(2, 4), 16),
-    b: parseInt(cleanHex.slice(4, 6), 16),
-    a: alpha,
-  }
 }
 //#endregion
 
@@ -58,6 +37,12 @@ export interface ColorPopupProps {
   currentColor: ColorType
   onClose: () => void
   onApply: (color: ColorType) => void
+  // Palette wiring, owned by App (so recents survive the popup closing and the
+  // saved palette can be account-backed).
+  recent: string[]
+  saved: string[]
+  onSaveColor: (hex8: string) => void
+  onRemoveSavedColor: (hex8: string) => void
 }
 
 export default function ColorPopup({
@@ -65,18 +50,16 @@ export default function ColorPopup({
   currentColor,
   onClose,
   onApply,
+  recent,
+  saved,
+  onSaveColor,
+  onRemoveSavedColor,
 }: ColorPopupProps) {
   const [draftColor, setDraftColor] = useState<ColorType>(currentColor)
   const cssPreview = colorTypeToString(draftColor)
 
-  // Re-seed the draft each time the popup opens, so it always reflects the
-  // swatch you actually clicked and discards any cancelled edit. Needed because
-  // PopupBase only toggles a class — it never unmounts its children, so the
-  // useState initializer above runs exactly once, at App mount.
-  //
-  // Adjusted DURING RENDER rather than in an effect: React discards this render
-  // and re-runs with the new state before painting, so the wrong color is never
-  // shown. See RoomPopup for the same pattern.
+  // Re-seed the draft each time the popup opens (PopupBase never unmounts). See
+  // RoomPopup for the same during-render pattern.
   const [wasOpen, setWasOpen] = useState<boolean>(isOpen)
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen)
@@ -92,40 +75,44 @@ export default function ColorPopup({
     }))
   }
 
+  const isSaved = saved.includes(colorToHex8(draftColor))
+
   return (
     <PopupBase isOpen={isOpen} onClose={onClose} label="Choose a color">
       <div className="color-picker-module">
         <header className="color-picker-header">
-          <p>RGBA values are saved for this browser session.</p>
           <div
             className="color-preview"
             style={{ backgroundColor: cssPreview }}
-            // A bare styled div is invisible to assistive tech; without a role
-            // and label there was no way to know a preview existed at all.
             role="img"
             aria-label="Preview of the selected color"
           ></div>
+          <div className="color-picker-heading">
+            <h2>Color</h2>
+            <p>Drag on the square, pick a hue, or type exact values.</p>
+          </div>
         </header>
 
+        {/* The visual picker: saturation/value square + hue slider. */}
+        <HsvPicker color={draftColor} onChange={setDraftColor} />
+
         <label className="hex-picker-row">
-          <span>Color</span>
+          <span>Hex</span>
           <input
             name="color-picker"
             type="color"
             value={colorToHex(draftColor)}
-            onChange={(ev) =>
-              setDraftColor(hexToColor(ev.target.value, draftColor.a))
-            }
+            onChange={(ev) => {
+              const parsed = hexToColor(ev.target.value)
+              if (parsed) {
+                setDraftColor({ ...parsed, a: draftColor.a })
+              }
+            }}
           />
         </label>
 
         <div className="rgba-grid">
           {(["r", "g", "b", "a"] as const).map((component) => {
-            // A <label> associates with only its FIRST labelable descendant.
-            // This used to be one <label> wrapping BOTH the slider and the
-            // number input, so "R"/"G"/"B"/"A" named the slider and the number
-            // field was left with no accessible name at all. Naming each input
-            // explicitly fixes that, and lets the two carry distinct names.
             const name = CHANNEL_NAMES[component]
             return (
               <div className="rgba-control" key={component}>
@@ -157,7 +144,30 @@ export default function ColorPopup({
           })}
         </div>
 
+        <SwatchRow
+          label="Saved"
+          colors={saved}
+          onPick={setDraftColor}
+          onRemove={onRemoveSavedColor}
+          emptyHint="Save a color to keep it here."
+        />
+        <SwatchRow
+          label="Recent"
+          colors={recent}
+          onPick={setDraftColor}
+          emptyHint="Colors you apply appear here."
+        />
+
         <footer className="color-popup-actions">
+          <button
+            type="button"
+            className="color-save-button"
+            onClick={() => onSaveColor(colorToHex8(draftColor))}
+            disabled={isSaved}
+          >
+            {isSaved ? "Saved" : "Save color"}
+          </button>
+          <span className="color-popup-spacer" />
           <button type="button" onClick={onClose}>
             Cancel
           </button>

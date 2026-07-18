@@ -1,6 +1,7 @@
 //#region Imports
 import {
   clipSegmentToCanvas,
+  forEachDiscPixel,
   getCanvasState,
   getDrawerMethod,
   getIdxFromVec,
@@ -10,7 +11,7 @@ import {
   getLookAtMethod,
 } from "./helperProtocallMethods"
 
-import { DEFAULT_COLOR } from "../constants/canvas"
+import { DEFAULT_COLOR, DEFAULT_STROKE_SIZE } from "../constants/canvas"
 
 import type {
   BaseInstruction,
@@ -26,6 +27,7 @@ function setPixelLine(
   action: LineAction,
   color: ColorType,
   setPixel: (idx: number, color: ColorType) => void,
+  size: number = DEFAULT_STROKE_SIZE,
 ): void {
   if (!action.prevPos || !action.nextPos) {
     return
@@ -41,9 +43,31 @@ function setPixelLine(
   const sx = x0 < x1 ? 1 : -1
   const sy = y0 < y1 ? 1 : -1
 
+  // A brush wider than 1px stamps a disc at each Bresenham point, so consecutive
+  // discs overlap heavily. Dedupe by pixel index within this one stroke: each
+  // pixel is written (and recorded for undo) at most once, which keeps the undo
+  // entry proportional to the area painted rather than to stroke-length x
+  // brush-area.
+  const stamped = size > 1 ? new Set<number>() : null
+
+  const paint = (px: number, py: number): void => {
+    if (stamped === null) {
+      setPixel(getIdxFromVec([px, py]), color)
+      return
+    }
+    forEachDiscPixel(px, py, size, (vec) => {
+      const idx = getIdxFromVec(vec)
+      if (stamped.has(idx)) {
+        return
+      }
+      stamped.add(idx)
+      setPixel(idx, color)
+    })
+  }
+
   let err = dx - dy
   while (true) {
-    setPixel(getIdxFromVec([x0, y0]), color)
+    paint(x0, y0)
 
     if (x0 === x1 && y0 === y1) {
       break
@@ -122,8 +146,11 @@ function handleDraw(
     { ...da, prevPos, nextPos },
     base.color ?? DEFAULT_COLOR,
     drawer,
+    base.size,
   )
   updateCanvas(canvas)
+  // `...base` in createInstruction carries `size` onto the wire instruction, so
+  // the server and every other client stamp the same-width stroke.
   return createInstruction(da, base, prevPos, nextPos)
 }
 //#endregion
@@ -176,6 +203,6 @@ export function handleDrawLineInstruction(
   inst: LineInstruction,
 ): void {
   const drawer = getDrawerMethod(inst.type, pixels)
-  setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer)
+  setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer, inst.size)
 }
 //#endregion

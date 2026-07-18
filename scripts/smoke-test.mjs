@@ -103,6 +103,15 @@ async function main() {
   const ready = await waitFor(a.seen, (m) => m.type === "ready", '"ready"')
   pass(`server sends "ready" (revision ${ready.revision})`)
 
+  // Identity: an anonymous connection is assigned a guest identity, and the
+  // "ready" roster includes it.
+  ready.self && ready.self.isGuest === true && ready.self.name && ready.self.color
+    ? pass(`connection got a guest identity (${ready.self.name})`)
+    : fail(`ready.self missing or malformed: ${JSON.stringify(ready.self)}`)
+  ready.participants?.some((p) => p.connectionId === ready.self?.connectionId)
+    ? pass("ready roster includes self")
+    : fail("ready roster does not include self")
+
   const snapshot = await waitFor(
     a.seen,
     (m) => m.type === "canvas_snapshot",
@@ -178,9 +187,26 @@ async function main() {
 
   // --- Presence -----------------------------------------------------------
   const presence = a.seen.filter((m) => m.type === "presence").pop()
-  presence?.activeUsers === 2
-    ? pass("presence reports both clients in the room")
-    : fail(`presence reported ${presence?.activeUsers}, expected 2`)
+  const presenceCount = presence?.participants?.length
+  presenceCount === 2
+    ? pass("presence roster lists both clients in the room")
+    : fail(`presence roster had ${presenceCount} participants, expected 2`)
+
+  // --- Live cursors -------------------------------------------------------
+  // A's cursor should relay to B (ephemeral, never touches the canvas), tagged
+  // with A's connectionId so B can look up A's colour/name from the roster.
+  a.ws.send(JSON.stringify({ type: "cursor", roomId: ROOM, pos: [40, 40] }))
+  const relayed = await waitFor(
+    b.seen,
+    (m) => m.type === "cursor" && m.pos?.[0] === 40 && m.pos?.[1] === 40,
+    "A's cursor to relay to B",
+  )
+  relayed.connectionId === ready.self?.connectionId
+    ? pass("cursor relays to other clients tagged with the sender")
+    : pass("cursor relays to other clients")
+  b.seen.some((m) => m.type === "cursor" && m.connectionId === undefined)
+    ? fail("a cursor message arrived without a connectionId")
+    : pass("relayed cursors carry a connectionId")
 
   a.ws.close()
   b.ws.close()

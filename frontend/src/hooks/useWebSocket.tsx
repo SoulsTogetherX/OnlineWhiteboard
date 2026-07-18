@@ -44,6 +44,10 @@ export type WebSocketOptions = {
         scheduler?: (foo: () => void) => number
         pongTimeout?: number
       }
+  // Change this to force a fresh connection without changing the URL. Used to
+  // reconnect after login/logout so the server re-resolves the session cookie
+  // and this connection's identity updates.
+  reconnectKey?: string | number
 }
 //#endregion
 
@@ -117,6 +121,7 @@ export default function useWebSocket(
     autoClose = true,
     autoReconnect = false,
     heartbeat = false,
+    reconnectKey,
   } = options ?? {}
 
   // Memoized because the boolean branch allocates a FRESH `{}` on every render.
@@ -365,7 +370,10 @@ export default function useWebSocket(
         close()
       }
     }
-  }, [autoClose, autoConnect, close, immediate, open])
+    // reconnectKey is intentionally a dependency with no use in the body: when it
+    // changes (login/logout), this effect re-runs — the cleanup closes the old
+    // socket and open() establishes a new one, which re-sends the session cookie.
+  }, [autoClose, autoConnect, close, immediate, open, reconnectKey])
 
   return {
     status,
