@@ -29,6 +29,7 @@ import useEyedropper from "@/hooks/useEyedropper"
 
 import { DEFAULT_DRAW_ACTION, DESKTOP_MEDIA_QUERY } from "@/constants/ui"
 import { colorToHex8 } from "@/utils/color"
+import { downloadCanvasImage } from "@/utils/downloadImage"
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
@@ -199,6 +200,11 @@ export default function App() {
         onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
         onClear={requestClear}
+        onDownload={() => {
+          if (canvasRef.current) {
+            downloadCanvasImage(canvasRef.current, roomId)
+          }
+        }}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
