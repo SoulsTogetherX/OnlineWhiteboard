@@ -77,7 +77,11 @@ export function hsvToRgb(
 //#endregion
 
 //#region Hex <-> ColorType
-function clampByte(value: number): number {
+// Exported because the RGBA number inputs in ColorPopup need exactly this
+// coercion for user-typed values, and had reimplemented it byte-for-byte.
+// Non-finite input (a cleared or malformed field) collapses to 0 rather than
+// NaN, which would otherwise propagate into the canvas as a corrupt channel.
+export function clampByte(value: number): number {
   if (!Number.isFinite(value)) {
     return 0
   }

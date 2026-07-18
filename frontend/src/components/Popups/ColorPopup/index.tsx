@@ -5,7 +5,7 @@ import PopupBase from "@/components/Popups/PopupBase"
 import HsvPicker from "@/components/HsvPicker"
 import SwatchRow from "./SwatchRow"
 
-import { colorToHex, colorToHex8, hexToColor } from "@/utils/color"
+import { clampByte, colorToHex, colorToHex8, hexToColor } from "@/utils/color"
 import { colorTypeToString } from "@shared/types/primitive"
 
 import type { ColorType } from "@shared/types/primitive"
@@ -19,15 +19,6 @@ const CHANNEL_NAMES: Record<keyof ColorType, string> = {
   g: "Green",
   b: "Blue",
   a: "Alpha",
-}
-//#endregion
-
-//#region Helpers
-function clampColorValue(value: number): number {
-  if (!Number.isFinite(value)) {
-    return 0
-  }
-  return Math.max(0, Math.min(255, Math.round(value)))
 }
 //#endregion
 
@@ -71,7 +62,7 @@ export default function ColorPopup({
   const setComponent = (component: keyof ColorType, value: number) => {
     setDraftColor((current) => ({
       ...current,
-      [component]: clampColorValue(value),
+      [component]: clampByte(value),
     }))
   }
 

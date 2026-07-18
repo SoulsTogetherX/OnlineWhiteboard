@@ -1,7 +1,7 @@
 //#region Imports
-import type { Express, Request, Response } from "express"
+import type { Express } from "express"
 
-import { readSessionToken, resolveSessionUser } from "@/auth/session"
+import { createRequireUser } from "@/auth/requireUser"
 import {
   listMembers,
   listRoomsForUser,
@@ -13,7 +13,6 @@ import { loadCanvas } from "@/db/canvasRepository"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 import { ROLES, canManageRoom } from "@shared/types/identity"
 
-import type { User } from "@/db/userRepository"
 import type { RoomRole } from "@shared/types/identity"
 //#endregion
 
@@ -30,19 +29,9 @@ function isValidRole(input: unknown): input is RoomRole {
 // are an account feature (guests aren't members). Ownership actions require the
 // caller to actually be the room's owner — checked here, not trusted from the
 // client.
-export default function configureRoomRoutes(app: Express): void {
-  async function requireUser(
-    req: Request,
-    res: Response,
-  ): Promise<User | null> {
-    const user = await resolveSessionUser(readSessionToken(req))
-    if (!user) {
-      res.status(401).json({ error: "Log in to manage rooms." })
-      return null
-    }
-    return user
-  }
+const requireUser = createRequireUser("Log in to manage rooms.")
 
+export default function configureRoomRoutes(app: Express): void {
   // --- My rooms (dashboard) --------------------------------------------------
   app.get("/api/rooms", async (req, res) => {
     const user = await requireUser(req, res)

@@ -1,14 +1,12 @@
 //#region Imports
-import type { Express, Request, Response } from "express"
+import type { Express } from "express"
 
-import { readSessionToken, resolveSessionUser } from "@/auth/session"
+import { createRequireUser } from "@/auth/requireUser"
 import {
   addSavedColor,
   listSavedColors,
   removeSavedColor,
 } from "@/db/savedColorRepository"
-
-import type { User } from "@/db/userRepository"
 //#endregion
 
 //#region Validation
@@ -23,19 +21,9 @@ function isValidColor(input: unknown): input is string {
 //#region Routes
 // The saved palette is an account feature — every route requires a live session.
 // Guests keep their palette in localStorage on the client and never call these.
-export default function configureColorRoutes(app: Express): void {
-  async function requireUser(
-    req: Request,
-    res: Response,
-  ): Promise<User | null> {
-    const user = await resolveSessionUser(readSessionToken(req))
-    if (!user) {
-      res.status(401).json({ error: "Log in to use saved colors." })
-      return null
-    }
-    return user
-  }
+const requireUser = createRequireUser("Log in to use saved colors.")
 
+export default function configureColorRoutes(app: Express): void {
   app.get("/api/colors", async (req, res) => {
     const user = await requireUser(req, res)
     if (!user) return

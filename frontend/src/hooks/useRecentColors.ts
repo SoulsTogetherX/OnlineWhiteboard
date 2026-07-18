@@ -1,5 +1,7 @@
 //#region Imports
 import { useCallback, useState } from "react"
+
+import { loadStringArray, saveStringArray } from "@/utils/localStorageArray"
 //#endregion
 
 //#region Constants
@@ -8,23 +10,8 @@ const MAX_RECENT = 12
 //#endregion
 
 //#region Storage helpers
-function load(): string[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter((c) => typeof c === "string") : []
-  } catch {
-    return []
-  }
-}
-
-function save(colors: string[]): void {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(colors))
-  } catch {
-    /* private mode / quota — recents are a nicety, not worth surfacing */
-  }
-}
+const load = (): string[] => loadStringArray(STORAGE_KEY)
+const save = (colors: string[]): void => saveStringArray(STORAGE_KEY, colors)
 //#endregion
 
 //#region Hook
