@@ -27,7 +27,6 @@ import type {
 import type { Participant } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
-import type { ClientSocket } from "@/types/ClientSocket"
 import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocallMethods"
 //#endregion
 
@@ -57,7 +56,6 @@ export interface PlaybackData {
 
 export interface UseRoomConnectionResult {
   roomId: string
-  setRoomId: (val: string) => void
   participants: Participant[]
   self: Participant | null
   socketLabel: string
@@ -121,7 +119,7 @@ export default function useRoomConnection(
   const lastRevision = useRef<number>(0)
 
   const handleSocketMessage = useCallback(
-    (_socket: ClientSocket, event: MessageEvent) => {
+    (_socket: WebSocket, event: MessageEvent) => {
       if (typeof event.data !== "string") {
         return
       }
@@ -396,7 +394,6 @@ export default function useRoomConnection(
 
   return {
     roomId,
-    setRoomId,
     participants,
     self,
     socketLabel,

@@ -92,6 +92,12 @@ export async function listMembers(roomId: string): Promise<RoomMember[]> {
   return rows.map((row) => ({ ...row, role: row.role as RoomRole }))
 }
 
+// TEST-ONLY assertion helper — deliberately kept despite having no production
+// caller. Production never needs to count owners: the one-owner invariant is
+// enforced structurally, by the `room_one_owner` partial unique index (migration
+// 006) plus setRole's atomic transfer and removeMember's refusal to remove an
+// owner. This exists so the tests can assert that invariant directly, which is
+// worth more than the tidiness of deleting it.
 export async function countOwners(roomId: string): Promise<number> {
   const row = await db
     .selectFrom("room_members")

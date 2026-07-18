@@ -7,7 +7,9 @@
 //#endregion
 
 //#region Types
-export type Hsv = { h: number; s: number; v: number } // h 0–360, s/v 0–1
+// Not exported: only rgbToHsv's return annotation uses it. Callers destructure
+// the result rather than naming the type.
+type Hsv = { h: number; s: number; v: number } // h 0–360, s/v 0–1
 //#endregion
 
 //#region Imports

@@ -1,7 +1,5 @@
 //#region Imports
 import { useCallback, useEffect, useMemo, useRef } from "react"
-
-import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
 
 //#region Type Defs
@@ -18,14 +16,14 @@ export type WebSocketResult = {
   send: (data: WebSocketPayload) => boolean
   open: () => void
   close: () => void
-  ws: React.RefObject<ClientSocket | null>
+  ws: React.RefObject<WebSocket | null>
 }
 
 export type WebSocketOptions = {
-  onConnected?: (ws: ClientSocket) => void
-  onDisconnected?: (ws: ClientSocket, event: CloseEvent) => void
-  onError?: (ws: ClientSocket, event: Event) => void
-  onMessage?: (ws: ClientSocket, event: MessageEvent) => void
+  onConnected?: (ws: WebSocket) => void
+  onDisconnected?: (ws: WebSocket, event: CloseEvent) => void
+  onError?: (ws: WebSocket, event: Event) => void
+  onMessage?: (ws: WebSocket, event: MessageEvent) => void
   immediate?: boolean
   autoConnect?: boolean
   autoClose?: boolean
@@ -139,7 +137,7 @@ export default function useWebSocket(
 
   const status = useRef<WebSocketStatus>("CLOSED")
   const data = useRef<WebSocketMessage | undefined>(undefined)
-  const ws = useRef<ClientSocket | null>(null)
+  const ws = useRef<WebSocket | null>(null)
 
   const manualClose = useRef(false)
   const retried = useRef(0)
@@ -283,7 +281,7 @@ export default function useWebSocket(
     manualClose.current = false
     status.current = "CONNECTING"
 
-    const socket = new WebSocket(fullUrl) as ClientSocket
+    const socket = new WebSocket(fullUrl)
     ws.current = socket
 
     socket.addEventListener("open", () => {

@@ -52,6 +52,10 @@ export async function findUserByEmail(
   return { ...user, passwordHash: password_hash }
 }
 
+// No production caller today — resolveSessionUser joins users to sessions in one
+// query rather than looking a user up by id. Kept as the conventional finder of
+// this repository (and used by the auth tests to assert what was written), so
+// the next feature that needs one doesn't reinvent it.
 export async function findUserById(id: string): Promise<User | null> {
   const row = await db
     .selectFrom("users")
