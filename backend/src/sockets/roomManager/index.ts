@@ -622,34 +622,6 @@ export default class RoomManager {
     }
   }
 
-  // Writes the room's buffered events to the log in one batch. Kept safe against
-  // overlap (the flush timer can fire while a previous flush is still awaiting)
-  // by an isFlushing guard, and against loss by putting a failed batch back at
-  // the front of the buffer to retry on the next tick.
-  private async flushEvents(roomId: string): Promise<void> {
-    const room = this.rooms.get(roomId)
-    if (!room || room.isFlushing || room.eventBuffer.length === 0) {
-      return
-    }
-
-    room.isFlushing = true
-    // Take the current buffer and clear it so new events accumulate separately
-    // while this batch is in flight.
-    const batch = room.eventBuffer.splice(0, room.eventBuffer.length)
-
-    try {
-      await appendDrawEvents(roomId, batch)
-    } catch (error) {
-      console.error(`Failed to flush events for room ${roomId}:`, error)
-      // Return the unwritten events to the head of the buffer, preserving order,
-      // so the next flush retries them. Idempotent append (ON CONFLICT DO
-      // NOTHING) means a partial success followed by a retry can't duplicate.
-      room.eventBuffer.unshift(...batch)
-    } finally {
-      room.isFlushing = false
-    }
-  }
-
   private async removeClient(socket: ClientSocket): Promise<void> {
     const room = this.rooms.get(socket.roomId)
     if (!room) {
