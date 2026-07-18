@@ -101,6 +101,16 @@ export interface SavedColorsTable {
   color: string
   created_at: Timestamp
 }
+
+// A user's role in a room (the users<->rooms many-to-many). `role` is one of
+// owner/editor/viewer, constrained in the database (migration 006).
+export interface RoomMembersTable {
+  room_id: string
+  user_id: string
+  role: string
+  created_at: Timestamp
+  updated_at: Timestamp
+}
 //#endregion
 
 //#region Database
@@ -114,5 +124,6 @@ export interface Database {
   users: UsersTable
   sessions: SessionsTable
   saved_colors: SavedColorsTable
+  room_members: RoomMembersTable
 }
 //#endregion

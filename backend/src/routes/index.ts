@@ -3,6 +3,7 @@ import express, { Express } from "express"
 
 import configureAuthRoutes from "./auth"
 import configureColorRoutes from "./colors"
+import configureRoomRoutes from "./rooms"
 import { csrfOriginGuard } from "@/security/csrf"
 //#endregion
 
@@ -20,6 +21,7 @@ export default function configure(app: Express) {
 
   configureAuthRoutes(app)
   configureColorRoutes(app)
+  configureRoomRoutes(app)
 
   // Liveness probe. Both Dockerfiles' HEALTHCHECK and every deploy platform
   // (Render, Fly, Railway, Kubernetes) poll an endpoint like this to decide

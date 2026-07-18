@@ -1,8 +1,17 @@
 //#region Imports
-import type { Participant } from "@shared/types/identity"
+import type { ConnectionRole, Participant } from "@shared/types/identity"
 
 import "./styles.css"
 //#endregion
+
+//#region Role badge
+// Small role indicator shown next to a participant. Guests and plain editors
+// carry no badge (that's the default); owner and viewer are the ones worth
+// flagging in the roster.
+const ROLE_BADGE: Partial<Record<ConnectionRole, string>> = {
+  owner: "owner",
+  viewer: "view only",
+}
 
 //#region Component
 export interface PresenceRosterProps {
@@ -47,8 +56,14 @@ export default function PresenceRoster({
                 {participant.name}
                 {isSelf && <span className="presence-you"> (you)</span>}
               </span>
-              {participant.isGuest && (
+              {participant.isGuest ? (
                 <span className="presence-guest-tag">guest</span>
+              ) : (
+                ROLE_BADGE[participant.role] && (
+                  <span className={`presence-role-tag role-${participant.role}`}>
+                    {ROLE_BADGE[participant.role]}
+                  </span>
+                )
               )}
             </li>
           )

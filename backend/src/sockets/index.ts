@@ -68,10 +68,13 @@ export default function configure(
     // socket. 1011 = "internal error"; the client's autoReconnect then retries
     // with backoff, so a transient DB blip self-heals.
     resolveConnectionIdentity(request)
-      .then((identity) => {
+      .then(({ identity, userId }) => {
         const socket = ws as ClientSocket
         socket.connectionId = identity.connectionId
         socket.identity = identity
+        // Server-side only, never broadcast — used to resolve this connection's
+        // room role (see RoomManager.addClient).
+        socket.userId = userId
         return roomManager.addClient(socket, roomId)
       })
       .catch((error) => {

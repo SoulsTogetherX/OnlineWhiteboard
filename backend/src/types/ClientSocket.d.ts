@@ -14,5 +14,9 @@ export interface ClientSocket extends WebSocket {
   // presence roster and live cursors.
   connectionId: string
   identity: Participant
+  // The logged-in account id, or null for a guest. Server-side only — kept off
+  // the broadcast Participant on purpose (see the note there). Used to resolve
+  // this connection's room role and membership.
+  userId: string | null
 }
 //#endregion
