@@ -39,7 +39,7 @@ import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
-import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
+import type { ColorPaletteKeys, ColorType } from "@shared/types/primitive"
 
 import "./styles.css"
 //#endregion
@@ -107,8 +107,8 @@ export default function App() {
 
   // Color
   const [isColorOpen, setIsColorOpen] = useState<boolean>(false)
-  const [selectedColor, setSelectedColor] = useState<ColorPalletKeys>("primary")
-  const { colorPallet, setColor, swapColors } = useColorPalette()
+  const [selectedColor, setSelectedColor] = useState<ColorPaletteKeys>("primary")
+  const { colorPalette, setColor, swapColors } = useColorPalette()
   const { recent, addRecent } = useRecentColors()
   const { saved, addSaved, removeSaved } = useSavedColors(user)
 
@@ -157,7 +157,7 @@ export default function App() {
     [setColor, addRecent, selectTool],
   )
 
-  // Canvas Settup
+  // Canvas Setup
   useCanvasMotion(frameRef, canvasRef)
   // Keep the drawing lock in step with this connection's role.
   // Uses the shared canDraw rule rather than re-testing for "viewer" inline, so
@@ -171,7 +171,7 @@ export default function App() {
   useCanvasDrawing(
     canvasRef,
     drawAction,
-    colorPallet,
+    colorPalette,
     sendDrawInstruction,
     pushAction,
     eyedropperActive,
@@ -276,7 +276,7 @@ export default function App() {
       />
       {notice && <div className="undo-notice">{notice}</div>}
       <ColorSelector
-        colorPallet={colorPallet}
+        colorPalette={colorPalette}
         onSwap={swapColors}
         openColorPopup={(primary: boolean) => {
           setSelectedColor(primary ? "primary" : "secondary")
@@ -288,7 +288,7 @@ export default function App() {
         onClose={() => setIsColorOpen(false)}
         // Was hardcoded to "primary": opening the secondary swatch showed
         // primary's channels, and Apply then wrote those values into secondary.
-        currentColor={colorPallet.current[selectedColor]}
+        currentColor={colorPalette.current[selectedColor]}
         onApply={(color) => {
           setColor(selectedColor, color)
           addRecent(colorToHex8(color))

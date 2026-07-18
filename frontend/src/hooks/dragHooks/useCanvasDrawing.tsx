@@ -3,7 +3,7 @@ import useDrag from "./useDrag"
 import useDrawActions, { type OnCommitAction } from "../useDrawActions"
 
 import type { DrawAction, DrawInstruction } from "@shared/types/drawProtocol"
-import type { ColorPallet } from "@shared/types/primitive"
+import type { ColorPalette } from "@shared/types/primitive"
 //#endregion
 
 //#region Hook Def
@@ -17,7 +17,7 @@ import type { ColorPallet } from "@shared/types/primitive"
 export default function useCanvasDrawing(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   drawAction: React.RefObject<DrawAction>,
-  colorPallet: React.RefObject<ColorPallet>,
+  colorPalette: React.RefObject<ColorPalette>,
   onDrawInstruction: (action: DrawInstruction) => void,
   onCommitAction?: OnCommitAction,
   // When this ref reads true, pointer gestures don't draw. Used by the
@@ -49,7 +49,7 @@ export default function useCanvasDrawing(
   }
 
   const onDrawStart = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(start(drawAction.current, colorPallet.current, ev))
+    isDisabled() ? undefined : emit(start(drawAction.current, colorPalette.current, ev))
   const onDrawFinish = (ev: PointerEvent) =>
     isDisabled() ? undefined : emit(finish(drawAction.current, ev))
   const onDrawMotion = (ev: PointerEvent) =>

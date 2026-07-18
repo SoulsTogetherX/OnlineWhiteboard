@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
-import { getIdxFromVec } from "../helperProtocallMethods"
+import { getIdxFromVec } from "../helperProtocolMethods"
 import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import {

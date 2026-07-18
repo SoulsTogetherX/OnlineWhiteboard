@@ -2,21 +2,21 @@
 import { useState } from "react"
 
 import { colorTypeToString } from "@shared/types/primitive"
-import type { ColorPallet } from "@shared/types/primitive"
+import type { ColorPalette } from "@shared/types/primitive"
 
 import "./styles.css"
 //#endregion
 
 //#region Component Def
 export interface ColorSelectorProps {
-  colorPallet: React.RefObject<ColorPallet>
+  colorPalette: React.RefObject<ColorPalette>
   /** Swaps primary/secondary AND persists the result to sessionStorage. */
   onSwap: () => void
   openColorPopup: (primary: boolean) => void
 }
 
 export default function ColorSelector({
-  colorPallet,
+  colorPalette,
   onSwap,
   openColorPopup,
 }: ColorSelectorProps) {
@@ -24,11 +24,11 @@ export default function ColorSelector({
   // the ref. Flipping this is what drives the CSS slide animation below.
   const [isSwapped, setIsSwapped] = useState<boolean>(false)
 
-  const primaryColor = colorTypeToString(colorPallet.current.primary)
-  const secondaryColor = colorTypeToString(colorPallet.current.secondary)
+  const primaryColor = colorTypeToString(colorPalette.current.primary)
+  const secondaryColor = colorTypeToString(colorPalette.current.secondary)
 
   const swapHandler = () => {
-    // This used to destructure-swap colorPallet.current in place, bypassing
+    // This used to destructure-swap colorPalette.current in place, bypassing
     // useColorPalette entirely. The swap worked on screen but was never written
     // to sessionStorage, so it silently reverted on reload — while a swap made
     // via the ColorPopup's Apply *did* persist. onSwap routes through the hook's

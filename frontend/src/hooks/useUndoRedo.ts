@@ -4,7 +4,7 @@ import { useCallback, useRef, useState, type RefObject } from "react"
 import useSessionID from "./useSessionID"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocallMethods"
+import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
 
 import type {
   DrawInstruction,

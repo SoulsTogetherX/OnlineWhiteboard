@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
-import { handleDrawFillInstruction } from "../handleFillProtocall"
-import { handleDrawLineInstruction } from "../handleLineProtocall"
+import { handleDrawFillInstruction } from "../handleFillProtocol"
+import { handleDrawLineInstruction } from "../handleLineProtocol"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import {

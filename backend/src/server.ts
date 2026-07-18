@@ -9,7 +9,7 @@ import { runMigrations } from "./db/migrate"
 import pool from "./db/pool"
 //#endregion
 
-//#region Settup App & Sever
+//#region Setup App & Sever
 const app = express()
 const server = createServer(app)
 const wss = new WebSocketServer({

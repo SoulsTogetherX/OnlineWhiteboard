@@ -8,7 +8,7 @@ import {
   getPosCorrected,
   updateCanvas,
   withRecording,
-} from "./helperProtocallMethods"
+} from "./helperProtocolMethods"
 import { mulberry32, randomSeed } from "./random"
 
 import {

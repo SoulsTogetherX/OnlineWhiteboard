@@ -7,7 +7,7 @@ import {
   getPosCorrected,
   updateCanvas,
   withRecording,
-} from "./helperProtocallMethods"
+} from "./helperProtocolMethods"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
 import { colorsEqual } from "../types/primitive"
@@ -31,7 +31,7 @@ function setPixelFill(
   // Get Data
   const startPos = action.pos ?? [0, 0]
 
-  // Settup Methods
+  // Setup Methods
   const getColor = getLookAtMethod(action.type, imageData)
   let setColor = getDrawerMethod(action.type, imageData)
   if (record) {

@@ -5,7 +5,7 @@ import {
   getCanvasState,
   getIdxFromVec,
   getPosCorrected,
-} from "@shared/utils/helperProtocallMethods"
+} from "@shared/utils/helperProtocolMethods"
 
 import type { ColorType } from "@shared/types/primitive"
 //#endregion

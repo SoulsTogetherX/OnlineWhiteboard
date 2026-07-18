@@ -27,7 +27,7 @@ import type {
 import type { Participant } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
-import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocallMethods"
+import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
 //#endregion
 
 //#region Constants

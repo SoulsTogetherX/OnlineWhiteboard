@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { handleDrawPatchInstruction } from "../handlePatchProtocol"
-import { getIdxFromVec } from "../helperProtocallMethods"
+import { getIdxFromVec } from "../helperProtocolMethods"
 
 import { BASE, BLUE, GREEN, RED, TRANSPARENT, getPixel, makeCanvas, setPixel } from "./testHelpers"
 

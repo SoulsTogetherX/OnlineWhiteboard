@@ -1,5 +1,5 @@
 //#region Imports
-import type { ColorPallet } from "@shared/types/primitive"
+import type { ColorPalette } from "@shared/types/primitive"
 import type { DrawAction } from "@shared/types/drawProtocol"
 //#endregion
 
@@ -15,7 +15,7 @@ export const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)"
 //#endregion
 
 //#region Constants
-export const DEFAULT_COLOR_PALLET: ColorPallet = {
+export const DEFAULT_COLOR_PALETTE: ColorPalette = {
   primary: { r: 0, g: 0, b: 0, a: 255 },
   secondary: { r: 255, g: 255, b: 255, a: 255 },
 }

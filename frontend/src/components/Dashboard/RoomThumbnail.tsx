@@ -1,7 +1,7 @@
 //#region Imports
 import { useEffect, useRef } from "react"
 
-import { createImageDataFromBase64 } from "@shared/utils/helperProtocallMethods"
+import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 
 import "./thumbnail.css"

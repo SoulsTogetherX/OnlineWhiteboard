@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   handleDrawLineMotion,
   handleDrawLineStart,
-} from "../handleLineProtocall"
+} from "../handleLineProtocol"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { RED, getPixel, makeCanvas } from "./testHelpers"
@@ -11,7 +11,7 @@ import { RED, getPixel, makeCanvas } from "./testHelpers"
 import type { BaseInstruction, LineAction } from "../../types/drawProtocol"
 
 // Gesture-level tests for the pointer path, as opposed to the wire path in
-// handleLineProtocall.test.ts.
+// handleLineProtocol.test.ts.
 //
 // The DOM surface these functions touch is tiny — getBoundingClientRect,
 // getContext('2d'), getImageData, putImageData — so a hand-rolled stub covers it

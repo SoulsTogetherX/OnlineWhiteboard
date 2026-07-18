@@ -2,7 +2,7 @@
 import { useEffect, useRef, useState } from "react"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { createImageDataFromBase64 } from "@shared/utils/helperProtocallMethods"
+import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 
 import type { PlaybackData } from "@/hooks/useRoomConnection"

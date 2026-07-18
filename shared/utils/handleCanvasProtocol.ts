@@ -2,9 +2,9 @@
 import {
   createImageDataFromBase64,
   getCanvasState,
-} from "./helperProtocallMethods"
-import { handleDrawLineInstruction } from "./handleLineProtocall"
-import { handleDrawFillInstruction } from "./handleFillProtocall"
+} from "./helperProtocolMethods"
+import { handleDrawLineInstruction } from "./handleLineProtocol"
+import { handleDrawFillInstruction } from "./handleFillProtocol"
 import { handleDrawSprayInstruction } from "./handleSprayProtocol"
 import { handleDrawPatchInstruction } from "./handlePatchProtocol"
 import { isValidDrawInstruction } from "./validateInstruction"

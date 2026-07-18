@@ -2,7 +2,7 @@
 import type { Vec, ColorType } from "./primitive"
 //#endregion
 
-//#region Summery Types
+//#region Summary Types
 export type LineToolType = "pencil" | "eraser"
 export type FillToolType = "bucket"
 export type SprayToolType = "spray"

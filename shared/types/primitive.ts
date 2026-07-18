@@ -6,11 +6,11 @@ export type ColorType = {
   a: number
 }
 
-export type ColorPallet = {
+export type ColorPalette = {
   primary: ColorType
   secondary: ColorType
 }
-export type ColorPalletKeys = keyof ColorPallet
+export type ColorPaletteKeys = keyof ColorPalette
 
 export type Vec = [number, number]
 //#endregion

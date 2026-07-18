@@ -577,12 +577,15 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
   biggest architectural limitation and a good interview topic.
 - Rate limiting and sessions are likewise per-process/in-memory.
 
-**Naming (pending, mechanical)**
-- **`Pallet` → `Palette`** and **`Protocall` → `Protocol`** are misspelled *and*
-  inconsistent (`handleCanvasProtocol`/`handlePatchProtocol` are correct;
-  `handleFillProtocall`/`handleLineProtocall`/`helperProtocallMethods` are not, and
-  `useDrawActions` imports both spellings). `ColorPallet` is baked into a shared type. Must
-  be **one atomic pass** across all three packages (§12.4).
+**Naming — done**
+- The long-standing `Pallet`→`Palette` and `Protocall`→`Protocol` misspellings were
+  corrected in one atomic pass (plus `Settup`→`Setup`, `Summery`→`Summary`). Files
+  `handleFillProtocol.ts`, `handleLineProtocol.ts` and `helperProtocolMethods.ts` are now
+  spelled consistently with `handleCanvasProtocol`/`handlePatchProtocol`.
+- **One deliberate leftover:** `COLOR_PALETTE_STORAGE_KEY`'s *value* is still
+  `"online-whiteboard-color-pallet"`. It is a live sessionStorage key — renaming the string
+  would orphan every existing user's saved colours. Identifiers are free to rename;
+  persisted data needs a migration. Don't "finish" this one.
 
 **Smaller**
 - `rooms.title` is provisioned but never written (deliberate — see §12.4).

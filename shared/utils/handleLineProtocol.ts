@@ -9,7 +9,7 @@ import {
   updateCanvas,
   withRecording,
   getLookAtMethod,
-} from "./helperProtocallMethods"
+} from "./helperProtocolMethods"
 
 import { DEFAULT_COLOR, DEFAULT_STROKE_SIZE } from "../constants/canvas"
 

@@ -8,13 +8,13 @@ import {
   handleDrawLineLeave,
   handleDrawLineMotion,
   handleDrawLineStart,
-} from "@shared/utils/handleLineProtocall"
+} from "@shared/utils/handleLineProtocol"
 import {
   handleDrawFillFinish,
   handleDrawFillLeave,
   handleDrawFillMotion,
   handleDrawFillStart,
-} from "@shared/utils/handleFillProtocall"
+} from "@shared/utils/handleFillProtocol"
 import {
   handleDrawSprayFinish,
   handleDrawSprayLeave,
@@ -24,7 +24,7 @@ import {
 import {
   getDirectColor,
   getToolColor,
-} from "@shared/utils/helperProtocallMethods"
+} from "@shared/utils/helperProtocolMethods"
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type {
@@ -33,13 +33,13 @@ import type {
   DrawInstruction,
   PatchEntry,
 } from "@shared/types/drawProtocol"
-import type { ColorPallet } from "@shared/types/primitive"
+import type { ColorPalette } from "@shared/types/primitive"
 //#endregion
 
 //#region Type Def
 export type DrawHandlerMethodStart = (
   da: DrawAction,
-  cp: ColorPallet,
+  cp: ColorPalette,
   ev: PointerEvent,
 ) => DrawInstruction | null
 export type DrawHandlerMethod = (
@@ -61,7 +61,7 @@ export type UseDrawActionsReturn = [
 export type OnCommitAction = (instructionId: number, entries: PatchEntry[]) => void
 //#endregion
 
-//#region Settup Method
+//#region Setup Method
 // Takes the ref itself, NOT `canvasRef.current`.
 //
 // It used to take the element, read out of the ref during render by
@@ -91,7 +91,7 @@ export default function useDrawActions(
 
   const handleDrawActionStart = (
     da: DrawAction,
-    cp: ColorPallet,
+    cp: ColorPalette,
     ev: PointerEvent,
   ): DrawInstruction | null => {
     const canvas = canvasRef.current

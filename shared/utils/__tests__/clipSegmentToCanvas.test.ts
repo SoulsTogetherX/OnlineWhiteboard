@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { clipSegmentToCanvas } from "../helperProtocallMethods"
+import { clipSegmentToCanvas } from "../helperProtocolMethods"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 const MAX_X = CANVAS_WIDTH - 1 // 119

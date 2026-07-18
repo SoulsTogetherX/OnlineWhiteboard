@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 
-import { handleDrawLineInstruction } from "../handleLineProtocall"
+import { handleDrawLineInstruction } from "../handleLineProtocol"
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { BASE, RED, getPixel, makeCanvas, paintedCount } from "./testHelpers"

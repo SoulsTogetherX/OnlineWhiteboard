@@ -8,7 +8,7 @@ import { defineConfig } from "vitest/config"
 // every client from the server's authoritative canvas.
 //
 // No path aliases are configured on purpose: shared/ imports itself relatively
-// ("./helperProtocallMethods"), so the tests can too. The @shared alias is a
+// ("./helperProtocolMethods"), so the tests can too. The @shared alias is a
 // convenience for the frontend/backend packages, not something shared/ needs
 // internally.
 export default defineConfig({

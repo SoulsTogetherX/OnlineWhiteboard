@@ -8,13 +8,13 @@ import {
   getLookAtMethod,
   getToolColor,
   withRecording,
-} from "../helperProtocallMethods"
+} from "../helperProtocolMethods"
 import { CANVAS_WIDTH, DEFAULT_COLOR } from "../../constants/canvas"
 
 import { BLUE, RED, makeCanvas } from "./testHelpers"
 
 import type { PatchEntry } from "../../types/drawProtocol"
-import type { ColorPallet } from "../../types/primitive"
+import type { ColorPalette } from "../../types/primitive"
 
 describe("clamp", () => {
   it("passes through a value already in range", () => {
@@ -121,7 +121,7 @@ describe("getToolColor", () => {
 })
 
 describe("getDirectColor", () => {
-  const palette: ColorPallet = { primary: RED, secondary: BLUE }
+  const palette: ColorPalette = { primary: RED, secondary: BLUE }
   const asEvent = (init: Partial<PointerEvent>) => init as PointerEvent
 
   it("uses the primary color for a left click", () => {

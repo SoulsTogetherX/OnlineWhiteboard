@@ -2,7 +2,7 @@
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
 
 import type { ToolType, PatchEntry } from "../types/drawProtocol"
-import type { ColorPallet, ColorType, Vec } from "../types/primitive"
+import type { ColorPalette, ColorType, Vec } from "../types/primitive"
 //#endregion
 
 //#region Type Defs
@@ -232,7 +232,7 @@ export function withRecording(
 //#endregion
 
 //#region Color Methods
-export function getDirectColor(cp: ColorPallet, ev: PointerEvent): ColorType {
+export function getDirectColor(cp: ColorPalette, ev: PointerEvent): ColorType {
   if (ev.pointerType !== "mouse") {
     return cp.primary
   }

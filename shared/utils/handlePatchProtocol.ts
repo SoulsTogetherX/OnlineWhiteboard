@@ -1,5 +1,5 @@
 //#region Imports
-import { getDrawerMethod, getLookAtMethod } from "./helperProtocallMethods"
+import { getDrawerMethod, getLookAtMethod } from "./helperProtocolMethods"
 import { colorsEqual } from "../types/primitive"
 
 import type { PatchEntry, PatchInstruction } from "../types/drawProtocol"
