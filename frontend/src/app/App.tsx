@@ -10,6 +10,7 @@ import ColorPopup from "@/components/Popups/ColorPopup"
 import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
 import PresenceRoster from "@/components/PresenceRoster"
+import VotePrompt from "@/components/VotePrompt"
 import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
@@ -110,6 +111,9 @@ export default function App() {
     sendDrawInstruction,
     loadRoom,
     sendCursor,
+    activeVote,
+    requestClear,
+    castVote,
     cursorsRef,
     cursorIds,
   } = useRoomConnection(canvasRef, () => setIsRoomOpen(false), user?.id ?? null)
@@ -194,11 +198,13 @@ export default function App() {
         strokeSize={strokeSize}
         onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
+        onClear={requestClear}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
         canRedo={canRedo}
       />
+      <VotePrompt vote={activeVote} onVote={castVote} />
       <CanvasBoard canvasRef={canvasRef} />
       <CursorOverlay
         canvasRef={canvasRef}

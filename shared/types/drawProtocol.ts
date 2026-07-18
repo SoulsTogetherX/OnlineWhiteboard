@@ -19,6 +19,7 @@ export type DrawInstruction =
   | FillInstruction
   | SprayInstruction
   | PatchInstruction
+  | ClearInstruction
 //#endregion
 
 //#region Base Draw Action Types
@@ -117,5 +118,17 @@ export type PatchEntry = {
 export type PatchInstruction = {
   type: "patch"
   entries: PatchEntry[]
+} & BaseInstruction
+//#endregion
+
+//#region Clear Instruction (room action)
+// Blanks the whole canvas. Like patch it isn't a toolbar tool — it is applied by
+// the SERVER after a vote resolves, then flows through the event log and
+// broadcast as a normal "draw" so recovery and every client handle it the same
+// way as any other instruction. Clients are NOT allowed to send this directly
+// (the server rejects a client-originated clear); the only path to it is the
+// vote flow, which is what stops one person wiping a shared board.
+export type ClearInstruction = {
+  type: "clear"
 } & BaseInstruction
 //#endregion

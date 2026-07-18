@@ -19,6 +19,7 @@ import {
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
   ClientSocketMessage,
+  RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
 import type { Participant } from "@shared/types/identity"
@@ -34,6 +35,17 @@ const DEFAULT_ROOM_ID = "testRoom"
 //#endregion
 
 //#region Type Def
+// The vote prompt this client should show, mirrored from the server's
+// vote_started/vote_update messages. Null when there's no vote to act on.
+export interface ActiveVote {
+  voteId: string
+  action: RoomAction
+  initiatorName: string
+  voters: number
+  approvals: number
+  deadline: number
+}
+
 export interface UseRoomConnectionResult {
   roomId: string
   setRoomId: (val: string) => void
@@ -43,6 +55,10 @@ export interface UseRoomConnectionResult {
   loadRoom: (nextRoomId: string) => void
   sendDrawInstruction: (action: DrawInstruction) => void
   sendCursor: (pos: Vec | null) => void
+  // Destructive-action voting.
+  activeVote: ActiveVote | null
+  requestClear: () => void
+  castVote: (approve: boolean) => void
   // Live cursor positions keyed by connectionId. A REF, not state: cursor moves
   // arrive many times a second and must not trigger a React render each time —
   // the overlay reads this directly in a requestAnimationFrame loop.
@@ -71,6 +87,7 @@ export default function useRoomConnection(
   const [participants, setParticipants] = useState<Participant[]>([])
   const [self, setSelf] = useState<Participant | null>(null)
   const [socketLabel, setSocketLabel] = useState<string>("Connecting")
+  const [activeVote, setActiveVote] = useState<ActiveVote | null>(null)
 
   // Cursor positions live in a ref (mutated on every move, no render); cursorIds
   // is the render-driving set that only changes on appear/disappear.
@@ -175,6 +192,40 @@ export default function useRoomConnection(
           }
           break
 
+        case "vote_started":
+          if (message.roomId === roomId) {
+            setActiveVote({
+              voteId: message.voteId,
+              action: message.action,
+              initiatorName: message.initiatorName,
+              voters: message.voters,
+              approvals: message.approvals,
+              deadline: message.deadline,
+            })
+          }
+          break
+
+        case "vote_update":
+          // Update the running tally, but only for the vote we're showing.
+          setActiveVote((current) =>
+            current && current.voteId === message.voteId
+              ? {
+                  ...current,
+                  voters: message.voters,
+                  approvals: message.approvals,
+                }
+              : current,
+          )
+          break
+
+        case "vote_resolved":
+          // Dismiss the prompt whichever way it went; the canvas change (if
+          // approved) arrives separately as a normal "draw".
+          setActiveVote((current) =>
+            current && current.voteId === message.voteId ? null : current,
+          )
+          break
+
         case "error":
           console.error(message.message)
           break
@@ -239,6 +290,24 @@ export default function useRoomConnection(
     [roomId, send],
   )
 
+  const requestClear = useCallback(() => {
+    send({ type: "request_action", roomId, action: "clear" })
+  }, [roomId, send])
+
+  const castVote = useCallback(
+    (approve: boolean) => {
+      setActiveVote((current) => {
+        if (current) {
+          send({ type: "vote", roomId, voteId: current.voteId, approve })
+        }
+        // Dismiss our own prompt immediately; the server confirms via
+        // vote_resolved. Rejecting is final for us either way.
+        return null
+      })
+    },
+    [roomId, send],
+  )
+
   const loadRoom = useCallback(
     (nextRoomId: string) => {
       const trimmedRoomId = nextRoomId.trim()
@@ -252,6 +321,7 @@ export default function useRoomConnection(
       setRoomId(trimmedRoomId)
       setParticipants([])
       setSelf(null)
+      setActiveVote(null)
       cursorsRef.current.clear()
       setCursorIds([])
       setSocketLabel("Connecting")
@@ -269,6 +339,9 @@ export default function useRoomConnection(
     loadRoom,
     sendDrawInstruction,
     sendCursor,
+    activeVote,
+    requestClear,
+    castVote,
     cursorsRef,
     cursorIds,
   }

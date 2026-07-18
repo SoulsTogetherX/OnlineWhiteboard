@@ -28,6 +28,26 @@ export type ClientSocketMessage =
       roomId: string
       pos: Vec | null
     }
+  | {
+      // Request a room-wide destructive action (currently only "clear"). If the
+      // requester is the only recent editor the server applies it immediately;
+      // otherwise it opens a vote among the recent editors.
+      type: "request_action"
+      roomId: string
+      action: RoomAction
+    }
+  | {
+      // A recent editor's vote on an open request. The server tallies these and
+      // resolves the vote when everyone has approved (or anyone rejects).
+      type: "vote"
+      roomId: string
+      voteId: string
+      approve: boolean
+    }
+
+// Room-wide actions that require consensus. Kept as its own type so resize
+// (P1d) slots in beside clear without touching the message shapes.
+export type RoomAction = "clear"
 
 export type ServerSocketMessage =
   | {
@@ -79,6 +99,35 @@ export type ServerSocketMessage =
       roomId: string
       connectionId: string
       pos: Vec | null
+    }
+  | {
+      // A vote has opened. Sent to every recent editor (the voters). `voters` is
+      // the number whose approval is needed; the initiator is counted as already
+      // approving. `deadline` is an epoch-ms timestamp after which it auto-fails.
+      type: "vote_started"
+      roomId: string
+      voteId: string
+      action: RoomAction
+      initiatorName: string
+      voters: number
+      approvals: number
+      deadline: number
+    }
+  | {
+      // Running tally as votes come in.
+      type: "vote_update"
+      roomId: string
+      voteId: string
+      voters: number
+      approvals: number
+    }
+  | {
+      // The vote ended. `approved` true means the action was applied (the canvas
+      // change arrives separately as the normal "draw"/"clear" broadcast).
+      type: "vote_resolved"
+      roomId: string
+      voteId: string
+      approved: boolean
     }
   | {
       type: "pong"

@@ -66,6 +66,27 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
     expect(inst.entries).toHaveLength(2)
   })
 
+  it("clears the whole canvas on a clear instruction", () => {
+    const pixels = makeCanvas()
+    // Paint something first.
+    applyDrawInstructionToCanvas(pixels, {
+      type: "bucket",
+      pos: [0, 0],
+      color: RED,
+      ...BASE,
+    } as DrawInstruction)
+    expect(paintedCount(pixels)).toBeGreaterThan(0)
+
+    const applied = applyDrawInstructionToCanvas(pixels, {
+      type: "clear",
+      ...BASE,
+    } as DrawInstruction)
+
+    expect(applied).not.toBeNull()
+    expect(paintedCount(pixels)).toBe(0)
+    expect(pixels.every((byte) => byte === 0)).toBe(true)
+  })
+
   it("returns null when a patch applies nothing, so nothing is broadcast", () => {
     const pixels = makeCanvas()
     setPixel(pixels, 0, 0, GREEN)

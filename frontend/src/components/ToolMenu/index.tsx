@@ -28,6 +28,7 @@ export interface ToolMenuProps {
   strokeSize: number
   onStrokeSizeChange: (size: number) => void
   openRoomPicker: () => void
+  onClear: () => void
   onUndo: () => void
   onRedo: () => void
   canUndo: boolean
@@ -47,6 +48,7 @@ export default function ToolMenu({
   strokeSize,
   onStrokeSizeChange,
   openRoomPicker,
+  onClear,
   onUndo,
   onRedo,
   canUndo,
@@ -213,6 +215,25 @@ export default function ToolMenu({
               <path d="M7 14s-1 0-1-1 1-4 5-4 5 3 5 4-1 1-1 1zm4-6a3 3 0 1 0 0-6 3 3 0 0 0 0 6m-5.784 6A2.24 2.24 0 0 1 5 13c0-1.355.68-2.75 1.936-3.72A6.3 6.3 0 0 0 5 9c-4 0-5 3-5 4s1 1 1 1zM4.5 8a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5" />
             </svg>
             <span className="tool-tip">Room Id</span>
+          </button>
+        </li>
+        <li>
+          <button
+            type="button"
+            className="tool-button"
+            onClick={onClear}
+            title="Clear the canvas (needs a vote if others drew recently)"
+          >
+            <svg
+              className="button-icon"
+              fill="currentColor"
+              viewBox="0 0 16 16"
+              aria-hidden="true"
+            >
+              <path d="M5.5 5.5A.5.5 0 0 1 6 6v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m2.5 0a.5.5 0 0 1 .5.5v6a.5.5 0 0 1-1 0V6a.5.5 0 0 1 .5-.5m3 .5a.5.5 0 0 0-1 0v6a.5.5 0 0 0 1 0z" />
+              <path d="M14.5 3a1 1 0 0 1-1 1H13v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V4h-.5a1 1 0 0 1-1-1V2a1 1 0 0 1 1-1H6a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1h3.5a1 1 0 0 1 1 1zM4.118 4 4 4.059V13a1 1 0 0 0 1 1h6a1 1 0 0 0 1-1V4.059L11.882 4zM2.5 3h11V2h-11z" />
+            </svg>
+            <span className="tool-tip">Clear Canvas</span>
           </button>
         </li>
       </ul>

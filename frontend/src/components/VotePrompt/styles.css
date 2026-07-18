@@ -1,0 +1,47 @@
+.vote-prompt {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  background: var(--popup-bg, #fff);
+  color: var(--popup-fg, #222);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.25);
+  min-width: 16rem;
+  text-align: center;
+}
+
+.vote-prompt-text {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.vote-prompt-tally {
+  margin: 0;
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+.vote-prompt-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.vote-prompt-actions button {
+  padding: 0.35rem 0.9rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border, #ccc);
+  cursor: pointer;
+}
+
+.vote-prompt-approve {
+  background: #2e7d32;
+  color: #fff;
+  border-color: #2e7d32;
+}

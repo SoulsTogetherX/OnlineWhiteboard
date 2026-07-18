@@ -1,4 +1,6 @@
 //#region Imports
+import { randomUUID } from "node:crypto"
+
 import type { RawData, WebSocketServer } from "ws"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
@@ -16,6 +18,7 @@ import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
   ClientSocketMessage,
+  RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
 import type { DrawInstruction } from "@shared/types/drawProtocol"
@@ -55,9 +58,29 @@ const ROOM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 // How often the cleanup sweep runs. Daily is plenty — retention is measured in
 // months, so the exact cadence doesn't matter, only that it happens.
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
+
+// A destructive room action (clear) needs consensus from everyone who has drawn
+// recently. "Recently" is this window; an editor who drew longer ago than this
+// no longer gets a vote, which stops a long-idle participant blocking the board.
+const RECENT_EDITOR_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
+
+// A vote auto-fails if it isn't unanimous within this long — so one AFK voter
+// can't leave the board frozen behind a pending vote forever.
+const VOTE_TIMEOUT_MS = 30_000
 //#endregion
 
 //#region Type Defs
+// An open vote on a destructive action. `voters` is everyone whose approval is
+// required (the recent editors); `approvals` is who has said yes so far.
+type VoteState = {
+  voteId: string
+  action: RoomAction
+  voters: Set<string>
+  approvals: Set<string>
+  timer: NodeJS.Timeout
+  deadline: number
+}
+
 type RoomState = {
   roomId: string
   clients: Set<ClientSocket>
@@ -72,6 +95,11 @@ type RoomState = {
   // Guards against a flush starting while the previous one is still in flight
   // (the timer can fire again mid-await).
   isFlushing: boolean
+  // connectionId -> timestamp of that connection's last applied change. Drives
+  // who gets a vote on a destructive action.
+  recentEditors: Map<string, number>
+  // The single in-flight vote, or null. At most one at a time per room.
+  activeVote: VoteState | null
 }
 //#endregion
 
@@ -261,6 +289,8 @@ export default class RoomManager {
       isDirty: false,
       eventBuffer: [],
       isFlushing: false,
+      recentEditors: new Map<string, number>(),
+      activeVote: null,
       saveTimer: setInterval(
         () => void this.saveRoom(roomId),
         SAVE_INTERVAL_MS,
@@ -315,8 +345,34 @@ export default class RoomManager {
       return
     }
 
+    if (message.type === "request_action") {
+      this.handleActionRequest(socket, room, message.action)
+      return
+    }
+
+    if (message.type === "vote") {
+      this.handleVote(socket, room, message.voteId, message.approve)
+      return
+    }
+
     // Only "draw" remains — TypeScript has narrowed the union accordingly.
-    this.applyInstruction(room, message.instruction)
+    // Clients may not clear directly: "clear" is a room action that only the
+    // server applies after a vote. Rejecting it here is what makes the vote the
+    // ONLY path to wiping a shared board.
+    if (message.instruction.type === "clear") {
+      this.send(socket, {
+        type: "error",
+        message: "Clear must go through a vote (request_action).",
+      })
+      return
+    }
+
+    const applied = this.applyInstruction(room, message.instruction)
+    // Anyone whose instruction actually landed is now a "recent editor" and gets
+    // a say in the next destructive-action vote.
+    if (applied) {
+      room.recentEditors.set(socket.connectionId, Date.now())
+    }
   }
 
   // Relays a cursor position to everyone else in the room. Pure pass-through:
@@ -351,13 +407,15 @@ export default class RoomManager {
     }
   }
 
+  // Returns the instruction that actually applied (so the caller can mark the
+  // sender a recent editor), or null if it was rejected / a no-op.
   private applyInstruction(
     room: RoomState,
     instruction: DrawInstruction,
-  ): void {
+  ): DrawInstruction | null {
     const applied = applyDrawInstructionToCanvas(room.pixels, instruction)
     if (!applied) {
-      return
+      return null
     }
 
     room.revision += 1
@@ -378,7 +436,163 @@ export default class RoomManager {
       instruction: applied,
       revision: room.revision,
     })
+    return applied
   }
+
+  //#region Voting on destructive actions
+  // Handles a request to clear the board. If the requester is the only recent
+  // editor, it happens immediately; otherwise a vote opens among the recent
+  // editors and the requester's own approval is counted.
+  private handleActionRequest(
+    socket: ClientSocket,
+    room: RoomState,
+    action: RoomAction,
+  ): void {
+    if (room.activeVote) {
+      this.send(socket, {
+        type: "error",
+        message: "A vote is already in progress for this room.",
+      })
+      return
+    }
+
+    // Voters = currently-connected recent editors, plus the requester (so they
+    // always have a say in their own request).
+    const now = Date.now()
+    const voters = new Set<string>([socket.connectionId])
+    room.clients.forEach((client) => {
+      const lastEdit = room.recentEditors.get(client.connectionId)
+      if (lastEdit !== undefined && now - lastEdit <= RECENT_EDITOR_WINDOW_MS) {
+        voters.add(client.connectionId)
+      }
+    })
+
+    // Nobody else has drawn recently — no consensus needed.
+    if (voters.size <= 1) {
+      this.applyRoomAction(room, action)
+      return
+    }
+
+    const vote: VoteState = {
+      voteId: randomUUID(),
+      action,
+      voters,
+      approvals: new Set<string>([socket.connectionId]),
+      deadline: now + VOTE_TIMEOUT_MS,
+      timer: setTimeout(
+        () => this.resolveVote(room, false),
+        VOTE_TIMEOUT_MS,
+      ),
+    }
+    room.activeVote = vote
+
+    this.broadcastToVoters(room, vote, {
+      type: "vote_started",
+      roomId: room.roomId,
+      voteId: vote.voteId,
+      action,
+      initiatorName: socket.identity.name,
+      voters: vote.voters.size,
+      approvals: vote.approvals.size,
+      deadline: vote.deadline,
+    })
+  }
+
+  private handleVote(
+    socket: ClientSocket,
+    room: RoomState,
+    voteId: string,
+    approve: boolean,
+  ): void {
+    const vote = room.activeVote
+    // Ignore stale votes (already resolved / superseded) and non-voters.
+    if (!vote || vote.voteId !== voteId) {
+      return
+    }
+    if (!vote.voters.has(socket.connectionId)) {
+      return
+    }
+
+    // Any single rejection kills the whole vote — a clear must be unanimous.
+    if (!approve) {
+      this.resolveVote(room, false)
+      return
+    }
+
+    vote.approvals.add(socket.connectionId)
+    this.broadcastToVoters(room, vote, {
+      type: "vote_update",
+      roomId: room.roomId,
+      voteId: vote.voteId,
+      voters: vote.voters.size,
+      approvals: vote.approvals.size,
+    })
+    this.checkVoteComplete(room)
+  }
+
+  private checkVoteComplete(room: RoomState): void {
+    const vote = room.activeVote
+    if (!vote) {
+      return
+    }
+    // Unanimous once every voter is in the approvals set.
+    for (const voter of vote.voters) {
+      if (!vote.approvals.has(voter)) {
+        return
+      }
+    }
+    this.resolveVote(room, true)
+  }
+
+  private resolveVote(room: RoomState, approved: boolean): void {
+    const vote = room.activeVote
+    if (!vote) {
+      return
+    }
+    clearTimeout(vote.timer)
+    room.activeVote = null
+
+    this.broadcast(room, {
+      type: "vote_resolved",
+      roomId: room.roomId,
+      voteId: vote.voteId,
+      approved,
+    })
+
+    if (approved) {
+      this.applyRoomAction(room, vote.action)
+    }
+  }
+
+  // Applies a resolved room action. `clear` is applied as a server-generated
+  // ClearInstruction so it flows through the same log + broadcast path as any
+  // draw (clients apply it via the normal "draw" handler). Recent editors are
+  // reset afterwards — the board is now blank, so there's no recent work left to
+  // protect and a subsequent clear needn't re-vote.
+  private applyRoomAction(room: RoomState, action: RoomAction): void {
+    if (action === "clear") {
+      this.applyInstruction(room, {
+        type: "clear",
+        instructionId: -1,
+        sessionId: "server",
+      })
+      room.recentEditors.clear()
+    }
+  }
+
+  private broadcastToVoters(
+    room: RoomState,
+    vote: VoteState,
+    message: ServerSocketMessage,
+  ): void {
+    const payload = JSON.stringify(message)
+    room.clients.forEach((client) => {
+      if (vote.voters.has(client.connectionId)) {
+        this.sendRaw(client, payload)
+      }
+    })
+  }
+  //#endregion
 
   // Writes the room's buffered events to the log in one batch. Kept safe against
   // overlap (the flush timer can fire while a previous flush is still awaiting)
@@ -415,7 +629,29 @@ export default class RoomManager {
     }
 
     room.clients.delete(socket)
+    room.recentEditors.delete(socket.connectionId)
     this.broadcastPresence(room)
+
+    // If the leaver was a voter in an open vote, drop them. Their absence may
+    // complete the vote (everyone remaining has approved) or, if no voters are
+    // left, cancel it.
+    const vote = room.activeVote
+    if (vote && vote.voters.has(socket.connectionId)) {
+      vote.voters.delete(socket.connectionId)
+      vote.approvals.delete(socket.connectionId)
+      if (vote.voters.size === 0) {
+        this.resolveVote(room, false)
+      } else {
+        this.broadcastToVoters(room, vote, {
+          type: "vote_update",
+          roomId: room.roomId,
+          voteId: vote.voteId,
+          voters: vote.voters.size,
+          approvals: vote.approvals.size,
+        })
+        this.checkVoteComplete(room)
+      }
+    }
 
     if (room.clients.size === 0) {
       // Flush buffered events BEFORE the snapshot and before eviction —
@@ -438,6 +674,9 @@ export default class RoomManager {
     clearInterval(room.saveTimer)
     clearInterval(room.snapshotTimer)
     clearInterval(room.flushTimer)
+    if (room.activeVote) {
+      clearTimeout(room.activeVote.timer)
+    }
     this.rooms.delete(room.roomId)
   }
 
