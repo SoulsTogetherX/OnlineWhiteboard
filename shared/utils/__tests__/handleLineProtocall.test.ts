@@ -31,6 +31,14 @@ describe("handleDrawLineInstruction — Bresenham", () => {
     expect(paintedCount(pixels)).toBe(1)
   })
 
+  it("size 1 (or absent) is unchanged single-pixel behaviour", () => {
+    const pixels = makeCanvas()
+
+    handleDrawLineInstruction(pixels, line([5, 5], [5, 5], { size: 1 }))
+
+    expect(paintedCount(pixels)).toBe(1)
+  })
+
   it("paints a horizontal run inclusive of both endpoints", () => {
     const pixels = makeCanvas()
 
@@ -112,6 +120,47 @@ describe("handleDrawLineInstruction — Bresenham", () => {
     )
 
     expect(paintedCount(pixels)).toBe(0)
+  })
+
+  it("stamps a filled disc for a wide brush on a single dot", () => {
+    const pixels = makeCanvas()
+
+    // size 3 -> a 3x3 block (radius 1.5) centred on the point.
+    handleDrawLineInstruction(pixels, line([10, 10], [10, 10], { size: 3 }))
+
+    expect(paintedCount(pixels)).toBe(9)
+    for (let y = 9; y <= 11; y += 1) {
+      for (let x = 9; x <= 11; x += 1) {
+        expect(getPixel(pixels, x, y)).toEqual(RED)
+      }
+    }
+  })
+
+  it("clips a wide brush at the canvas edge", () => {
+    const pixels = makeCanvas()
+
+    // A size-3 dot at the corner: only the in-bounds quadrant is painted.
+    handleDrawLineInstruction(pixels, line([0, 0], [0, 0], { size: 3 }))
+
+    expect(paintedCount(pixels)).toBe(4)
+    expect(getPixel(pixels, 0, 0)).toEqual(RED)
+    expect(getPixel(pixels, 1, 1)).toEqual(RED)
+  })
+
+  it("a wide horizontal stroke paints a band, deduped (no double-count)", () => {
+    const pixels = makeCanvas()
+
+    // size 3 over a 5-long horizontal run -> a 3-tall band. Dedup means the
+    // count is the union of the discs, not 5 discs x 9 pixels.
+    handleDrawLineInstruction(pixels, line([10, 20], [14, 20], { size: 3 }))
+
+    // Band spans x 9..15 (each end's disc reaches one past), y 19..21.
+    expect(getPixel(pixels, 9, 20)).toEqual(RED)
+    expect(getPixel(pixels, 15, 20)).toEqual(RED)
+    expect(getPixel(pixels, 12, 19)).toEqual(RED)
+    expect(getPixel(pixels, 12, 21)).toEqual(RED)
+    // 7 columns x 3 rows = 21 in the core, minus nothing (rectangle) = 21.
+    expect(paintedCount(pixels)).toBe(21)
   })
 
   it("draws to the far corner of the canvas", () => {

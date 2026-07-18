@@ -1,5 +1,10 @@
 //#region Imports
-import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "../constants/canvas"
+import {
+  CANVAS_BYTES,
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  MAX_STROKE_SIZE,
+} from "../constants/canvas"
 
 import type { DrawInstruction, PatchEntry } from "../types/drawProtocol"
 import type { ColorType, Vec } from "../types/primitive"
@@ -52,6 +57,23 @@ export function isValidVec(value: unknown): value is Vec {
   )
 }
 
+// Brush diameter. Optional (absent means 1); if present it must be an integer
+// in [1, MAX_STROKE_SIZE]. The upper bound is the important half — it stops a
+// crafted instruction from asking for a canvas-sized brush so one stroke paints
+// the entire buffer (a CPU/undo-memory abuse, the same class of hazard the
+// coordinate bounds close for lines).
+function isValidSize(value: unknown): boolean {
+  if (value === undefined) {
+    return true
+  }
+  return (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= MAX_STROKE_SIZE
+  )
+}
+
 // A patch index is a raw byte offset into the RGBA buffer, so it must be in
 // range AND 4-byte aligned — an unaligned index would smear one color across
 // two pixels' channels.
@@ -94,6 +116,9 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
   // `color` is optional on BaseInstruction (handlers fall back to
   // DEFAULT_COLOR), but if present it has to be well-formed.
   if (candidate.color !== undefined && !isValidColor(candidate.color)) {
+    return false
+  }
+  if (!isValidSize((candidate as { size?: unknown }).size)) {
     return false
   }
 

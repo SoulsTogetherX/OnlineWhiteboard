@@ -19,6 +19,7 @@ import {
   getDirectColor,
   getToolColor,
 } from "@shared/utils/helperProtocallMethods"
+import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type {
   BaseInstruction,
@@ -70,6 +71,10 @@ export type OnCommitAction = (instructionId: number, entries: PatchEntry[]) => v
 export default function useDrawActions(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
   onCommitAction?: OnCommitAction,
+  // Brush diameter, read at gesture start. A ref (not a value) so changing the
+  // slider mid-session doesn't rebuild the handlers, matching how the tool and
+  // palette are threaded.
+  strokeSizeRef?: React.RefObject<number>,
 ): UseDrawActionsReturn {
   const sessionId = useSessionID()
   const baseInstruction = useRef<BaseInstruction>({
@@ -93,6 +98,9 @@ export default function useDrawActions(
       da.type,
       getDirectColor(cp, ev),
     )
+    // Captured once per gesture; motion/leave reuse the same baseInstruction, so
+    // the whole stroke draws at one width.
+    baseInstruction.current.size = strokeSizeRef?.current ?? DEFAULT_STROKE_SIZE
     record.current = []
 
     switch (da.type) {

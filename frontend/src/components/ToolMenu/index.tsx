@@ -1,4 +1,6 @@
 //#region Imports
+import { MAX_STROKE_SIZE } from "@shared/constants/canvas"
+
 import type { ToolType } from "@shared/types/drawProtocol"
 
 import "./styles.css"
@@ -23,6 +25,8 @@ export interface ToolMenuProps {
   isOpen: boolean
   selectedTool: AppTool
   onSelectTool: (type: AppTool) => void
+  strokeSize: number
+  onStrokeSizeChange: (size: number) => void
   openRoomPicker: () => void
   onUndo: () => void
   onRedo: () => void
@@ -40,6 +44,8 @@ export default function ToolMenu({
   isOpen,
   selectedTool,
   onSelectTool,
+  strokeSize,
+  onStrokeSizeChange,
   openRoomPicker,
   onUndo,
   onRedo,
@@ -192,6 +198,19 @@ export default function ToolMenu({
           </button>
         </li>
       </ul>
+
+      <div className="stroke-size-control">
+        <label htmlFor="stroke-size">Size: {strokeSize}px</label>
+        <input
+          id="stroke-size"
+          type="range"
+          min={1}
+          max={MAX_STROKE_SIZE}
+          value={strokeSize}
+          onChange={(ev) => onStrokeSizeChange(Number(ev.target.value))}
+          aria-label="Brush size"
+        />
+      </div>
     </nav>
   )
 }

@@ -23,10 +23,13 @@ export default function useCanvasDrawing(
   // When this ref reads true, pointer gestures don't draw. Used by the
   // eyedropper: while sampling, a click must pick a colour, not lay down paint.
   disabledRef?: React.RefObject<boolean>,
+  // Brush diameter, forwarded to the draw actions (read at gesture start).
+  strokeSizeRef?: React.RefObject<number>,
 ): void {
   const [start, finish, motion, leave] = useDrawActions(
     canvasRef,
     onCommitAction,
+    strokeSizeRef,
   )
 
   const isDisabled = () => disabledRef?.current === true

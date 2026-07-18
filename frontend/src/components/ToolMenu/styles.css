@@ -135,3 +135,17 @@
 .tool-button:disabled:hover .button-icon {
   transform: scale(1);
 }
+
+/* Brush-size slider, below the tool list. */
+.stroke-size-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--tool-fg, #222);
+}
+.stroke-size-control input[type="range"] {
+  width: 100%;
+  cursor: pointer;
+}

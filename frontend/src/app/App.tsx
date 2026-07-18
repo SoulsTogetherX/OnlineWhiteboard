@@ -28,6 +28,7 @@ import useEyedropper from "@/hooks/useEyedropper"
 
 import { DEFAULT_DRAW_ACTION, DESKTOP_MEDIA_QUERY } from "@/constants/ui"
 import { colorToHex8 } from "@/utils/color"
+import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
 import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
@@ -77,6 +78,15 @@ export default function App() {
       drawAction.current = { type }
     }
     setSelectedTool(type)
+  }, [])
+
+  // Stroke size. The ref is what the pointer handlers read at gesture start; the
+  // state drives the slider. Same ref+state split as the tool selection.
+  const strokeSizeRef = useRef<number>(DEFAULT_STROKE_SIZE)
+  const [strokeSize, setStrokeSizeState] = useState<number>(DEFAULT_STROKE_SIZE)
+  const setStrokeSize = useCallback((size: number) => {
+    strokeSizeRef.current = size
+    setStrokeSizeState(size)
   }, [])
 
   // Auth
@@ -131,6 +141,7 @@ export default function App() {
     sendDrawInstruction,
     pushAction,
     eyedropperActive,
+    strokeSizeRef,
   )
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   useCursorBroadcast(canvasRef, sendCursor)
@@ -180,6 +191,8 @@ export default function App() {
         isOpen={isToolbarVisible}
         selectedTool={selectedTool}
         onSelectTool={selectTool}
+        strokeSize={strokeSize}
+        onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
         onUndo={undo}
         onRedo={redo}

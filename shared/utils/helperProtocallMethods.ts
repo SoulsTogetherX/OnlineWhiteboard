@@ -249,3 +249,48 @@ export function getToolColor(type: ToolType, baseColor: ColorType): ColorType {
   return baseColor
 }
 //#endregion
+
+//#region Brush
+// Visits every pixel of a filled disc of the given DIAMETER centred on (cx, cy),
+// skipping anything outside the canvas. A pixel is inside when its distance from
+// the centre is within the radius (size / 2): size 1 -> just the centre, size 3
+// -> a 3x3 plus, and so on. Bounds are checked here because a disc near an edge
+// spills past it even when its centre is in-bounds — unlike a 1px line, which
+// the caller had already clipped.
+//
+// Shared by the line tools and the spray can so "how big is the brush" is
+// defined in exactly one place.
+export function forEachDiscPixel(
+  cx: number,
+  cy: number,
+  size: number,
+  visit: (vec: Vec) => void,
+): void {
+  if (size <= 1) {
+    if (cx >= 0 && cy >= 0 && cx < CANVAS_WIDTH && cy < CANVAS_HEIGHT) {
+      visit([cx, cy])
+    }
+    return
+  }
+
+  const half = size / 2
+  const reach = Math.ceil(half)
+  const rSquared = half * half
+
+  for (let dy = -reach; dy <= reach; dy += 1) {
+    const y = cy + dy
+    if (y < 0 || y >= CANVAS_HEIGHT) {
+      continue
+    }
+    for (let dx = -reach; dx <= reach; dx += 1) {
+      const x = cx + dx
+      if (x < 0 || x >= CANVAS_WIDTH) {
+        continue
+      }
+      if (dx * dx + dy * dy <= rSquared) {
+        visit([x, y])
+      }
+    }
+  }
+}
+//#endregion

@@ -22,6 +22,10 @@ export type BaseAction = {
 }
 export type BaseInstruction = {
   color?: ColorType
+  // Brush diameter in canvas pixels. Optional on the wire (absent means 1, the
+  // original single-pixel behaviour), and only the line tools and the spray can
+  // read it — bucket and patch ignore it.
+  size?: number
   instructionId: number
   sessionId: string
 }
