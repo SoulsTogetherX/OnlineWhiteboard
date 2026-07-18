@@ -9,6 +9,8 @@ import {
   resolveRole,
   setRole,
 } from "@/db/roomMembersRepository"
+import { loadCanvas } from "@/db/canvasRepository"
+import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 
 import type { User } from "@/db/userRepository"
 import type { RoomRole } from "@shared/types/identity"
@@ -44,6 +46,31 @@ export default function configureRoomRoutes(app: Express): void {
     const user = await requireUser(req, res)
     if (!user) return
     res.json({ rooms: await listRoomsForUser(user.id) })
+  })
+
+  // --- Room thumbnail (latest snapshot) --------------------------------------
+  // Returns the room's current pixels as base64 RGBA — the same bytes the
+  // WebSocket sends on join, but over HTTP so the dashboard can render a
+  // thumbnail per room without opening a socket to each. Member-gated: you can
+  // only preview rooms you belong to. The CLIENT turns the bytes into an image
+  // (drawing them onto a canvas), so the server needs no PNG encoder.
+  app.get("/api/rooms/:roomId/snapshot", async (req, res) => {
+    const user = await requireUser(req, res)
+    if (!user) return
+    const { roomId } = req.params
+
+    const role = await resolveRole(roomId, user.id)
+    if (!role) {
+      return res.status(403).json({ error: "You are not a member of this room." })
+    }
+
+    const { pixels, revision } = await loadCanvas(roomId)
+    res.json({
+      width: CANVAS_WIDTH,
+      height: CANVAS_HEIGHT,
+      revision,
+      data: Buffer.from(pixels).toString("base64"),
+    })
   })
 
   // --- Members of a room -----------------------------------------------------

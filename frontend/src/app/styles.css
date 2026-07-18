@@ -43,3 +43,17 @@
   background: var(--popup-bg, #fff);
   cursor: pointer;
 }
+
+/* "My Rooms" button — opens the dashboard (logged-in users). */
+.my-rooms-button {
+  position: fixed;
+  top: 0.5rem;
+  right: 12rem;
+  z-index: 20;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.8rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border, #ccc);
+  background: var(--popup-bg, #fff);
+  cursor: pointer;
+}

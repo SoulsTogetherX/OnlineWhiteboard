@@ -1,0 +1,113 @@
+.dashboard-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgb(0 0 0 / 0.55);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  padding: 2rem 1rem;
+  overflow-y: auto;
+}
+
+.dashboard-panel {
+  width: min(60rem, 100%);
+  background: var(--popup-bg, #fff);
+  color: var(--popup-fg, #222);
+  border-radius: 0.6rem;
+  padding: 1.25rem;
+  box-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
+.dashboard-title {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.dashboard-close {
+  padding: 0.35rem 0.85rem;
+  border-radius: 0.35rem;
+  border: 1px solid var(--border, #ccc);
+  background: transparent;
+  cursor: pointer;
+}
+
+.dashboard-error {
+  color: #c62828;
+}
+.dashboard-empty {
+  opacity: 0.7;
+}
+
+.dashboard-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  gap: 0.75rem;
+}
+
+.dashboard-card {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border, #ddd);
+  background: var(--card-bg, #fafafa);
+  cursor: pointer;
+}
+.dashboard-card:hover {
+  border-color: #888;
+}
+.dashboard-card-current {
+  outline: 2px solid #2e7d32;
+}
+
+.dashboard-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  min-width: 0;
+}
+
+.dashboard-card-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+}
+
+.dashboard-role {
+  padding: 0.1rem 0.4rem;
+  border-radius: 0.25rem;
+  background: #eee;
+  text-transform: capitalize;
+}
+.dashboard-role.role-owner {
+  background: #ffe082;
+}
+.dashboard-role.role-viewer {
+  background: #cfd8dc;
+}
+
+.dashboard-when {
+  opacity: 0.6;
+}

@@ -12,6 +12,7 @@ import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
 import PresenceRoster from "@/components/PresenceRoster"
 import VotePrompt from "@/components/VotePrompt"
+import Dashboard from "@/components/Dashboard"
 import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
@@ -110,6 +111,7 @@ export default function App() {
   // Room
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
   const [isMembersOpen, setIsMembersOpen] = useState<boolean>(false)
+  const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false)
   const {
     roomId,
     participants,
@@ -196,13 +198,22 @@ export default function App() {
         selfConnectionId={self?.connectionId ?? null}
       />
       {user && (
-        <button
-          type="button"
-          className="members-button"
-          onClick={() => setIsMembersOpen(true)}
-        >
-          Members
-        </button>
+        <>
+          <button
+            type="button"
+            className="members-button"
+            onClick={() => setIsMembersOpen(true)}
+          >
+            Members
+          </button>
+          <button
+            type="button"
+            className="my-rooms-button"
+            onClick={() => setIsDashboardOpen(true)}
+          >
+            My Rooms
+          </button>
+        </>
       )}
       <AuthControl
         user={user}
@@ -275,6 +286,15 @@ export default function App() {
         isOpen={isMembersOpen}
         roomId={roomId}
         onClose={() => setIsMembersOpen(false)}
+      />
+      <Dashboard
+        isOpen={isDashboardOpen}
+        currentRoomId={roomId}
+        onClose={() => setIsDashboardOpen(false)}
+        onOpenRoom={(nextRoomId) => {
+          loadRoom(nextRoomId)
+          setIsDashboardOpen(false)
+        }}
       />
       <AuthPopup
         isOpen={isAuthOpen}
