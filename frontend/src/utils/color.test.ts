@@ -3,7 +3,6 @@ import { describe, expect, it } from "vitest"
 import {
   colorToHex,
   colorToHex8,
-  colorsEqual,
   hexToColor,
   hsvToRgb,
   rgbToHsv,
@@ -65,12 +64,5 @@ describe("hex conversion", () => {
   it("round-trips color -> hex8 -> color", () => {
     const color = { r: 12, g: 200, b: 44, a: 130 }
     expect(hexToColor(colorToHex8(color))).toEqual(color)
-  })
-})
-
-describe("colorsEqual", () => {
-  it("compares every channel including alpha", () => {
-    expect(colorsEqual({ r: 1, g: 2, b: 3, a: 4 }, { r: 1, g: 2, b: 3, a: 4 })).toBe(true)
-    expect(colorsEqual({ r: 1, g: 2, b: 3, a: 4 }, { r: 1, g: 2, b: 3, a: 5 })).toBe(false)
   })
 })

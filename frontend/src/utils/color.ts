@@ -122,8 +122,9 @@ export function hexToColor(hex: string): ColorType | null {
     a: clean.length === 8 ? parseInt(clean.slice(6, 8), 16) : 255,
   }
 }
-
-export function colorsEqual(a: ColorType, b: ColorType): boolean {
-  return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a
-}
 //#endregion
+
+// NOTE: colorsEqual used to live here too. It now lives in
+// shared/types/primitive.ts, because the flood fill and the compare-and-swap
+// undo patch need the same comparison and all three had drifted into separate
+// copies. Import it from @shared/types/primitive.

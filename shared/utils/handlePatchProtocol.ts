@@ -1,14 +1,8 @@
 //#region Imports
 import { getDrawerMethod, getLookAtMethod } from "./helperProtocallMethods"
+import { colorsEqual } from "../types/primitive"
 
 import type { PatchEntry, PatchInstruction } from "../types/drawProtocol"
-import type { ColorType } from "../types/primitive"
-//#endregion
-
-//#region Helper Method
-function colorsEqual(a: ColorType, b: ColorType): boolean {
-  return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a
-}
 //#endregion
 
 //#region Handle Methods

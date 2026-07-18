@@ -10,6 +10,7 @@ import {
 } from "./helperProtocallMethods"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
+import { colorsEqual } from "../types/primitive"
 
 import type {
   BaseInstruction,
@@ -31,14 +32,6 @@ function setPixelFill(
   const startPos = action.pos ?? [0, 0]
 
   // Settup Methods
-  const compairColors = (color1: ColorType, color2: ColorType): boolean => {
-    return (
-      color1.r === color2.r &&
-      color1.g === color2.g &&
-      color1.b === color2.b &&
-      color1.a === color2.a
-    )
-  }
   const getColor = getLookAtMethod(action.type, imageData)
   let setColor = getDrawerMethod(action.type, imageData)
   if (record) {
@@ -49,7 +42,7 @@ function setPixelFill(
   const startIdx = getIdxFromVec(startPos)
   const targetColor = getColor(startIdx)
 
-  if (compairColors(targetColor, newColor)) {
+  if (colorsEqual(targetColor, newColor)) {
     // If the color here is already the newColor, return
     return
   }
@@ -78,7 +71,7 @@ function setPixelFill(
         0 <= ny &&
         nx < CANVAS_WIDTH &&
         ny < CANVAS_HEIGHT &&
-        compairColors(targetColor, getColor(idx))
+        colorsEqual(targetColor, getColor(idx))
       ) {
         setColor(idx, newColor)
         queue.push([nx, ny])
