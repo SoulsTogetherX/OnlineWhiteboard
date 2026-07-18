@@ -25,6 +25,10 @@ export default function useCanvasDrawing(
   disabledRef?: React.RefObject<boolean>,
   // Brush diameter, forwarded to the draw actions (read at gesture start).
   strokeSizeRef?: React.RefObject<number>,
+  // When true, this client is a viewer — block drawing entirely. The server
+  // also rejects a viewer's draws, but blocking locally avoids strokes flashing
+  // on the viewer's own canvas and then being reverted on the next resync.
+  viewOnlyRef?: React.RefObject<boolean>,
 ): void {
   const [start, finish, motion, leave] = useDrawActions(
     canvasRef,
@@ -32,7 +36,8 @@ export default function useCanvasDrawing(
     strokeSizeRef,
   )
 
-  const isDisabled = () => disabledRef?.current === true
+  const isDisabled = () =>
+    disabledRef?.current === true || viewOnlyRef?.current === true
 
   // Each of these runs from a pointer event, so reading `.current` here is
   // correct — it picks up the tool and palette as they are at gesture time

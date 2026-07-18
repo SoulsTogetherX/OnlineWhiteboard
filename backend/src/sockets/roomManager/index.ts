@@ -13,7 +13,9 @@ import {
 } from "@/db/eventRepository"
 import { pruneStaleRooms } from "@/db/roomRepository"
 import { deleteExpiredSessions } from "@/db/sessionRepository"
+import { ensureMembership } from "@/db/roomMembersRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { canDraw } from "@shared/types/identity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
@@ -221,6 +223,19 @@ export default class RoomManager {
 
     const room = await this.getOrCreateRoom(roomId)
 
+    // Resolve this connection's role now that the room exists (its FK target is
+    // in place). A registered user gets/creates a membership — owner on first
+    // visit to a fresh room, editor otherwise — which overwrites the provisional
+    // role from resolveConnectionIdentity. Guests stay "guest". A failure here
+    // leaves the provisional role rather than blocking the join.
+    if (socket.userId) {
+      try {
+        socket.identity.role = await ensureMembership(roomId, socket.userId)
+      } catch (error) {
+        console.error(`Failed to resolve role for room "${roomId}":`, error)
+      }
+    }
+
     // The client may have gone away while we were loading. Don't add a dead
     // socket, and don't leave a freshly-created empty room behind holding
     // timers.
@@ -356,6 +371,16 @@ export default class RoomManager {
     }
 
     // Only "draw" remains — TypeScript has narrowed the union accordingly.
+    // Viewers are read-only: reject their draws (the client also greys out the
+    // tools, but the server is the authority — a crafted client can't bypass it).
+    if (!canDraw(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "You have view-only access to this room.",
+      })
+      return
+    }
+
     // Clients may not clear directly: "clear" is a room action that only the
     // server applies after a vote. Rejecting it here is what makes the vote the
     // ONLY path to wiping a shared board.
@@ -448,6 +473,14 @@ export default class RoomManager {
     room: RoomState,
     action: RoomAction,
   ): void {
+    // A viewer can't initiate a destructive action any more than they can draw.
+    if (!canDraw(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "You have view-only access to this room.",
+      })
+      return
+    }
     if (room.activeVote) {
       this.send(socket, {
         type: "error",
