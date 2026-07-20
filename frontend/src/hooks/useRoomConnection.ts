@@ -18,6 +18,7 @@ import {
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
 import { encodePatchDrawFrame } from "@shared/utils/patchCodec"
 import { decompressSnapshotPayload } from "@/utils/snapshotCompression"
+import { clearHolds, latestExpiry, overlayHolds } from "@/utils/localHold"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
@@ -154,6 +155,60 @@ export default function useRoomConnection(
     })
   }, [])
 
+  // The one timer that reveals converged pixels when a local hold expires with no
+  // further traffic to trigger a repaint (see @/utils/localHold). Held here, not
+  // in localHold, so the DOM-free overlay logic stays unit-testable.
+  const holdExpiryTimer = useRef<number | null>(null)
+
+  // Blits the authoritative buffer with any still-live local holds composited on
+  // top. The no-hold path (overlayHolds returns null) is the common case and
+  // pays no copy — it is exactly updateCanvas. overlayHolds prunes expired holds
+  // as it reads them, so a paint after expiry naturally reveals the converged
+  // pixel underneath.
+  const paintHeld = useCallback((canvas: HTMLCanvasElement) => {
+    const canvasState = getCanvasState(canvas)
+    if (canvasState === null) {
+      return
+    }
+    const overlay = overlayHolds(canvasState.imageData.data, Date.now())
+    if (overlay === null) {
+      updateCanvas(canvas)
+    } else {
+      canvasState.ctx.putImageData(
+        new ImageData(overlay, canvas.width, canvas.height),
+        0,
+        0,
+      )
+    }
+  }, [])
+
+  // Paints, then arms a SINGLE timer for the last hold's expiry so the converged
+  // pixel appears on time even if no further message arrives. No recursion: the
+  // timer just repaints once. Every remote instruction that contests a held
+  // pixel comes back through here and re-arms the timer for the current latest
+  // expiry, so one timer always covers every outstanding hold.
+  const repaintWithHolds = useCallback(
+    (canvas: HTMLCanvasElement) => {
+      paintHeld(canvas)
+
+      if (holdExpiryTimer.current !== null) {
+        window.clearTimeout(holdExpiryTimer.current)
+        holdExpiryTimer.current = null
+      }
+      const expiry = latestExpiry()
+      if (expiry !== null) {
+        holdExpiryTimer.current = window.setTimeout(() => {
+          holdExpiryTimer.current = null
+          const current = canvasRef.current
+          if (current) {
+            paintHeld(current)
+          }
+        }, Math.max(0, expiry - Date.now()))
+      }
+    },
+    [canvasRef, paintHeld],
+  )
+
   const handleSocketMessage = useCallback(
     (_socket: WebSocket, event: MessageEvent) => {
       let message: ServerSocketMessage
@@ -272,7 +327,12 @@ export default function useRoomConnection(
               drawMessage.instruction,
               "replay",
             )
-            updateCanvas(canvas)
+            // repaintWithHolds, not updateCanvas: if this remote instruction
+            // overwrote a pixel this client painted in the last 100 ms, the local
+            // colour stays SHOWN (never re-applied to the buffer) until it
+            // expires. The buffer above already holds the server's truth, so
+            // convergence is untouched.
+            repaintWithHolds(canvas)
             lastRevision.current = drawMessage.revision
           })
           break
@@ -300,6 +360,10 @@ export default function useRoomConnection(
               return
             }
             applySnapshotToCanvas(canvas, pixels)
+            // A snapshot replaces the whole buffer, so re-composite any live
+            // holds on top — otherwise a resync arriving right after a local
+            // stroke would blink it away before its 100 ms were up.
+            repaintWithHolds(canvas)
             lastRevision.current = snapshotMessage.revision
           })
           break
@@ -341,7 +405,7 @@ export default function useRoomConnection(
           break
       }
     },
-    [canvasRef, roomId],
+    [canvasRef, roomId, enqueueCanvasWork, repaintWithHolds],
   )
 
   const socketOptions = useMemo<WebSocketOptions>(
@@ -380,6 +444,19 @@ export default function useRoomConnection(
   useEffect(() => {
     sendRef.current = send
   }, [send])
+
+  // Holds belong to the CURRENT room's canvas. When the room changes (or the
+  // hook unmounts), forget them and cancel the pending reveal, so a stroke in
+  // flight can never composite onto the next room's board.
+  useEffect(() => {
+    return () => {
+      clearHolds()
+      if (holdExpiryTimer.current !== null) {
+        window.clearTimeout(holdExpiryTimer.current)
+        holdExpiryTimer.current = null
+      }
+    }
+  }, [roomId])
 
   const sendDrawInstruction = useCallback(
     (instruction: DrawInstruction) => {

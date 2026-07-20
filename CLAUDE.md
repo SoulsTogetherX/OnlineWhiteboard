@@ -775,22 +775,28 @@ Voting removed entirely. Everyone joins as a **viewer**; ownership is claimed, r
 and transferable, never automatic. `open_editing` decides whether anyone below editor may
 draw. Editor requests round-trip to the owner.
 
-### ▶ Phase 3 — Protocol, compression, and the 100 ms guarantee
+### ✅ Phase 3 — Protocol, compression, and the 100 ms guarantee
 
-- Snapshots move from a base64 JSON field to **binary WebSocket frames** (base64 costs
-  +33%: 57 600 B → 76 800 chars). Protocol change ⇒ §12.5 applies: server handler, client
-  dispatcher and `scripts/smoke-test.mjs` move together.
-- Compress the snapshot payload at the **application level** — not `permessage-deflate`
-  (§16 records why, and it must stay off).
-- Gzip the snapshot/checkpoint `BYTEA` columns. `draw_events` stays raw JSON.
-- **The 100 ms perceptual guarantee:** a local action renders instantly and is not
-  overwritten by a colliding remote instruction for at least 100 ms, while every client
-  still converges byte-identically. Perceptual only — final pixels remain last-writer-wins.
-- `maxPayload` should come down once binary frames land.
+- Snapshots moved from a base64 JSON field to **binary WebSocket frames** — a versioned
+  envelope (`shared/utils/binaryFrame.ts`): a small JSON header plus the raw payload.
+- The snapshot payload is **application-level deflated** (`deflate-raw`), never
+  `permessage-deflate` (§16, and it stays off). Blank canvas: ~57 KB → ~70 B on the wire.
+- Snapshot/checkpoint `BYTEA` columns are **gzipped** (`pixelStorage.ts`); the CRC catches
+  silent corruption that the wire's raw-deflate does not need to. `draw_events` stays JSON.
+- Patches travel as **packed binary frames** (12 B/entry, `shared/utils/patchCodec.ts`), so
+  `maxPayload` came down honestly from 4 MiB to **256 KiB**.
+- **The 100 ms guarantee** is a display-only overlay (`frontend/src/utils/localHold.ts`):
+  remote instructions apply to the authoritative buffer immediately (never diverges), while
+  a locally-painted pixel is *shown* on top for 100 ms. Driven live: a colliding remote
+  colour stayed suppressed through 60 ms, revealed at ~123 ms, and converged byte-identical
+  to the server.
+- **A convergence harness** (`shared/utils/__tests__/convergence.test.ts`) now asserts N
+  clients end byte-identical to the server — and found a pre-existing patch-replay divergence
+  that was fixed as part of the phase.
 
-> The risk to respect here: this phase touches the sync model. A mistake does not crash —
-> it silently desynchronises clients from the server's canvas, which is the exact failure
-> `shared/` exists to prevent. Test convergence explicitly, not just delivery.
+Sync-model risk called out below was real: the patch-replay fix and the cold-room join race
+both surfaced here. Convergence is tested explicitly (unit harness + a byte-compare in the
+smoke test + a live browser drive), not just delivery.
 
 ### Phase 4 — Per-room canvas resize (**largest**)
 

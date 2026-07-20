@@ -2,6 +2,7 @@
 import { useCallback, useRef, useState, type RefObject } from "react"
 
 import useSessionID from "./useSessionID"
+import { holdLocalPixels } from "@/utils/localHold"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
@@ -136,6 +137,9 @@ export default function useUndoRedo(
       updateCanvas(canvas)
 
       const appliedPatch = applied as PatchInstruction
+      // An undo/redo is a local action too — hold the pixels it just changed so a
+      // colliding remote instruction cannot visibly undo the undo for 100 ms.
+      holdLocalPixels(appliedPatch.entries, Date.now())
       sendDrawInstruction(appliedPatch)
       return appliedPatch
     },

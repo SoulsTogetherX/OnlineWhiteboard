@@ -2,6 +2,7 @@
 import { useRef } from "react"
 
 import useSessionID from "./useSessionID"
+import { holdLocalPixels } from "@/utils/localHold"
 
 import {
   handleDrawLineFinish,
@@ -171,6 +172,11 @@ export default function useDrawActions(
     }
 
     if (record.current.length > 0) {
+      // Hold the pixels this stroke just painted so a colliding remote
+      // instruction cannot visibly wipe them for the next 100 ms (see
+      // @/utils/localHold). Display-only — the recorded writes are already in the
+      // authoritative buffer; this just keeps them SHOWN briefly.
+      holdLocalPixels(record.current, Date.now())
       onCommitAction?.(baseInstruction.current.instructionId, record.current)
       record.current = []
     }
