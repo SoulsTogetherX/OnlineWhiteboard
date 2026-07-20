@@ -186,6 +186,12 @@ jobs:
       - name: Smoke test
         run: node scripts/smoke-test.mjs http://localhost:8080
 
+      # Adversarial counterpart to the smoke test: proves the RUNNING server
+      # applies the socket trust-boundary guards, not just that the unit tests
+      # say it should. Unit tests can pass while the guard is wired up wrong.
+      - name: Security probe
+        run: node scripts/security-probe.mjs http://localhost:8080
+
       # Only on failure, and only then — a green run should stay quiet.
       - name: Dump logs on failure
         if: failure()

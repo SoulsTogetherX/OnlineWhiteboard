@@ -12,8 +12,33 @@ import pool from "./db/pool"
 //#region Setup App & Sever
 const app = express()
 const server = createServer(app)
+// Largest client->server frame we will even buffer. `ws` defaults to 100 MiB,
+// which means a single message could ask the server to allocate and parse 100 MB
+// of JSON before any of our validation ran — validation cannot protect you from
+// a payload it never gets to see.
+//
+// The bound is derived, not guessed. The biggest LEGITIMATE message is an undo
+// patch covering every pixel: MAX_PATCH_ENTRIES entries, each serialising to
+// roughly 95 bytes ({"idx":57596,"from":{"r":..,"g":..,"b":..,"a":..},"to":{...}}).
+// 14400 * 95 is about 1.4 MB, so 4 MiB leaves generous headroom while still
+// being ~25x smaller than the default.
+//
+// OWASP suggests 64 KB as a starting point; that is right for a chat-shaped
+// protocol and wrong for this one, because a legitimate bucket-fill undo is
+// megabytes as JSON. Phase 3's binary frames + payload compression will shrink
+// this dramatically, at which point this number should come down with it.
+const MAX_SOCKET_PAYLOAD_BYTES = 4 * 1024 * 1024
+
 const wss = new WebSocketServer({
   noServer: true,
+  maxPayload: MAX_SOCKET_PAYLOAD_BYTES,
+  // Explicitly off. `ws` does not enable permessage-deflate by default, but
+  // saying so here is deliberate: OWASP advises against transport-level
+  // compression because sharing a compression context between attacker-supplied
+  // data and secrets leaks content through compressed SIZE (the CRIME/BREACH
+  // class). Phase 3 compresses the snapshot PAYLOAD explicitly instead, so the
+  // compressed buffer holds only pixel bytes and no oracle exists.
+  perMessageDeflate: false,
 })
 
 const port = process.env.BACKEND_PORT || 3000

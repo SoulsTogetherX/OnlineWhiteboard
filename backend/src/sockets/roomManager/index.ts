@@ -24,6 +24,8 @@ import {
   oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { isValidClientMessage } from "@shared/utils/validateSocketMessage"
+import { MAX_CHECKPOINT_NAME_LENGTH } from "@shared/constants/protocol"
 import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
@@ -452,10 +454,17 @@ export default class RoomManager {
     })
   }
 
+  // Parses AND validates. This used to end in `JSON.parse(text) as
+  // ClientSocketMessage` — a cast that checks nothing at runtime, leaving every
+  // field outside the instruction payload unverified all the way to the
+  // handlers. `isValidClientMessage` closes that: an unrecognised type, a
+  // missing roomId or an over-long id is dropped here and never reaches a
+  // handler.
   private parseMessage(raw: RawData): ClientSocketMessage | null {
     try {
       const text = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw.toString()
-      return JSON.parse(text) as ClientSocketMessage
+      const parsed: unknown = JSON.parse(text)
+      return isValidClientMessage(parsed) ? parsed : null
     } catch {
       return null
     }
@@ -673,7 +682,10 @@ export default class RoomManager {
       })
       return
     }
-    const trimmed = typeof name === "string" ? name.trim().slice(0, 60) : ""
+    const trimmed =
+      typeof name === "string"
+        ? name.trim().slice(0, MAX_CHECKPOINT_NAME_LENGTH)
+        : ""
     if (trimmed.length === 0) {
       this.send(socket, { type: "error", message: "Checkpoint needs a name." })
       return

@@ -25,6 +25,19 @@ const MAX_SPRAY_RADIUS = 40
 const MAX_SPRAY_DENSITY = 64
 //#endregion
 
+//#region Patch
+// The most entries a single undo/redo patch can legitimately carry: one per
+// pixel on the canvas. A patch is a compare-and-swap list, and touching the same
+// pixel twice in one patch is meaningless, so anything beyond this is either a
+// broken client or a hostile one.
+//
+// Without this bound the entries array was limited only by the WebSocket frame
+// size — which defaulted to 100 MiB — so one message could hand the server a
+// million objects to parse and iterate. Same class of hazard as an unbounded
+// coordinate: bounded per-item validation is worthless if the LIST is unbounded.
+const MAX_PATCH_ENTRIES = CANVAS_WIDTH * CANVAS_HEIGHT
+//#endregion
+
 //#region Exports
 export {
   CANVAS_WIDTH,
@@ -35,5 +48,6 @@ export {
   MAX_STROKE_SIZE,
   MAX_SPRAY_RADIUS,
   MAX_SPRAY_DENSITY,
+  MAX_PATCH_ENTRIES,
 }
 //#endregion

@@ -3,6 +3,7 @@ import {
   CANVAS_BYTES,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  MAX_PATCH_ENTRIES,
   MAX_SPRAY_DENSITY,
   MAX_SPRAY_RADIUS,
   MAX_STROKE_SIZE,
@@ -162,8 +163,12 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
       )
     }
     case "patch":
+      // The LENGTH check is as important as the per-entry check. Validating each
+      // entry bounds what one entry can do; only this bounds how many there are.
       return (
-        Array.isArray(candidate.entries) && candidate.entries.every(isValidPatchEntry)
+        Array.isArray(candidate.entries) &&
+        candidate.entries.length <= MAX_PATCH_ENTRIES &&
+        candidate.entries.every(isValidPatchEntry)
       )
     case "clear":
       // No fields beyond the base (already checked above). The GATE on clear is
