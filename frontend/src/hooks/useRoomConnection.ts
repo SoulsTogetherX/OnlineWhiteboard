@@ -79,9 +79,13 @@ export interface UseRoomConnectionResult {
   setOpenEditing: (enabled: boolean) => void
   // Owner-only: resize the room's canvas. The new size comes back as a snapshot.
   resize: (width: number, height: number) => void
-  // Bumps whenever an applied snapshot CHANGED the canvas dimensions (a resize).
-  // Anything keyed to the old size — the undo/redo stacks — resets on this.
-  canvasResetKey: number
+  // Set whenever an applied snapshot CHANGED the canvas dimensions (a resize),
+  // carrying the old and new dims. The app re-anchors anything keyed to the old
+  // size (the undo/redo stacks) to the new one. Null until the first resize.
+  canvasResize: {
+    from: { width: number; height: number }
+    to: { width: number; height: number }
+  } | null
   // Editor access requests. `editorRequests` is only ever populated for an
   // owner — the server sends the list to nobody else.
   editorRequests: EditorRequest[]
@@ -149,10 +153,14 @@ export default function useRoomConnection(
 
   // The dimensions of the last snapshot we applied. Null until the first
   // snapshot; a later snapshot with different dims is a resize (see the
-  // canvas_snapshot handler). `canvasResetKey` bumps on each such resize so the
-  // app can reset anything keyed to the old size (the undo/redo stacks).
+  // canvas_snapshot handler). `canvasResize` carries the old and new dims of the
+  // most recent resize so the app can re-anchor anything keyed to the old size
+  // (the undo/redo stacks). A fresh object each time triggers the app's effect.
   const knownDims = useRef<{ width: number; height: number } | null>(null)
-  const [canvasResetKey, setCanvasResetKey] = useState(0)
+  const [canvasResize, setCanvasResize] = useState<{
+    from: { width: number; height: number }
+    to: { width: number; height: number }
+  } | null>(null)
 
   // Serialises everything that touches the canvas, in arrival order.
   //
@@ -383,23 +391,24 @@ export default function useRoomConnection(
               return
             }
             // A snapshot whose dimensions differ from the last one we knew is a
-            // RESIZE. Everything keyed to the old size is now stale: live holds
-            // (old byte indices) and — signalled to the app via the reset key —
-            // the undo/redo stacks. Clear holds here; bump the key so App resets
-            // history. `knownDims` starts null so the FIRST snapshot on join is
-            // not treated as a resize.
+            // RESIZE. Everything keyed to the old size is now stale: the live
+            // holds (cleared here — they are display-only and would expire in
+            // 100 ms anyway) and — signalled to the app via canvasResize — the
+            // undo/redo stacks, which the app RE-ANCHORS to the new size rather
+            // than discarding. `knownDims` starts null so the FIRST snapshot on
+            // join is not treated as a resize.
             const prevDims = knownDims.current
             const nextDims = {
               width: snapshotMessage.width,
               height: snapshotMessage.height,
             }
-            const resized =
+            if (
               prevDims !== null &&
               (prevDims.width !== nextDims.width ||
                 prevDims.height !== nextDims.height)
-            if (resized) {
+            ) {
               clearHolds()
-              setCanvasResetKey((key) => key + 1)
+              setCanvasResize({ from: prevDims, to: nextDims })
             }
             knownDims.current = nextDims
 
@@ -660,7 +669,7 @@ export default function useRoomConnection(
     releaseOwnership,
     setOpenEditing,
     resize,
-    canvasResetKey,
+    canvasResize,
     editorRequests,
     requestEditor,
     respondEditor,

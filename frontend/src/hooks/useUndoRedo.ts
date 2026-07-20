@@ -3,6 +3,7 @@ import { useCallback, useRef, useState, type RefObject } from "react"
 
 import useSessionID from "./useSessionID"
 import { holdLocalPixels } from "@/utils/localHold"
+import { reanchorEntries } from "@/utils/reanchor"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import {
@@ -11,6 +12,7 @@ import {
   updateCanvas,
 } from "@shared/utils/helperProtocolMethods"
 
+import type { CanvasDims } from "@shared/constants/canvas"
 import type {
   DrawInstruction,
   PatchEntry,
@@ -41,7 +43,7 @@ export type UseUndoRedoResult = {
   canUndo: boolean
   canRedo: boolean
   notice: string | null
-  resetHistory: () => void
+  reanchorHistory: (from: CanvasDims, to: CanvasDims) => void
 }
 //#endregion
 
@@ -207,18 +209,29 @@ export default function useUndoRedo(
     setCanUndo(true)
   }, [applyLocally, showNotice])
 
-  // Drops both stacks. Called when the canvas is REPLACED under the history —
-  // most importantly a resize, after which every stored entry's byte index
-  // refers to a pixel at the OLD stride and would undo onto the wrong place (or,
-  // on a shrink, be rejected). The recorded pixels no longer describe this
-  // canvas, so the honest thing is to forget them.
-  const resetHistory = useCallback(() => {
-    undoStack.current = []
-    redoStack.current = []
-    setCanUndo(false)
-    setCanRedo(false)
+  // Re-anchors both stacks to a resized canvas rather than discarding them. Each
+  // stored entry's byte index encodes the OLD stride, so after a width change it
+  // would point at the wrong pixel (in-range) or out of range — neither of which
+  // is safe: an in-range wrong index corrupts, and an out-of-range one fails the
+  // WHOLE undo action, because a patch is validated all-or-nothing. Re-indexing
+  // top-left (matching how the pixels themselves are cropped/padded) keeps every
+  // entry whose pixel still exists and drops only those a shrink cut away, so a
+  // partly-cropped stroke still undoes its surviving part. See @/utils/reanchor.
+  const reanchorHistory = useCallback((from: CanvasDims, to: CanvasDims) => {
+    const remap = (action: Action): Action | null => {
+      const entries = reanchorEntries(action.entries, from, to)
+      return entries.length > 0 ? { ...action, entries } : null
+    }
+    undoStack.current = undoStack.current
+      .map(remap)
+      .filter((action): action is Action => action !== null)
+    redoStack.current = redoStack.current
+      .map(remap)
+      .filter((action): action is Action => action !== null)
+    setCanUndo(undoStack.current.length > 0)
+    setCanRedo(redoStack.current.length > 0)
   }, [])
 
-  return { pushAction, undo, redo, canUndo, canRedo, notice, resetHistory }
+  return { pushAction, undo, redo, canUndo, canRedo, notice, reanchorHistory }
 }
 //#endregion
