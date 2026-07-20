@@ -493,6 +493,75 @@ folder-per-component with `index.tsx` + `styles.css`. Comments explain **why**, 
 and if you change behaviour, fix the comment above it in the same commit. Stale comments are
 worse than none; readers stop trusting all of them.
 
+### 12.8 Naming — one concept, one name, everywhere
+
+The repo has already paid for getting this wrong: `Pallet` (a shipping platform) meant
+`Palette` for months, and `Protocall` vs `Protocol` split the draw handlers into two
+spellings that both had to be imported side by side. Renaming later cost an atomic
+cross-package sweep, because `shared/` has no build boundary.
+
+- **Spell it correctly, in full, in English.** No invented words, no phonetic guesses. If
+  you are unsure of a spelling, look it up before it reaches three packages.
+- **Identifiers use `color`, prose may use "colour".** `color` matches the DOM, CSS and the
+  existing `ColorType`/`colorsEqual` API. Do not introduce `colour` as an identifier.
+- **One concept = one name across frontend, backend and shared.** Never rename a thing as it
+  crosses a package boundary; the wire protocol and the type that models it share names.
+- **Booleans read as predicates:** `isOpen`, `hasEditAuthority`, `canDraw`, `shouldRetry`.
+- **Handlers:** `onThing` for the prop a component accepts, `handleThing` for the
+  implementation that satisfies it. Don't use `onThing` for a local function.
+- **Hooks are `useThing`** and return a named object once there is more than one value —
+  positional tuples stop being readable at three.
+- **Don't abbreviate new identifiers.** `instruction`, not `inst`; `revision`, not `rev`.
+  (Existing `inst`/`da` params predate this rule; match locally, don't spread it.)
+- **Module-scope constants are `SCREAMING_SNAKE`** and carry a comment saying *why that
+  value* — `MAX_STROKE_SIZE = 32` is a security bound, not a taste preference.
+
+### 12.9 Rules that exist because something broke
+
+Each of these encodes a real defect. They are cheap to follow and expensive to relearn.
+
+- **Never trust network data through an `as` cast.** `as` is a compile-time assertion, not a
+  runtime check. Validate at the fan-in point (§13.2). A crafted `nextPos` once froze the
+  event loop for every room because Bresenham is a synchronous `while (true)`.
+- **Never loop over a network-supplied number without a bound.** Every such value needs a
+  cap in `validateInstruction`, and the cap needs a comment explaining the abuse it stops.
+- **An authorisation rule lives in exactly one shared helper.** Use `canDraw` /
+  `hasEditAuthority` / `canManageRoom` — never re-inline `role === "owner"` at a call site.
+  The client and server must grey out and enforce with the *same* predicate, or the UI will
+  eventually lie about what the server will accept.
+- **Duplicate logic moves to `shared/` the second time it appears, not the third.** Colour
+  equality reached three implementations (fill, undo CAS, frontend) before anyone noticed.
+  If the fill and the undo CAS had ever disagreed on "same colour", clients would have
+  silently drifted from the server's canvas.
+- **A magic number used on both sides is a shared constant.** Checkpoint-name length and the
+  role list were each hardcoded twice and could drift independently.
+- **Check `utils/` before writing a helper.** Relative-time formatting, byte clamping and
+  localStorage array access each got reimplemented because the original wasn't exported.
+  If you need a private helper elsewhere, export it — don't retype it.
+- **Don't `export` until there are two callers.** Unused exports read as public API, so
+  nobody dares delete them. Several accumulated exactly this way.
+- **Prefer exhaustive `switch` over a discriminated union with no `default`.** That way
+  adding a variant to the union is a *compile* error at every site that must handle it.
+  `applyDrawInstructionToCanvas` relies on this; keep it.
+- **One modal pattern.** Route dialogs through `PopupBase` so `role="dialog"`, `aria-modal`,
+  Escape-to-close and `inert` are handled once. Two components bypassed it and each lost a
+  different piece of that.
+- **Interactive means keyboard-operable.** Anything with `role="slider"`/`"button"` or a
+  `tabIndex` needs key handling and ARIA state. A focusable control that ignores the
+  keyboard is *worse* than a plain `<div>`: it advertises support it doesn't have.
+
+### 12.10 Definition of done
+
+A change is finished when **all** of these are true — not when it compiles:
+
+1. It does what was asked, and nothing that wasn't (§12.4).
+2. It was **driven**, not just typechecked (§12.1). Name the observation in the commit.
+3. Tests cover the new behaviour, and you watched a relevant one **fail** before it passed.
+4. Comments touching the changed behaviour are updated in the same commit.
+5. Every consumer named in §12.5 was checked.
+6. The pre-commit gate passes without `--no-verify`.
+7. Anything you noticed but deliberately did not fix is written down in §14.
+
 ---
 
 ## 13. Invariants — subtle things that will bite you
@@ -612,3 +681,26 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
 8. `frontend/vite.config.ts` + `frontend/nginx.conf.template` — aliases + the two proxies
 9. `docker-compose*.yaml` + `.env` — how it all runs
 10. `frontend/src/hooks/useUndoRedo.ts` + `shared/utils/handlePatchProtocol.ts` — CAS undo
+
+---
+
+## 16. Decision record
+
+Decisions taken deliberately, with the alternative that was **rejected and why**. The rejected
+option usually looks like an obvious improvement to someone reading the code cold — that is
+exactly why it is written down. Do not "fix" one of these without revisiting the reasoning.
+
+| Decision | Rejected alternative | Why |
+| --- | --- | --- |
+| **Email: blind index + encrypted at rest.** Store `HMAC-SHA256(email, pepper)` for lookup and the address encrypted with a key held outside the database. | Plaintext email column. | A database-only leak then reveals no addresses. Plaintext is the single most commonly breached PII field. |
+| | Hash-only, unrecoverable. | Loses the address forever: no password reset, no verification, no way to contact a user. |
+| **Passwords: scrypt**, salted and memory-hard. | Anything faster (SHA-256, bcrypt-with-low-cost). | A fast hash is exactly what makes a leaked table brute-forceable. Memory-hardness is the point. |
+| **100 ms responsiveness is PERCEPTUAL.** Your own action renders instantly and is held ≥100 ms against a colliding remote instruction; final pixels still converge byte-identically. | "First writer actually wins." | Real conflict resolution would change the authoritative-server model and risk divergence. The goal is that input never *feels* eaten — not that collaborators can't paint over each other. |
+| **Ownership: persistent, opt-in.** You claim an unowned room and keep it across sessions. | Session-only ownership released on disconnect. | Every room setting (guest-editing toggle, assigned roles) would reset whenever the last owner left. |
+| **Resize: crop/pad from top-left.** | Scale/resample. | Resampling rewrites every pixel, so the undo stack and event log no longer describe the canvas. Crop/pad is lossless for the kept region. |
+| **Snapshots: binary frames + deflate; `draw_events` stays raw JSON.** | Compressing the event log too. | Instructions are tiny and on the latency-critical path; compressing them trades the thing we care about (speed) for the thing we don't (a few bytes). |
+| **History: uniform decimation.** | Keep the ends sharp, thin only the middle. | Chosen so the *whole* timeline stays scrubbable at even fidelity. Accepted cost: recent history is thinned too. |
+| **UI tests: Testing Library + jsdom, plus the two-client Node harness.** | Playwright E2E. | Avoids a browser-automation toolchain and CI browser downloads. Accepted cost: hover tooltips are asserted via ARIA attributes, not real hover. |
+| **Undo is `Ctrl+Z` / `Ctrl+Shift+Z`.** | `Ctrl+V`. | `Ctrl+V` is paste; shadowing a universal shortcut confuses every user. |
+| **Display names cap at 24 chars**, ellipsised, full value in `title` + `aria-label`. | Hard truncation. | Truncating without the full value in an accessible attribute hides information from screen readers. |
+| **No vote system.** Destructive actions are owner-only. | Consensus voting among recent editors (previously implemented, now removed). | A single accountable owner is simpler to reason about and to explain, and removes a whole class of stuck-vote edge cases. |
