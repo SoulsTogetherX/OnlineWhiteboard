@@ -80,6 +80,25 @@ describe.skipIf(!DB_CONFIGURED)("canvasRepository (integration)", () => {
     expect(Array.from(loaded.pixels)).toEqual(Array.from(pixels))
   })
 
+  it("stores the canvas GZIPPED, not as raw bytes", async () => {
+    // The round-trip test above passes whether or not compression happens — it
+    // only proves pack and unpack agree with each other. This is what proves the
+    // bytes in the column are actually compressed, and it is the assertion that
+    // fails if someone "simplifies" packPixels back to Buffer.from().
+    const roomId = freshRoomId()
+    await saveCanvas(roomId, patternedCanvas(), 1)
+
+    const row = await db
+      .selectFrom("canvas_snapshots")
+      .select("rgba")
+      .where("room_id", "=", roomId)
+      .executeTakeFirstOrThrow()
+
+    expect(row.rgba.length).toBeLessThan(CANVAS_BYTES)
+    // gzip magic number — 0x1f 0x8b.
+    expect([row.rgba[0], row.rgba[1]]).toEqual([0x1f, 0x8b])
+  })
+
   it("keeps only the latest snapshot when saved repeatedly", async () => {
     const roomId = freshRoomId()
 

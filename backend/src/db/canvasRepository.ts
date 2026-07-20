@@ -1,5 +1,6 @@
 //#region Imports
 import { db } from "./pool"
+import { packPixels, unpackPixels } from "./pixelStorage"
 
 import {
   CANVAS_BYTES,
@@ -42,8 +43,23 @@ export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
     }
   }
 
+  // Stored gzipped. An unreadable snapshot degrades to a blank canvas rather
+  // than throwing, exactly as the dimension mismatch above does — the room still
+  // opens, and any draw_events past revision 0 still replay on top of it.
+  const pixels = unpackPixels(row.rgba)
+  if (pixels === null) {
+    console.error(
+      `canvas snapshot for room "${roomId}" at revision ${row.revision} could ` +
+        `not be decompressed (${row.rgba.length} stored bytes); starting blank`,
+    )
+    return {
+      pixels: clearCanvas(),
+      revision: 0,
+    }
+  }
+
   return {
-    pixels: new Uint8ClampedArray(row.rgba),
+    pixels,
     revision: row.revision,
   }
 }
@@ -66,7 +82,10 @@ export async function saveCanvas(
   revision: number,
   retainEventsAfter: number | null = null,
 ): Promise<void> {
-  const buffer = Buffer.from(pixels)
+  // Gzipped for storage — see pixelStorage.ts. Captured before the transaction
+  // so the compressed bytes match the revision being written, even though live
+  // draws keep mutating `pixels` underneath.
+  const buffer = packPixels(pixels)
 
   await db.transaction().execute(async (trx) => {
     // Upsert the room. First save creates it; later saves just advance the

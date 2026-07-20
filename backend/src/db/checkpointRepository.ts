@@ -1,5 +1,6 @@
 //#region Imports
 import { db } from "./pool"
+import { packPixels, unpackPixels } from "./pixelStorage"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 //#endregion
@@ -38,7 +39,10 @@ export async function createCheckpoint(input: {
       revision: input.revision,
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
-      rgba: Buffer.from(input.pixels),
+      // Gzipped for storage. Checkpoints are the heaviest thing in the schema —
+      // a full canvas each, up to 20 per room — so this is where compression
+      // pays most.
+      rgba: packPixels(input.pixels),
       created_by: input.createdBy,
     })
     .returning(["id", "name", "revision", "created_at as createdAt"])
@@ -73,8 +77,21 @@ export async function loadCheckpoint(
   if (!row || row.width !== CANVAS_WIDTH || row.height !== CANVAS_HEIGHT) {
     return null
   }
+
+  // Null on undecompressable bytes joins the existing "no such checkpoint"
+  // path, so a restore fails visibly instead of writing garbage over the live
+  // canvas and broadcasting it to everyone.
+  const pixels = unpackPixels(row.rgba)
+  if (pixels === null) {
+    console.error(
+      `checkpoint "${checkpointId}" in room "${roomId}" could not be ` +
+        `decompressed (${row.rgba.length} stored bytes)`,
+    )
+    return null
+  }
+
   return {
-    pixels: new Uint8ClampedArray(row.rgba),
+    pixels,
     revision: row.revision,
   }
 }
