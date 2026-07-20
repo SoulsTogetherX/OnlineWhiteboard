@@ -12,7 +12,7 @@ describe("pixelStorage", () => {
       pixels[i] = (i * 7) % 256
     }
 
-    const restored = unpackPixels(packPixels(pixels))
+    const restored = unpackPixels(packPixels(pixels), DEFAULT_CANVAS_DIMS)
 
     expect(restored).not.toBeNull()
     expect(Buffer.from(restored!).equals(Buffer.from(pixels))).toBe(true)
@@ -29,13 +29,13 @@ describe("pixelStorage", () => {
   it("returns null for bytes that are not gzip at all", () => {
     // What a pre-compression row would look like. Must degrade, not throw:
     // this runs during room load.
-    expect(unpackPixels(Buffer.from(new Uint8Array(canvasBytes(DEFAULT_CANVAS_DIMS))))).toBeNull()
+    expect(unpackPixels(Buffer.from(new Uint8Array(canvasBytes(DEFAULT_CANVAS_DIMS))), DEFAULT_CANVAS_DIMS)).toBeNull()
   })
 
   it("returns null for a truncated gzip stream", () => {
     const packed = packPixels(new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)))
 
-    expect(unpackPixels(packed.subarray(0, packed.length - 5))).toBeNull()
+    expect(unpackPixels(packed.subarray(0, packed.length - 5), DEFAULT_CANVAS_DIMS)).toBeNull()
   })
 
   it("returns null when the stream decompresses to the wrong size", () => {
@@ -44,7 +44,7 @@ describe("pixelStorage", () => {
     // would otherwise be trusted by every index calculation downstream.
     const wrongSize = gzipSync(Buffer.alloc(canvasBytes(DEFAULT_CANVAS_DIMS) - 4))
 
-    expect(unpackPixels(wrongSize)).toBeNull()
+    expect(unpackPixels(wrongSize, DEFAULT_CANVAS_DIMS)).toBeNull()
   })
 
   it("detects corruption in the middle of the stream", () => {
@@ -55,7 +55,7 @@ describe("pixelStorage", () => {
     const corrupted = Buffer.from(packed)
     corrupted[Math.floor(corrupted.length / 2)] ^= 0xff
 
-    expect(unpackPixels(corrupted)).toBeNull()
+    expect(unpackPixels(corrupted, DEFAULT_CANVAS_DIMS)).toBeNull()
   })
 
   it("does not alias the caller's buffer", () => {
@@ -65,6 +65,6 @@ describe("pixelStorage", () => {
     const packed = packPixels(pixels)
     pixels[0] = 7
 
-    expect(unpackPixels(packed)![0]).toBe(42)
+    expect(unpackPixels(packed, DEFAULT_CANVAS_DIMS)![0]).toBe(42)
   })
 })

@@ -1,8 +1,7 @@
 //#region Imports
 import { db } from "./pool"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
-
+import type { CanvasDims } from "@shared/constants/canvas"
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
 
@@ -25,13 +24,16 @@ export type DrawEvent = {
 //
 // ON CONFLICT DO NOTHING: never downgrade an existing room's revision/metadata,
 // just guarantee the row is there.
-export async function ensureRoom(roomId: string): Promise<void> {
+export async function ensureRoom(
+  roomId: string,
+  dims: CanvasDims,
+): Promise<void> {
   await db
     .insertInto("rooms")
     .values({
       id: roomId,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: dims.width,
+      height: dims.height,
       updated_at: new Date(),
     })
     .onConflict((oc) => oc.column("id").doNothing())

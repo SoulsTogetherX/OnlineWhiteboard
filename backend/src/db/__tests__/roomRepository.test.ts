@@ -9,7 +9,7 @@ import { appendDrawEvents, ensureRoom } from "../eventRepository"
 import { pruneStaleRooms } from "../roomRepository"
 import { saveCanvas } from "../canvasRepository"
 import { runMigrations } from "../migrate"
-import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -29,8 +29,8 @@ async function insertRoomAt(id: string, updatedAt: Date): Promise<void> {
     .insertInto("rooms")
     .values({
       id,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: DEFAULT_CANVAS_DIMS.width,
+      height: DEFAULT_CANVAS_DIMS.height,
       updated_at: updatedAt,
     })
     .execute()
@@ -114,8 +114,8 @@ describe.skipIf(!DB_CONFIGURED)("roomRepository — stale-room cleanup (integrat
   it("cascades: deleting a stale room removes its snapshot and events too", async () => {
     const id = freshId()
     // Give it a snapshot (via saveCanvas) and an event...
-    await saveCanvas(id, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 5)
-    await ensureRoom(id)
+    await saveCanvas(id, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 5, DEFAULT_CANVAS_DIMS)
+    await ensureRoom(id, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(id, [{ revision: 6, instruction: pencil() }])
     // ...then age it past the cutoff. saveCanvas stamped NOW(), so overwrite it.
     await db

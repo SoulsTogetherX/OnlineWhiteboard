@@ -266,6 +266,10 @@ export type ServerSocketMessage =
       roomId: string
       base: string
       baseRevision: number
+      // The dimensions the base canvas (and the steps) are in, so the viewer
+      // animates at the right size for a resized room.
+      width: number
+      height: number
       steps: PlaybackStep[]
     }
   | {

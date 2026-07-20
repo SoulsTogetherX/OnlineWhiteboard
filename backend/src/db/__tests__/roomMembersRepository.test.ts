@@ -5,6 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { db } from "../pool"
 import { ensureRoom } from "../eventRepository"
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 import {
   claimOwnership,
   ensureMembership,
@@ -51,7 +52,7 @@ async function makeUser(): Promise<string> {
 
 async function makeRoom(): Promise<string> {
   const id = `rm-${randomUUID()}`
-  await ensureRoom(id)
+  await ensureRoom(id, DEFAULT_CANVAS_DIMS)
   createdRooms.push(id)
   return id
 }
@@ -246,7 +247,7 @@ describe.skipIf(!DB_CONFIGURED)("roomMembersRepository (integration)", () => {
 
   it("cascades membership deletion when the room is deleted", async () => {
     const roomId = `rm-${randomUUID()}`
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     const user = await makeUser()
     await ensureMembership(roomId, user)
 

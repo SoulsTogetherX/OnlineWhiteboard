@@ -30,7 +30,7 @@ const createdRooms: string[] = []
 
 async function makeRoom(): Promise<string> {
   const id = `cp-${randomUUID()}`
-  await ensureRoom(id)
+  await ensureRoom(id, DEFAULT_CANVAS_DIMS)
   createdRooms.push(id)
   return id
 }
@@ -77,6 +77,7 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
       name: "first",
       revision: 3,
       pixels: patterned(1),
+      dims: DEFAULT_CANVAS_DIMS,
       createdBy: null,
     })
     const b = await createCheckpoint({
@@ -84,6 +85,7 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
       name: "second",
       revision: 7,
       pixels: patterned(2),
+      dims: DEFAULT_CANVAS_DIMS,
       createdBy: null,
     })
 
@@ -103,8 +105,8 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
     const roomId = await makeRoom()
     expect(await oldestCheckpointRevision(roomId)).toBeNull()
 
-    await createCheckpoint({ roomId, name: "x", revision: 9, pixels: patterned(1), createdBy: null })
-    await createCheckpoint({ roomId, name: "y", revision: 4, pixels: patterned(2), createdBy: null })
+    await createCheckpoint({ roomId, name: "x", revision: 9, pixels: patterned(1), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
+    await createCheckpoint({ roomId, name: "y", revision: 4, pixels: patterned(2), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
 
     expect(await oldestCheckpointRevision(roomId)).toBe(4)
   })
@@ -112,15 +114,15 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
   it("won't load a checkpoint from a different room", async () => {
     const roomA = await makeRoom()
     const roomB = await makeRoom()
-    const cp = await createCheckpoint({ roomId: roomA, name: "a", revision: 1, pixels: patterned(1), createdBy: null })
+    const cp = await createCheckpoint({ roomId: roomA, name: "a", revision: 1, pixels: patterned(1), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
 
     expect(await loadCheckpoint(roomB, cp.id)).toBeNull()
   })
 
   it("cascades checkpoint deletion when the room is deleted", async () => {
     const roomId = `cp-${randomUUID()}`
-    await ensureRoom(roomId)
-    const cp = await createCheckpoint({ roomId, name: "a", revision: 1, pixels: patterned(1), createdBy: null })
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
+    const cp = await createCheckpoint({ roomId, name: "a", revision: 1, pixels: patterned(1), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
 
     await db.deleteFrom("rooms").where("id", "=", roomId).execute()
     expect(await loadCheckpoint(roomId, cp.id)).toBeNull()
@@ -135,7 +137,7 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
 
     // Snapshot at revision 8, but retain events after revision 5 (as if the
     // oldest checkpoint were at 5). Events 1..5 pruned; 6..8 kept for playback.
-    await saveCanvas(roomId, patterned(9), 8, 5)
+    await saveCanvas(roomId, patterned(9), 8, DEFAULT_CANVAS_DIMS, 5)
 
     const remaining = await loadEventsSince(roomId, 0)
     expect(remaining.map((e) => e.revision)).toEqual([6, 7, 8])
@@ -145,7 +147,7 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
     const roomId = await makeRoom()
     await appendDrawEvents(roomId, [1, 2, 3].map(ev))
 
-    await saveCanvas(roomId, patterned(1), 3, null)
+    await saveCanvas(roomId, patterned(1), 3, DEFAULT_CANVAS_DIMS, null)
 
     expect(await loadEventsSince(roomId, 0)).toHaveLength(0)
   })

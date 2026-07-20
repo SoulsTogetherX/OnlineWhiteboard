@@ -265,8 +265,13 @@ describe("patch entry-count bound (memory DoS)", () => {
   // Per-entry validation bounds what ONE entry can do. Only a length check
   // bounds how many there are. Without this, a single message could carry
   // millions of entries for the server to parse and iterate.
+  // The per-room bound is the canvas AREA, so these two size to THIS canvas
+  // (DIMS = 120x120 = 14,400 pixels), not to the global MAX_PATCH_ENTRIES (the
+  // 512x512 ceiling the decoder allocates against before the room is known).
+  const PIXELS_IN_DIMS = DIMS.width * DIMS.height
+
   it("accepts a patch covering every pixel exactly once", () => {
-    const entries = Array.from({ length: MAX_PATCH_ENTRIES }, (_, i) =>
+    const entries = Array.from({ length: PIXELS_IN_DIMS }, (_, i) =>
       patchEntry(i * 4),
     )
     expect(
@@ -280,7 +285,7 @@ describe("patch entry-count bound (memory DoS)", () => {
   })
 
   it("rejects a patch with more entries than the canvas has pixels", () => {
-    const entries = Array.from({ length: MAX_PATCH_ENTRIES + 1 }, () =>
+    const entries = Array.from({ length: PIXELS_IN_DIMS + 1 }, () =>
       patchEntry(0),
     )
     expect(

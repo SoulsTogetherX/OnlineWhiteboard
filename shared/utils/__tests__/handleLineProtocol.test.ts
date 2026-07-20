@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest"
 
 import { handleDrawLineInstruction } from "../handleLineProtocol"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { BASE, DIMS, RED, getPixel, makeCanvas, paintedCount } from "./testHelpers"
 
@@ -163,8 +162,8 @@ describe("handleDrawLineInstruction — Bresenham", () => {
   it("draws to the far corner of the canvas", () => {
     const pixels = makeCanvas()
 
-    handleDrawLineInstruction(pixels, line([CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1], [CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1]), DIMS)
+    handleDrawLineInstruction(pixels, line([DIMS.width - 1, DIMS.height - 1], [DIMS.width - 1, DIMS.height - 1]), DIMS)
 
-    expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(RED)
+    expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(RED)
   })
 })

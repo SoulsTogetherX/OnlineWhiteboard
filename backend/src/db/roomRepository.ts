@@ -1,5 +1,7 @@
 //#region Imports
 import { db } from "./pool"
+
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 //#endregion
 
 //#region Room Lifecycle
@@ -64,16 +66,18 @@ export async function setOpenEditing(
     .insertInto("rooms")
     .values({
       id: roomId,
-      width: 0,
-      height: 0,
+      // Default dims for the INSERT path only (a room whose setting is flipped
+      // before it has ever been saved). On conflict only the setting is touched,
+      // so these never overwrite a real room's dimensions, which saveCanvas owns.
+      // They are the default rather than 0 so a freshly-inserted row satisfies
+      // the dimension CHECK constraint.
+      width: DEFAULT_CANVAS_DIMS.width,
+      height: DEFAULT_CANVAS_DIMS.height,
       open_editing: enabled,
       created_at: new Date(),
       updated_at: new Date(),
     })
     .onConflict((oc) =>
-      // Only the setting is touched on conflict. Width/height above are
-      // placeholders for the insert path and must NOT overwrite a real room's
-      // dimensions, which saveCanvas owns.
       oc.column("id").doUpdateSet({ open_editing: enabled }),
     )
     .execute()

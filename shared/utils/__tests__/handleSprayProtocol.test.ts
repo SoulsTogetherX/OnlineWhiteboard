@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import { handleDrawSprayInstruction } from "../handleSprayProtocol"
 import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { BASE, DIMS, RED, makeCanvas, paintedCount } from "./testHelpers"
 
@@ -51,9 +50,9 @@ describe("handleDrawSprayInstruction — determinism", () => {
     handleDrawSprayInstruction(pixels, spray({ pos: center, radius, density: 40 }), DIMS)
 
     // Every painted pixel is within `radius` (plus rounding slack) of the centre.
-    for (let y = 0; y < CANVAS_HEIGHT; y += 1) {
-      for (let x = 0; x < CANVAS_WIDTH; x += 1) {
-        const i = (y * CANVAS_WIDTH + x) << 2
+    for (let y = 0; y < DIMS.height; y += 1) {
+      for (let x = 0; x < DIMS.width; x += 1) {
+        const i = (y * DIMS.width + x) << 2
         if (pixels[i + 3] !== 0) {
           const dist = Math.hypot(x - center[0], y - center[1])
           expect(dist).toBeLessThanOrEqual(radius + 1)

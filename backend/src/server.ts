@@ -18,18 +18,18 @@ const server = createServer(app)
 // payload it never gets to see.
 //
 // The bound is derived, not guessed. The biggest LEGITIMATE message is an undo
-// patch covering every pixel: MAX_PATCH_ENTRIES entries. As JSON that was ~1.4 MB
-// (~95 bytes an entry), which is the ONLY reason this had to be 4 MiB. Now that
-// patches travel as a packed binary frame (shared/utils/patchCodec.ts) an entry
-// is 12 bytes flat, so the same worst case is MAX_PATCH_ENTRIES * 12 ≈ 173 KB.
-// 256 KiB gives that ~1.5x headroom for the frame header and any future slack,
-// and every other client->server message is far smaller — so this is now a tight
-// bound rather than a loose one, exactly as OWASP prefers.
+// patch covering every pixel of the LARGEST allowed canvas: MAX_PATCH_ENTRIES
+// (= MAX_CANVAS_DIMENSION^2 = 512^2 = 262,144) entries. Patches travel as a
+// packed binary frame (shared/utils/patchCodec.ts) at 12 bytes an entry, so that
+// worst case is 262,144 * 12 ≈ 3.0 MB. 4 MiB gives that ~1.3x headroom for the
+// frame header, and every other client->server message is far smaller.
 //
-// Phase 4 makes the canvas resizable, which raises MAX_PATCH_ENTRIES with the
-// area; this ceiling must be revisited then so a legitimate full-canvas undo on
-// the largest allowed canvas still fits.
-const MAX_SOCKET_PAYLOAD_BYTES = 256 * 1024
+// This rose from 256 KiB when the max canvas grew to 512 in Phase 4: a bigger
+// canvas means a bigger legitimate full-canvas undo, and the ceiling has to fit
+// it. Still ~25x below the `ws` 100 MiB default, and the binary patch encoding
+// is what keeps even this in the low megabytes rather than the ~25 MB the old
+// JSON encoding would have needed for the same canvas.
+const MAX_SOCKET_PAYLOAD_BYTES = 4 * 1024 * 1024
 
 const wss = new WebSocketServer({
   noServer: true,

@@ -10,7 +10,6 @@ import {
   setRole,
 } from "@/db/roomMembersRepository"
 import { loadCanvas } from "@/db/canvasRepository"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 import { ROLES, canManageRoom } from "@shared/types/identity"
 
 import type { RoomRole } from "@shared/types/identity"
@@ -55,10 +54,10 @@ export default function configureRoomRoutes(app: Express): void {
       return res.status(403).json({ error: "You are not a member of this room." })
     }
 
-    const { pixels, revision } = await loadCanvas(roomId)
+    const { pixels, revision, width, height } = await loadCanvas(roomId)
     res.json({
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width,
+      height,
       revision,
       data: Buffer.from(pixels).toString("base64"),
     })

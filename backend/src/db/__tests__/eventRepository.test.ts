@@ -64,7 +64,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("appends events and loads them back in revision order", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
 
     // Insert deliberately out of order to prove the query sorts, not the input.
     await appendDrawEvents(roomId, [
@@ -81,7 +81,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("loads only events strictly newer than a given revision", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [
       event(1, pencil([0, 0], [1, 1])),
       event(2, pencil([2, 2], [3, 3])),
@@ -95,7 +95,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("is idempotent — re-appending the same revision does not duplicate or error", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
 
     await appendDrawEvents(roomId, [event(1, pencil([0, 0], [1, 1]))])
     // Simulates a flush that partially succeeded and gets retried.
@@ -110,7 +110,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("round-trips a JSONB instruction structurally intact", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     const original = pencil([7, 8], [9, 10])
 
     await appendDrawEvents(roomId, [event(1, original)])
@@ -125,7 +125,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
     // Snapshot at revision 5 (blank), then two events drawn "after the
     // checkpoint" — the exact shape recovery faces after a crash.
     const snapshotPixels = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
-    await saveCanvas(roomId, snapshotPixels, 5)
+    await saveCanvas(roomId, snapshotPixels, 5, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [
       event(6, pencil([0, 0], [3, 0])),
       event(7, pencil([0, 1], [3, 1])),
@@ -150,7 +150,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("cascades event deletion when the room is deleted", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [event(1, pencil([0, 0], [1, 1]))])
 
     await db.deleteFrom("rooms").where("id", "=", roomId).execute()

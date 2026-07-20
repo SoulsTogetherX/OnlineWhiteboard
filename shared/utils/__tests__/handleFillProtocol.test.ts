@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest"
 
 import { handleDrawFillInstruction } from "../handleFillProtocol"
 import { handleDrawLineInstruction } from "../handleLineProtocol"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import {
   BASE,
@@ -21,7 +20,7 @@ import type { FillInstruction, LineInstruction } from "../../types/drawProtocol"
 const fill = (pos: [number, number], color = RED): FillInstruction =>
   ({ type: "bucket", pos, color, ...BASE }) as FillInstruction
 
-const TOTAL_PIXELS = CANVAS_WIDTH * CANVAS_HEIGHT
+const TOTAL_PIXELS = DIMS.width * DIMS.height
 
 describe("handleDrawFillInstruction — flood fill", () => {
   it("floods an empty canvas entirely", () => {
@@ -30,7 +29,7 @@ describe("handleDrawFillInstruction — flood fill", () => {
     handleDrawFillInstruction(pixels, fill([0, 0]), DIMS)
 
     expect(paintedCount(pixels)).toBe(TOTAL_PIXELS)
-    expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(RED)
+    expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(RED)
   })
 
   it("is a no-op when the target already holds the fill color", () => {
@@ -90,19 +89,19 @@ describe("handleDrawFillInstruction — flood fill", () => {
     handleDrawFillInstruction(pixels, fill([60, 60], BLUE), DIMS)
 
     expect(getPixel(pixels, 0, 0)).toEqual(BLUE)
-    expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(BLUE)
+    expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(BLUE)
   })
 
   it("fills a region that touches the canvas edge without escaping the buffer", () => {
     const pixels = makeCanvas()
     // Vertical wall down column 1 — the region left of it is a 1px strip
     // pinned against the canvas edge.
-    handleDrawLineInstruction(pixels, { type: "pencil", prevPos: [1, 0], nextPos: [1, CANVAS_HEIGHT - 1], color: BLUE, ...BASE } as LineInstruction, DIMS)
+    handleDrawLineInstruction(pixels, { type: "pencil", prevPos: [1, 0], nextPos: [1, DIMS.height - 1], color: BLUE, ...BASE } as LineInstruction, DIMS)
 
     handleDrawFillInstruction(pixels, fill([0, 0], RED), DIMS)
 
     expect(getPixel(pixels, 0, 0)).toEqual(RED)
-    expect(getPixel(pixels, 0, CANVAS_HEIGHT - 1)).toEqual(RED)
+    expect(getPixel(pixels, 0, DIMS.height - 1)).toEqual(RED)
     // Did not bleed past the wall.
     expect(getPixel(pixels, 2, 0)).toEqual({ r: 0, g: 0, b: 0, a: 0 })
   })

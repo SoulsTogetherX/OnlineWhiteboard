@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest"
 
 import { clipSegmentToCanvas } from "../helperProtocolMethods"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { DIMS } from "./testHelpers"
 
-const MAX_X = CANVAS_WIDTH - 1 // 119
-const MAX_Y = CANVAS_HEIGHT - 1 // 119
+const MAX_X = DIMS.width - 1 // 119
+const MAX_Y = DIMS.height - 1 // 119
 
 const inBounds = ([x, y]: [number, number]) =>
   x >= 0 && x <= MAX_X && y >= 0 && y <= MAX_Y
@@ -28,7 +27,7 @@ describe("clipSegmentToCanvas", () => {
 
   it("rejects a single point outside", () => {
     expect(clipSegmentToCanvas([-1, 5], [-1, 5], DIMS)).toBeNull()
-    expect(clipSegmentToCanvas([CANVAS_WIDTH, 5], [CANVAS_WIDTH, 5], DIMS)).toBeNull()
+    expect(clipSegmentToCanvas([DIMS.width, 5], [DIMS.width, 5], DIMS)).toBeNull()
   })
 
   it("clips a horizontal run that leaves the right edge", () => {

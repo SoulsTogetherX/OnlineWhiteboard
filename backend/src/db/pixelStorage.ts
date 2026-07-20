@@ -24,7 +24,9 @@
 //#region Imports
 import { gunzipSync, gzipSync } from "node:zlib"
 
-import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
+import { canvasBytes } from "@shared/constants/canvas"
+
+import type { CanvasDims } from "@shared/constants/canvas"
 //#endregion
 
 //#region Pack / Unpack
@@ -41,7 +43,10 @@ export function packPixels(pixels: Uint8ClampedArray): Buffer {
 // snapshot must degrade to "start this room blank" the same way a
 // dimension mismatch already does — not take down the room, or worse, the
 // process. The caller logs it; the event log may still replay on top.
-export function unpackPixels(stored: Buffer): Uint8ClampedArray | null {
+export function unpackPixels(
+  stored: Buffer,
+  dims: CanvasDims,
+): Uint8ClampedArray | null {
   let raw: Buffer
   try {
     raw = gunzipSync(stored)
@@ -50,10 +55,12 @@ export function unpackPixels(stored: Buffer): Uint8ClampedArray | null {
     return null
   }
 
-  // A stream that decompresses cleanly but holds the wrong number of bytes is
-  // still unusable — and would otherwise produce a canvas of the wrong length
-  // that every index calculation downstream trusts.
-  if (raw.length !== canvasBytes(DEFAULT_CANVAS_DIMS)) {
+  // A stream that decompresses cleanly but holds the wrong number of bytes for
+  // the dimensions it is supposed to be is still unusable — and would otherwise
+  // produce a canvas of the wrong length that every index calculation downstream
+  // trusts. The dims come from the same row as the bytes (the snapshot's stored
+  // width/height), so this catches a row whose pixels and dimensions disagree.
+  if (raw.length !== canvasBytes(dims)) {
     return null
   }
 

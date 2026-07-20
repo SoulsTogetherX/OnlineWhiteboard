@@ -56,6 +56,10 @@ export interface RoomSettings {
 export interface PlaybackData {
   base: string
   baseRevision: number
+  // The dimensions the base and steps are in, so the viewer renders a resized
+  // room's history at the right size.
+  width: number
+  height: number
   steps: PlaybackStep[]
 }
 
@@ -408,6 +412,8 @@ export default function useRoomConnection(
             setPlayback({
               base: message.base,
               baseRevision: message.baseRevision,
+              width: message.width,
+              height: message.height,
               steps: message.steps,
             })
           }

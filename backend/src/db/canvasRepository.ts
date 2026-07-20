@@ -2,29 +2,36 @@
 import { db } from "./pool"
 import { packPixels, unpackPixels } from "./pixelStorage"
 
-import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
-  DEFAULT_CANVAS_DIMS,
-  canvasBytes,
-} from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
+
+import type { CanvasDims } from "@shared/constants/canvas"
 //#endregion
 
 //#region Type Defs
 export type StoredCanvas = {
   pixels: Uint8ClampedArray
   revision: number
+  // A room's size travels WITH its pixels now. The snapshot row is authoritative:
+  // its stored width/height are the room's dimensions, and a brand-new room (no
+  // snapshot) starts at the default.
+  width: number
+  height: number
 }
 //#endregion
 
 //#region Repository Methods
-function clearCanvas(): Uint8ClampedArray {
-  return new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
+function blankCanvas(dims: CanvasDims): StoredCanvas {
+  return {
+    pixels: new Uint8ClampedArray(canvasBytes(dims)),
+    revision: 0,
+    width: dims.width,
+    height: dims.height,
+  }
 }
 
-// Loads a room's canvas from its latest checkpoint. In Stage 2 the latest
-// snapshot IS the full truth; from Stage 3 on, the caller replays any
-// draw_events newer than this snapshot's revision on top of it.
+// Loads a room's canvas from its latest snapshot, at whatever dimensions that
+// snapshot was stored at. The caller replays any draw_events newer than this
+// snapshot's revision on top of it.
 export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
   const row = await db
     .selectFrom("canvas_snapshots")
@@ -34,34 +41,33 @@ export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
     .limit(1)
     .executeTakeFirst()
 
-  // No snapshot (new room) or one whose dimensions no longer match the current
-  // constants — start blank. The dimension guard is why changing
-  // CANVAS_WIDTH/HEIGHT silently resets every stored canvas.
-  if (!row || row.width !== CANVAS_WIDTH || row.height !== CANVAS_HEIGHT) {
-    return {
-      pixels: clearCanvas(),
-      revision: 0,
-    }
+  // No snapshot yet: a brand-new room starts blank at the default size.
+  if (!row) {
+    return blankCanvas(DEFAULT_CANVAS_DIMS)
   }
 
-  // Stored gzipped. An unreadable snapshot degrades to a blank canvas rather
-  // than throwing, exactly as the dimension mismatch above does — the room still
-  // opens, and any draw_events past revision 0 still replay on top of it.
-  const pixels = unpackPixels(row.rgba)
+  const dims = { width: row.width, height: row.height }
+
+  // Stored gzipped, validated against the row's OWN dimensions. An unreadable or
+  // wrong-length snapshot degrades to a blank canvas at the default rather than
+  // throwing — the room still opens, and any draw_events past revision 0 still
+  // replay on top. (A resized room whose only snapshot is corrupt is a rare loss;
+  // starting it at the default is the safe floor.)
+  const pixels = unpackPixels(row.rgba, dims)
   if (pixels === null) {
     console.error(
       `canvas snapshot for room "${roomId}" at revision ${row.revision} could ` +
-        `not be decompressed (${row.rgba.length} stored bytes); starting blank`,
+        `not be decompressed (${row.rgba.length} stored bytes, ` +
+        `${dims.width}x${dims.height}); starting blank`,
     )
-    return {
-      pixels: clearCanvas(),
-      revision: 0,
-    }
+    return blankCanvas(DEFAULT_CANVAS_DIMS)
   }
 
   return {
     pixels,
     revision: row.revision,
+    width: dims.width,
+    height: dims.height,
   }
 }
 
@@ -81,6 +87,7 @@ export async function saveCanvas(
   roomId: string,
   pixels: Uint8ClampedArray,
   revision: number,
+  dims: CanvasDims,
   retainEventsAfter: number | null = null,
 ): Promise<void> {
   // Gzipped for storage — see pixelStorage.ts. Captured before the transaction
@@ -89,20 +96,26 @@ export async function saveCanvas(
   const buffer = packPixels(pixels)
 
   await db.transaction().execute(async (trx) => {
-    // Upsert the room. First save creates it; later saves just advance the
-    // head revision and the updated_at clock. title/created_at are left alone
-    // on update so existing metadata survives.
+    // Upsert the room. First save creates it; later saves advance the head
+    // revision and the updated_at clock AND write the room's dimensions — a
+    // resize changes them, so they cannot be insert-only. title/created_at are
+    // left alone so existing metadata survives.
     await trx
       .insertInto("rooms")
       .values({
         id: roomId,
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
+        width: dims.width,
+        height: dims.height,
         revision,
         updated_at: new Date(),
       })
       .onConflict((oc) =>
-        oc.column("id").doUpdateSet({ revision, updated_at: new Date() }),
+        oc.column("id").doUpdateSet({
+          revision,
+          width: dims.width,
+          height: dims.height,
+          updated_at: new Date(),
+        }),
       )
       .execute()
 
@@ -114,12 +127,16 @@ export async function saveCanvas(
       .values({
         room_id: roomId,
         revision,
-        width: CANVAS_WIDTH,
-        height: CANVAS_HEIGHT,
+        width: dims.width,
+        height: dims.height,
         rgba: buffer,
       })
       .onConflict((oc) =>
-        oc.columns(["room_id", "revision"]).doUpdateSet({ rgba: buffer }),
+        oc.columns(["room_id", "revision"]).doUpdateSet({
+          rgba: buffer,
+          width: dims.width,
+          height: dims.height,
+        }),
       )
       .execute()
 

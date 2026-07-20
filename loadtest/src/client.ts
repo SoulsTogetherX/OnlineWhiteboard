@@ -1,7 +1,7 @@
 //#region Imports
 import WebSocket from "ws"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
 
 import type {
@@ -52,12 +52,12 @@ let nextInstructionId = 0
 
 function randomInstruction(): DrawInstruction {
   const prevPos: [number, number] = [
-    Math.floor(Math.random() * CANVAS_WIDTH),
-    Math.floor(Math.random() * CANVAS_HEIGHT),
+    Math.floor(Math.random() * DEFAULT_CANVAS_DIMS.width),
+    Math.floor(Math.random() * DEFAULT_CANVAS_DIMS.height),
   ]
   const nextPos: [number, number] = [
-    Math.floor(Math.random() * CANVAS_WIDTH),
-    Math.floor(Math.random() * CANVAS_HEIGHT),
+    Math.floor(Math.random() * DEFAULT_CANVAS_DIMS.width),
+    Math.floor(Math.random() * DEFAULT_CANVAS_DIMS.height),
   ]
   return {
     type: "pencil",

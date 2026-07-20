@@ -1,15 +1,18 @@
 //#region Imports
-import { DEFAULT_CANVAS_DIMS, canvasBytes } from "../../constants/canvas"
+import { canvasBytes } from "../../constants/canvas"
 
 import type { CanvasDims } from "../../constants/canvas"
 import type { ColorType } from "../../types/primitive"
 //#endregion
 
 //#region Canvas Helpers
-// The dimensions the shared tests exercise. Exported so a test that needs to
-// pass dims into a now-parameterised function has one obvious value to use, and
-// so a future test at a different size can override the default here.
-export const DIMS: CanvasDims = DEFAULT_CANVAS_DIMS
+// The dimensions the shared tests exercise. Deliberately a fixed 120x120 and NOT
+// tied to DEFAULT_CANVAS_DIMS: these tests hardcode coordinates and full-canvas
+// pixel counts, and the pixel logic is dimension-agnostic, so pinning a small
+// square keeps them stable no matter what a new room's default size becomes.
+// Exported as the one obvious dims value to pass into the now-parameterised
+// shared functions.
+export const DIMS: CanvasDims = { width: 120, height: 120 }
 
 // A bare RGBA buffer, exactly what RoomState.pixels is on the server. Every
 // shared draw function accepts this directly, which is the whole reason the

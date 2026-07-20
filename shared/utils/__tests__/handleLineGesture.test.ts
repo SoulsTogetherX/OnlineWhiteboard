@@ -4,7 +4,6 @@ import {
   handleDrawLineMotion,
   handleDrawLineStart,
 } from "../handleLineProtocol"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 
 import { DIMS, RED, getPixel, makeCanvas } from "./testHelpers"
 
@@ -21,8 +20,8 @@ import type { BaseInstruction, LineAction } from "../../types/drawProtocol"
 function makeFakeCanvas(pixels: Uint8ClampedArray): HTMLCanvasElement {
   const imageData = {
     data: pixels,
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width: DIMS.width,
+    height: DIMS.height,
   } as unknown as ImageData
 
   const ctx = {
@@ -31,14 +30,14 @@ function makeFakeCanvas(pixels: Uint8ClampedArray): HTMLCanvasElement {
   } as unknown as CanvasRenderingContext2D
 
   return {
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width: DIMS.width,
+    height: DIMS.height,
     getContext: () => ctx,
     getBoundingClientRect: () => ({
       left: 0,
       top: 0,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: DIMS.width,
+      height: DIMS.height,
     }),
   } as unknown as HTMLCanvasElement
 }
@@ -52,8 +51,8 @@ const ev = (x: number, y: number): PointerEvent =>
     buttons: 1,
   }) as PointerEvent
 
-const MAX_X = CANVAS_WIDTH - 1
-const MAX_Y = CANVAS_HEIGHT - 1
+const MAX_X = DIMS.width - 1
+const MAX_Y = DIMS.height - 1
 
 function startGesture() {
   const pixels = makeCanvas()

@@ -3,11 +3,7 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
-import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
-  DEFAULT_CANVAS_DIMS,
-} from "@shared/constants/canvas"
+import type { CanvasDims } from "@shared/constants/canvas"
 import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
   appendDrawEvents,
@@ -39,6 +35,7 @@ import {
   oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { resizePixels } from "@shared/utils/helperProtocolMethods"
 import { compressSnapshotPayload } from "@/sockets/snapshotCompression"
 import { encodeBinaryFrame } from "@shared/utils/binaryFrame"
 import { decodePatchDrawFrame } from "@shared/utils/patchCodec"
@@ -107,6 +104,10 @@ type RoomState = {
   roomId: string
   clients: Set<ClientSocket>
   pixels: Uint8ClampedArray
+  // The room's canvas dimensions, mirrored in memory like revision. `pixels` is
+  // exactly width*height*4 bytes; a resize replaces both together.
+  width: number
+  height: number
   revision: number
   isDirty: boolean
   saveTimer: NodeJS.Timeout
@@ -367,6 +368,10 @@ export default class RoomManager {
     // checkpoint — the difference between losing <1s of work and losing 15s.
     const stored = await loadCanvas(roomId)
     let revision = stored.revision
+    // The room's dimensions come from its stored snapshot (or the default for a
+    // brand-new room). Every event replayed below was recorded at these same
+    // dims, because a resize rewrites the snapshot and prunes older events.
+    const dims: CanvasDims = { width: stored.width, height: stored.height }
 
     const events = await loadEventsSince(roomId, stored.revision)
     for (const event of events) {
@@ -377,12 +382,7 @@ export default class RoomManager {
       // "replay", not "decide": the log holds what each patch ACTUALLY applied
       // when it was first decided. Re-deciding it against a rebuilt buffer would
       // let recovery reach a different canvas than the one that was live.
-      applyDrawInstructionToCanvas(
-        stored.pixels,
-        event.instruction,
-        DEFAULT_CANVAS_DIMS,
-        "replay",
-      )
+      applyDrawInstructionToCanvas(stored.pixels, event.instruction, dims, "replay")
       revision = event.revision
     }
     if (events.length > 0) {
@@ -392,8 +392,9 @@ export default class RoomManager {
       )
     }
 
-    // Guarantee the FK target for draw_events exists before the first flush.
-    await ensureRoom(roomId)
+    // Guarantee the FK target for draw_events exists before the first flush,
+    // created at the room's dimensions.
+    await ensureRoom(roomId, dims)
 
     // Permission state is read ONCE here and mirrored in memory for the room's
     // lifetime. Every draw message asks "may this connection draw?", so querying
@@ -406,6 +407,8 @@ export default class RoomManager {
       roomId,
       clients: new Set<ClientSocket>(),
       pixels: stored.pixels,
+      width: dims.width,
+      height: dims.height,
       revision,
       isDirty: false,
       eventBuffer: [],
@@ -640,7 +643,7 @@ export default class RoomManager {
     const applied = applyDrawInstructionToCanvas(
       room.pixels,
       instruction,
-      DEFAULT_CANVAS_DIMS,
+      this.dimsOf(room),
     )
     if (!applied) {
       return null
@@ -1029,6 +1032,7 @@ export default class RoomManager {
         name: trimmed,
         revision,
         pixels,
+        dims: this.dimsOf(room),
         createdBy: socket.userId,
       })
       await this.broadcastCheckpoints(room)
@@ -1069,7 +1073,20 @@ export default class RoomManager {
         return
       }
 
-      room.pixels.set(checkpoint.pixels)
+      // A checkpoint captured before a resize has different dimensions than the
+      // room does now. Restoring keeps the room's CURRENT size and fits the
+      // checkpoint's pixels into it (top-left crop/pad) rather than resizing the
+      // room back — restore is "bring those pixels back", not "undo the resize".
+      // When the dims already match, this is a plain copy.
+      const checkpointDims = {
+        width: checkpoint.width,
+        height: checkpoint.height,
+      }
+      const fitted =
+        checkpoint.width === room.width && checkpoint.height === room.height
+          ? checkpoint.pixels
+          : resizePixels(checkpoint.pixels, checkpointDims, this.dimsOf(room))
+      room.pixels.set(fitted)
       room.revision += 1
       room.isDirty = true
 
@@ -1118,6 +1135,7 @@ export default class RoomManager {
 
       let base: Uint8ClampedArray
       let baseRevision: number
+      let baseDims: CanvasDims
       if (fromCheckpointId) {
         const checkpoint = await loadCheckpoint(room.roomId, fromCheckpointId)
         if (!checkpoint) {
@@ -1129,10 +1147,12 @@ export default class RoomManager {
         }
         base = checkpoint.pixels
         baseRevision = checkpoint.revision
+        baseDims = { width: checkpoint.width, height: checkpoint.height }
       } else {
         const stored = await loadCanvas(room.roomId)
         base = stored.pixels
         baseRevision = stored.revision
+        baseDims = { width: stored.width, height: stored.height }
       }
 
       const events = await loadEventsSince(room.roomId, baseRevision)
@@ -1141,6 +1161,12 @@ export default class RoomManager {
         roomId: room.roomId,
         base: Buffer.from(base).toString("base64"),
         baseRevision,
+        // The base's dimensions, so the client animates at the right size. An
+        // event drawn at a different size (across a resize boundary) simply
+        // fails validation against these dims and is skipped rather than
+        // corrupting the frame — imperfect across a resize, exact within one.
+        width: baseDims.width,
+        height: baseDims.height,
         steps: events.map((event) => ({
           revision: event.revision,
           instruction: event.instruction,
@@ -1292,11 +1318,23 @@ export default class RoomManager {
       // Keep events newer than the oldest checkpoint so history stays replayable
       // from it; with no checkpoints this is null and compaction is fully bounded.
       const retainAfter = await oldestCheckpointRevision(room.roomId)
-      await saveCanvas(room.roomId, room.pixels, room.revision, retainAfter)
+      await saveCanvas(
+        room.roomId,
+        room.pixels,
+        room.revision,
+        this.dimsOf(room),
+        retainAfter,
+      )
       room.isDirty = false
     } catch (error) {
       console.error(`Failed to save room ${room.roomId}:`, error)
     }
+  }
+
+  // The room's dimensions as a CanvasDims, for handing to the shared pixel
+  // functions that now take one.
+  private dimsOf(room: RoomState): CanvasDims {
+    return { width: room.width, height: room.height }
   }
 
   // The room's current roster — one entry per connected socket, in join order.
@@ -1350,8 +1388,8 @@ export default class RoomManager {
       type: "canvas_snapshot",
       roomId: room.roomId,
       revision: room.revision,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: room.width,
+      height: room.height,
       compression,
     }
     return encodeBinaryFrame(header, payload)

@@ -411,12 +411,16 @@ async function main() {
   // snapshots agree byte-for-byte afterwards.
   const cvRoom = `${ROOM}-converge`
   const c = await connect(cvRoom)
-  await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's snapshot")
+  const cSnapshot = await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's snapshot")
   const d = await connect(cvRoom)
   await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's snapshot")
 
   // Paint one pixel RED so both clients and the server agree on a start state.
-  const idx = (1 * 120 + 1) * 4
+  // The byte index of pixel (1,1) depends on the room's WIDTH — which is
+  // per-room now — so derive it from the snapshot rather than hardcoding a
+  // stride. A wrong stride would target the wrong pixel and the CAS would find
+  // no RED there, silently applying nothing.
+  const idx = (1 * cSnapshot.width + 1) * 4
   c.ws.send(
     draw(cvRoom, {
       type: "pencil",

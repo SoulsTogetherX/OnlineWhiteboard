@@ -9,7 +9,7 @@ import {
   getToolColor,
   withRecording,
 } from "../helperProtocolMethods"
-import { CANVAS_WIDTH, DEFAULT_COLOR } from "../../constants/canvas"
+import { DEFAULT_COLOR } from "../../constants/canvas"
 
 import { BLUE, DIMS, RED, makeCanvas } from "./testHelpers"
 
@@ -43,8 +43,8 @@ describe("getIdxFromVec", () => {
   })
 
   it("advances a full row (WIDTH * 4 bytes) per unit of y", () => {
-    expect(getIdxFromVec([0, 1], DIMS)).toBe(CANVAS_WIDTH * 4)
-    expect(getIdxFromVec([3, 2], DIMS)).toBe((2 * CANVAS_WIDTH + 3) * 4)
+    expect(getIdxFromVec([0, 1], DIMS)).toBe(DIMS.width * 4)
+    expect(getIdxFromVec([3, 2], DIMS)).toBe((2 * DIMS.width + 3) * 4)
   })
 })
 

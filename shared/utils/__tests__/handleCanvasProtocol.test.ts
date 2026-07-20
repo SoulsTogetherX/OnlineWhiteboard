@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
 import { getIdxFromVec } from "../helperProtocolMethods"
-import { CANVAS_HEIGHT, CANVAS_WIDTH, canvasBytes } from "../../constants/canvas"
+import { canvasBytes } from "../../constants/canvas"
 
 import {
   BASE,
@@ -42,7 +42,7 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
     const applied = applyDrawInstructionToCanvas(pixels, inst, DIMS)
 
     expect(applied).toBe(inst)
-    expect(paintedCount(pixels)).toBe(CANVAS_WIDTH * CANVAS_HEIGHT)
+    expect(paintedCount(pixels)).toBe(DIMS.width * DIMS.height)
   })
 
   it("returns a patch narrowed to only the entries that applied", () => {
@@ -177,7 +177,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
 
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "bucket",
-      pos: [CANVAS_WIDTH, 0],
+      pos: [DIMS.width, 0],
       color: RED,
       ...BASE,
     } as DrawInstruction, DIMS)
@@ -257,12 +257,12 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "pencil",
       prevPos: [0, 0],
-      nextPos: [CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1],
+      nextPos: [DIMS.width - 1, DIMS.height - 1],
       color: RED,
       ...BASE,
     } as DrawInstruction, DIMS)
 
     expect(applied).not.toBeNull()
-    expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(RED)
+    expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(RED)
   })
 })

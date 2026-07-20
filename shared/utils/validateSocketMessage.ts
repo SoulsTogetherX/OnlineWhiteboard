@@ -23,7 +23,7 @@ import {
   MAX_ID_LENGTH,
   MAX_ROOM_ID_LENGTH,
 } from "../constants/protocol"
-import { DEFAULT_CANVAS_DIMS } from "../constants/canvas"
+import { MAX_CANVAS_DIMS } from "../constants/canvas"
 import { isValidDrawInstruction, isValidVec } from "./validateInstruction"
 import { ROLES } from "../types/identity"
 
@@ -83,10 +83,9 @@ export function isValidClientMessage(
       // that would spin Bresenham forever. The fan-in point
       // (applyDrawInstructionToCanvas) re-validates against the room's real
       // dims and drops a coordinate that fits the maximum but not this board.
-      // MAX_CANVAS_DIMS replaces this once per-room dims land; today max = default.
       return (
         isRoomId(message.roomId) &&
-        isValidDrawInstruction(message.instruction, DEFAULT_CANVAS_DIMS)
+        isValidDrawInstruction(message.instruction, MAX_CANVAS_DIMS)
       )
 
     case "resync":
@@ -97,7 +96,7 @@ export function isValidClientMessage(
       // be a valid in-bounds vector.
       return (
         isRoomId(message.roomId) &&
-        (message.pos === null || isValidVec(message.pos, DEFAULT_CANVAS_DIMS))
+        (message.pos === null || isValidVec(message.pos, MAX_CANVAS_DIMS))
       )
 
     case "room_action":

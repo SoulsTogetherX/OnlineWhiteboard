@@ -3,11 +3,7 @@ import { useEffect, useRef, useState } from "react"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
-import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
-  DEFAULT_CANVAS_DIMS,
-} from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 
 import type { PlaybackData } from "@/hooks/useRoomConnection"
 
@@ -59,11 +55,13 @@ export default function PlaybackViewer({
     if (!playback) {
       return
     }
-    // Playback still runs at the default dimensions: the playback message does
-    // not yet carry per-room dims (a gap for resized rooms, tracked for the
-    // timeline work). Decode against the default; a mismatched length returns
-    // null and animates nothing rather than throwing.
-    const base = createImageDataFromBase64(playback.base, DEFAULT_CANVAS_DIMS)
+    // The playback message carries the base's dimensions, so a resized room's
+    // history animates at the right size. A mismatched length returns null and
+    // animates nothing rather than throwing.
+    const base = createImageDataFromBase64(playback.base, {
+      width: playback.width,
+      height: playback.height,
+    })
     if (base === null) {
       return
     }
@@ -87,6 +85,12 @@ export default function PlaybackViewer({
     const ctx = canvas.getContext("2d")
     if (!ctx) {
       return
+    }
+    // Match the element to the base's dimensions (a resized room may differ from
+    // the default), guarded so an unchanged size does not clear the bitmap.
+    if (canvas.width !== base.width || canvas.height !== base.height) {
+      canvas.width = base.width
+      canvas.height = base.height
     }
     // Going backward: rebuild the working buffer from the base.
     if (step < renderedStepRef.current) {
@@ -137,8 +141,8 @@ export default function PlaybackViewer({
           <canvas
             ref={canvasRef}
             className="playback-canvas"
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
+            width={playback?.width ?? DEFAULT_CANVAS_DIMS.width}
+            height={playback?.height ?? DEFAULT_CANVAS_DIMS.height}
           />
         </div>
 

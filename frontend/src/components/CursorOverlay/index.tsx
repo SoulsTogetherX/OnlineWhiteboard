@@ -1,7 +1,6 @@
 //#region Imports
 import { useEffect, useMemo, useRef } from "react"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
 
 import type { Participant } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
@@ -51,8 +50,11 @@ export default function CursorOverlay({
       const canvas = canvasRef.current
       if (canvas) {
         const rect = canvas.getBoundingClientRect()
-        const scaleX = rect.width / CANVAS_WIDTH
-        const scaleY = rect.height / CANVAS_HEIGHT
+        // Scale from the element's OWN canvas dimensions — the room's actual
+        // size once a snapshot has sized it — so a resized room maps remote
+        // cursor positions to the right on-screen spot.
+        const scaleX = rect.width / canvas.width
+        const scaleY = rect.height / canvas.height
 
         for (const [id, node] of nodeRefs.current) {
           const pos = cursorsRef.current.get(id)
