@@ -706,6 +706,16 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
   persisted data needs a migration. Don't "finish" this one.
 
 **Smaller**
+- **A full page reload into a DIFFERENT room may leave the client not joined to it.**
+  Found while browser-testing Phase 4. `roomId` comes from `useSessionStorage`; the suspicion
+  is that on mount the hook briefly yields the default (`testRoom`) before hydrating the stored
+  value, so the socket connects to `testRoom`, then `roomId` changes and it reconnects — and
+  the reconnect does not reliably land the client in the intended room (a fresh peer joining
+  the same room id saw presence 1, and the client rendered none of that peer's draws). A
+  fresh TAB load (no reload) is unaffected, and the in-app room switch may be too — reproduced
+  only via reload with a pre-seeded different `sessionStorage` room. Not chased down because it
+  is unrelated to the resize/undo work it surfaced under; Phase 5 reworks the room UI and is
+  the natural place to fix it. Verify with two clients + a presence assertion after a reload.
 - `rooms.title` is provisioned but never written (deliberate — see §12.4).
 - Email verification, password reset, and a breached-password (HIBP) check.
 - The loadtest only exercises `ping` + a `pencil` draw — it doesn't touch presence, cursors,
