@@ -240,6 +240,65 @@ async function main() {
     ? fail("the rejected clear was broadcast anyway")
     : pass("rejected clear never reached the canvas or other clients")
 
+  // --- Simultaneous joins into a cold room ----------------------------------
+  // REGRESSION (split-brain rooms): getOrCreateRoom checked `rooms`, then
+  // awaited five database calls before publishing into it. Every joiner that
+  // arrived during that window missed the cache and built its own RoomState,
+  // and the last to finish won the Map — so clients ended up in rooms nobody
+  // else could reach, each seeing presence of 1, with strokes reaching nobody.
+  // The orphaned rooms also kept their save/snapshot/flush timers running and
+  // went on persisting under a competing revision counter.
+  //
+  // A COLD room and NO serialisation are both essential to this test: it is the
+  // load window that was unguarded, so anything that lets one client finish
+  // joining first will pass whether or not the bug is present. After a restart
+  // every client reconnects at once into cold rooms, which is exactly this.
+  const joinRoom = `${ROOM}-join`
+  const joiners = await Promise.all([
+    connect(joinRoom),
+    connect(joinRoom),
+    connect(joinRoom),
+  ])
+  await Promise.all(
+    joiners.map((j, i) =>
+      waitFor(j.seen, (m) => m.type === "canvas_snapshot", `joiner ${i}'s snapshot`),
+    ),
+  )
+  // Presence is broadcast on every join, so the LAST one each client saw should
+  // list all three.
+  await new Promise((r) => setTimeout(r, 500))
+  const rosters = joiners.map(
+    (j) => j.seen.filter((m) => m.type === "presence").pop()?.participants?.length ?? 0,
+  )
+  rosters.every((n) => n === 3)
+    ? pass("three simultaneous joins land in ONE room (presence 3/3/3)")
+    : fail(`simultaneous joins split the room — presence counts [${rosters.join(", ")}]`)
+
+  // The decisive check: a stroke from one joiner must reach the other two.
+  joiners[0].ws.send(
+    draw(joinRoom, {
+      type: "pencil",
+      prevPos: [3, 3],
+      nextPos: [3, 3],
+      color: RED,
+      instructionId: 20,
+      sessionId: "smoke-join",
+    }),
+  )
+  await Promise.all(
+    joiners
+      .slice(1)
+      .map((j, i) =>
+        waitFor(
+          j.seen,
+          (m) => m.type === "draw" && m.instruction.sessionId === "smoke-join",
+          `joiner ${i + 1} to receive the stroke`,
+        ),
+      ),
+  )
+  pass("REGRESSION: a stroke reaches every client that joined simultaneously")
+  joiners.forEach((j) => j.ws.close())
+
   // --- Convergence under concurrent undo ------------------------------------
   // REGRESSION (silent desync): every check above asserts DELIVERY — that a
   // message arrived. None asserted that two clients end up holding the same
@@ -256,11 +315,6 @@ async function main() {
   // asserts the server half the fix rests on: that the server rejects a stale
   // patch outright rather than partially applying it, and that both clients'
   // snapshots agree byte-for-byte afterwards.
-  // NOTE the serialised connects: C must be fully joined before D dials in.
-  // Connecting both at once into a COLD room currently lands them in two
-  // separate RoomState objects (see §14 "cold-room join race") — which would
-  // make this section fail for a reason that has nothing to do with what it
-  // tests. Serialising is what the fan-out section above already does.
   const cvRoom = `${ROOM}-converge`
   const c = await connect(cvRoom)
   await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's snapshot")

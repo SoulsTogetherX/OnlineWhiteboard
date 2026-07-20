@@ -128,6 +128,12 @@ type RoomState = {
 //#region Room Manager
 export default class RoomManager {
   private rooms = new Map<string, RoomState>()
+
+  // Rooms whose load is currently in flight, so concurrent joiners share ONE
+  // load instead of each building their own RoomState. Entries live only for the
+  // duration of the load; once it resolves the room is in `rooms` and this is
+  // cleared. See getOrCreateRoom for why this is load-bearing.
+  private roomLoads = new Map<string, Promise<RoomState>>()
   private heartbeatTimer?: NodeJS.Timeout
   private cleanupTimer?: NodeJS.Timeout
   // Per-socket flood control. Keyed by the socket object, so state disappears
@@ -293,12 +299,50 @@ export default class RoomManager {
     }
   }
 
+  // Returns the room, loading it if it is not cached — and guaranteeing that
+  // concurrent callers for the same roomId all get the SAME RoomState.
+  //
+  // The guarantee is the whole point. `loadRoom` awaits five database round
+  // trips before it can publish into `rooms`, and this used to be a bare
+  // check-then-load: every caller that arrived during that window missed the
+  // cache, built its own RoomState, and the last one to finish overwrote the
+  // others in the Map. The clients attached to the losers were then in rooms
+  // nobody could reach — three simultaneous joins measured presence [1, 1, 1]
+  // with strokes reaching nobody, instead of [3, 3, 3]. Worse, an orphaned room
+  // keeps its save/snapshot/flush timers running forever (disposeIfEmpty only
+  // ever sees the Map) and goes on writing snapshots for the same roomId under
+  // a competing revision counter.
+  //
+  // This is not a rare race: after any restart or deploy every client reconnects
+  // at once into cold rooms, which is exactly the trigger.
   private async getOrCreateRoom(roomId: string): Promise<RoomState> {
     const cached = this.rooms.get(roomId)
     if (cached) {
       return cached
     }
 
+    // Somebody else is already loading this room — await THEIR load rather than
+    // starting a second one.
+    const inFlight = this.roomLoads.get(roomId)
+    if (inFlight) {
+      return inFlight
+    }
+
+    const load = this.loadRoom(roomId)
+    this.roomLoads.set(roomId, load)
+    try {
+      return await load
+    } finally {
+      // Cleared whether the load succeeded or threw. `loadRoom` publishes into
+      // `rooms` before it resolves, so there is no window where a later caller
+      // finds neither the cache nor an in-flight load and starts a third one.
+      // On failure, clearing lets the next joiner retry instead of inheriting a
+      // permanently rejected promise.
+      this.roomLoads.delete(roomId)
+    }
+  }
+
+  private async loadRoom(roomId: string): Promise<RoomState> {
     // Recovery: start from the latest snapshot, then replay every event newer
     // than it. On a clean run there are no such events and this is just the
     // snapshot; after a crash, these are the strokes drawn since the last

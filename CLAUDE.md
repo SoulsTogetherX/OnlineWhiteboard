@@ -681,21 +681,6 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
 ## 14. Known gaps and backlog
 
 **Architectural**
-- **⚠ Cold-room join race: simultaneous joins split one room into several.**
-  `getOrCreateRoom` checks `this.rooms`, then `await`s five database calls before
-  `this.rooms.set(roomId, room)` — with **no in-flight promise guard**. Two connections
-  arriving into an uncached room concurrently therefore both miss the cache, both build a
-  `RoomState`, and the second overwrites the first in the Map. Measured with three
-  simultaneous joins: presence counts `[1, 1, 1]` and a stroke from one client reached
-  neither of the others; serialising the same three joins gives `[3, 3, 3]` and full
-  fan-out. The orphaned `RoomState` also keeps its `saveTimer`/`snapshotTimer`/`flushTimer`
-  running, since `disposeIfEmpty` works through the Map — so it leaks intervals *and*
-  persists snapshots for the same `roomId` under a competing revision counter.
-  This is not an exotic race: after any restart or deploy every client reconnects at once
-  into cold rooms, which is exactly the trigger. Fix is small — memoise the in-flight
-  promise in the Map (or a parallel `Map<string, Promise<RoomState>>`) so concurrent callers
-  await the same load. `scripts/smoke-test.mjs` serialises its connects to avoid it; undo
-  that once this is fixed, and add the simultaneous-join case as a regression.
 - **No horizontal scaling.** `rooms` is an in-process `Map`, so presence, cursors, votes and
   broadcasts are all per-process. Multi-instance needs Redis pub/sub. This is the single
   biggest architectural limitation and a good interview topic.
