@@ -4,6 +4,11 @@
 > Claude Code auto-loads it. Rewritten 2026-07-17 to describe the system as it is now.
 >
 > **Read §12 (Working agreements) before changing anything.**
+>
+> Picking up mid-project? **§17 is the roadmap** — what is done, what is next, and the
+> scope of each remaining phase. **§16 is the decision record** — every non-obvious choice
+> with the alternative that was rejected and why. Read both before proposing a change that
+> "simplifies" something; most of the traps are already written down there.
 
 ---
 
@@ -734,8 +739,83 @@ exactly why it is written down. Do not "fix" one of these without revisiting the
 | **Ownership: persistent, opt-in.** You claim an unowned room and keep it across sessions. | Session-only ownership released on disconnect. | Every room setting (guest-editing toggle, assigned roles) would reset whenever the last owner left. |
 | **Resize: crop/pad from top-left.** | Scale/resample. | Resampling rewrites every pixel, so the undo stack and event log no longer describe the canvas. Crop/pad is lossless for the kept region. |
 | **Snapshots: binary frames + deflate; `draw_events` stays raw JSON.** | Compressing the event log too. | Instructions are tiny and on the latency-critical path; compressing them trades the thing we care about (speed) for the thing we don't (a few bytes). |
+| **Compression is APPLICATION-level: deflate the snapshot payload ourselves.** `perMessageDeflate: false` is set explicitly in `server.ts`. | Transport-level `permessage-deflate` on the `ws` server (which is what was originally asked for). | OWASP advises against transport compression: when attacker-influenced data shares a compression context with secrets, the compressed **size** leaks content — the CRIME/BREACH class. Compressing only the snapshot payload means the compressed buffer holds pixel bytes and nothing else, so no oracle exists. Same bandwidth win, and far more predictable memory, which `permessage-deflate` is notoriously not. **Do not "simplify" this by turning the flag back on.** |
 | **History: uniform decimation.** | Keep the ends sharp, thin only the middle. | Chosen so the *whole* timeline stays scrubbable at even fidelity. Accepted cost: recent history is thinned too. |
 | **UI tests: Testing Library + jsdom, plus the two-client Node harness.** | Playwright E2E. | Avoids a browser-automation toolchain and CI browser downloads. Accepted cost: hover tooltips are asserted via ARIA attributes, not real hover. |
 | **Undo is `Ctrl+Z` / `Ctrl+Shift+Z`.** | `Ctrl+V`. | `Ctrl+V` is paste; shadowing a universal shortcut confuses every user. |
 | **Display names cap at 24 chars**, ellipsised, full value in `title` + `aria-label`. | Hard truncation. | Truncating without the full value in an accessible attribute hides information from screen readers. |
 | **No vote system.** Destructive actions are owner-only. | Consensus voting among recent editors (previously implemented, now removed). | A single accountable owner is simpler to reason about and to explain, and removes a whole class of stuck-vote edge cases. |
+
+---
+
+## 17. Roadmap — where the project is
+
+Seven phases, ordered by dependency and by the stated priority: **security → speed →
+memory**. Each lands as its own verified commit (§12.2). Phases 1–2 are done.
+
+### ✅ Phase 1 — Security
+
+Socket envelope validation (replacing an `as` cast that checked nothing at runtime); a
+patch entry-count bound and an explicit `maxPayload` (`ws` defaults to 100 MiB);
+weighted-cost flood control and per-identity connection caps; email encrypted at rest
+behind a slow-KDF blind index; breached-password screening via HIBP k-anonymity; and a
+session lifecycle that actually disconnects sockets on logout.
+
+### ✅ Phase 2 — Ownership, roles and permissions
+
+Voting removed entirely. Everyone joins as a **viewer**; ownership is claimed, released,
+and transferable, never automatic. `open_editing` decides whether anyone below editor may
+draw. Editor requests round-trip to the owner.
+
+### ▶ Phase 3 — Protocol, compression, and the 100 ms guarantee
+
+- Snapshots move from a base64 JSON field to **binary WebSocket frames** (base64 costs
+  +33%: 57 600 B → 76 800 chars). Protocol change ⇒ §12.5 applies: server handler, client
+  dispatcher and `scripts/smoke-test.mjs` move together.
+- Compress the snapshot payload at the **application level** — not `permessage-deflate`
+  (§16 records why, and it must stay off).
+- Gzip the snapshot/checkpoint `BYTEA` columns. `draw_events` stays raw JSON.
+- **The 100 ms perceptual guarantee:** a local action renders instantly and is not
+  overwritten by a colliding remote instruction for at least 100 ms, while every client
+  still converges byte-identically. Perceptual only — final pixels remain last-writer-wins.
+- `maxPayload` should come down once binary frames land.
+
+> The risk to respect here: this phase touches the sync model. A mistake does not crash —
+> it silently desynchronises clients from the server's canvas, which is the exact failure
+> `shared/` exists to prevent. Test convergence explicitly, not just delivery.
+
+### Phase 4 — Per-room canvas resize (**largest**)
+
+Canvas dimensions are currently compile-time constants used by *every* index calculation
+in `shared/` (`getIdxFromVec`, `isValidVec`, `clipSegmentToCanvas`, `forEachDiscPixel`,
+`createImageDataFromBase64`, the `loadCanvas` dimension guard). Making them per-room
+changes nearly every signature in that layer and re-parameterises its whole test suite.
+Crop/pad from top-left (§16); owner-only; forces a resync.
+
+### Phase 5 — UI redesign (**large**)
+
+Retractable **right** sidebar, desktop and mobile, with three tabs:
+
+- **Drawing** — square icon dropdown of tools (tooltips carry name + shortcut), undo/redo,
+  primary/secondary colour inputs with a swap button (the primary sits raised), then a
+  contextual panel per tool (e.g. stroke width for pencil/eraser).
+- **Room** — connected count, collapsible name list, claim/**release** ownership button
+  (one transforms into the other), guest-draw toggle, clear and resize icon buttons greyed
+  for non-owners, editor-request accept/deny, download icon bottom-right.
+- **Timeline** — checkpoints for the owner, scrubbing for everyone.
+
+Also: keyboard shortcuts active while open, a full ARIA pass, merge the two `relativeTime`
+formatters, and route every dialog through `PopupBase`. The canvas stays pan/zoomable.
+Needs a jsdom + Testing Library stack that **does not exist yet** (§12.6: ask before adding
+dependencies).
+
+### Phase 6 — Timeline scrubbing + uniform decimation
+
+Start-to-end scrub for everyone, checkpoint navigation for the owner, and uniform
+decimation once a room's history exceeds its cap (§16).
+
+### Phase 7 — Fundamentals writeup
+
+How every change works at a fundamental level: the crypto and what each part defends
+against, why the 100 ms hold preserves convergence, where the bytes go, the permission
+model, and the decimation maths. Written to be defensible in an interview.
