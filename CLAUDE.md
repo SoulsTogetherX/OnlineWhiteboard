@@ -681,19 +681,21 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
 ## 14. Known gaps and backlog
 
 **Architectural**
-- **Clients re-run the CAS on a patch the server already ran it on — a silent
-  divergence.** Found while building the convergence harness in Phase 3; documented by
-  `it.fails("DIVERGES: two concurrent patches, one applied optimistically")` in
-  `shared/utils/__tests__/convergence.test.ts`, which goes RED when it is fixed.
-  Every other tool is unconditional, so local drift heals on the next broadcast touching
-  that pixel. A patch is conditional: if a client's *optimistic* undo moved a pixel off the
-  value an incoming remote patch expects, the client skips a write the server applied — and
-  since it still advances `lastRevision` from that message, the revision heartbeat (§5.3)
-  never notices. The client stays diverged until an unrelated snapshot arrives.
-  Fix: a server-broadcast patch is already authoritative, so clients should apply it
-  **unconditionally**; only the local optimistic path should compare-and-swap. That means
-  teaching the fan-in point to tell those two callers apart — a sync-model change, hence its
-  own commit.
+- **⚠ Cold-room join race: simultaneous joins split one room into several.**
+  `getOrCreateRoom` checks `this.rooms`, then `await`s five database calls before
+  `this.rooms.set(roomId, room)` — with **no in-flight promise guard**. Two connections
+  arriving into an uncached room concurrently therefore both miss the cache, both build a
+  `RoomState`, and the second overwrites the first in the Map. Measured with three
+  simultaneous joins: presence counts `[1, 1, 1]` and a stroke from one client reached
+  neither of the others; serialising the same three joins gives `[3, 3, 3]` and full
+  fan-out. The orphaned `RoomState` also keeps its `saveTimer`/`snapshotTimer`/`flushTimer`
+  running, since `disposeIfEmpty` works through the Map — so it leaks intervals *and*
+  persists snapshots for the same `roomId` under a competing revision counter.
+  This is not an exotic race: after any restart or deploy every client reconnects at once
+  into cold rooms, which is exactly the trigger. Fix is small — memoise the in-flight
+  promise in the Map (or a parallel `Map<string, Promise<RoomState>>`) so concurrent callers
+  await the same load. `scripts/smoke-test.mjs` serialises its connects to avoid it; undo
+  that once this is fixed, and add the simultaneous-join case as a regression.
 - **No horizontal scaling.** `rooms` is an in-process `Map`, so presence, cursors, votes and
   broadcasts are all per-process. Multi-instance needs Redis pub/sub. This is the single
   biggest architectural limitation and a good interview topic.

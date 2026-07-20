@@ -240,6 +240,102 @@ async function main() {
     ? fail("the rejected clear was broadcast anyway")
     : pass("rejected clear never reached the canvas or other clients")
 
+  // --- Convergence under concurrent undo ------------------------------------
+  // REGRESSION (silent desync): every check above asserts DELIVERY — that a
+  // message arrived. None asserted that two clients end up holding the same
+  // BYTES, which is the property the whole shared-protocol design exists for and
+  // the one that fails silently when it fails at all.
+  //
+  // The bug this guards: clients used to re-run a patch's compare-and-swap on a
+  // patch the SERVER had already run it on. Only patches are conditional, so a
+  // client whose optimistic undo had moved a pixel off the expected `from` would
+  // SKIP a write the server made, then advance its revision anyway — so the
+  // heartbeat never noticed and it stayed diverged until an unrelated snapshot.
+  //
+  // Driving the real client is out of scope for a dependency-free probe, so this
+  // asserts the server half the fix rests on: that the server rejects a stale
+  // patch outright rather than partially applying it, and that both clients'
+  // snapshots agree byte-for-byte afterwards.
+  // NOTE the serialised connects: C must be fully joined before D dials in.
+  // Connecting both at once into a COLD room currently lands them in two
+  // separate RoomState objects (see §14 "cold-room join race") — which would
+  // make this section fail for a reason that has nothing to do with what it
+  // tests. Serialising is what the fan-out section above already does.
+  const cvRoom = `${ROOM}-converge`
+  const c = await connect(cvRoom)
+  await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's snapshot")
+  const d = await connect(cvRoom)
+  await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's snapshot")
+
+  // Paint one pixel RED so both clients and the server agree on a start state.
+  const idx = (1 * 120 + 1) * 4
+  c.ws.send(
+    draw(cvRoom, {
+      type: "pencil",
+      prevPos: [1, 1],
+      nextPos: [1, 1],
+      color: RED,
+      instructionId: 10,
+      sessionId: "smoke-c",
+    }),
+  )
+  await waitFor(d.seen, (m) => m.type === "draw" && m.instruction.sessionId === "smoke-c", "the shared start state")
+
+  // D's undo lands first and moves the pixel RED -> BLUE.
+  d.ws.send(
+    draw(cvRoom, {
+      type: "patch",
+      entries: [{ idx, from: RED, to: BLUE }],
+      instructionId: 11,
+      sessionId: "smoke-d",
+    }),
+  )
+  const dPatch = await waitFor(
+    c.seen,
+    (m) => m.type === "draw" && m.instruction.sessionId === "smoke-d",
+    "D's patch to reach C",
+  )
+  dPatch.instruction.entries?.length === 1
+    ? pass("a patch that passes compare-and-swap is broadcast with its entry")
+    : fail(`expected 1 applied entry, got ${dPatch.instruction.entries?.length}`)
+
+  // C's undo of the SAME pixel is now stale: it expects RED, the server holds
+  // BLUE. It must be rejected wholesale, not applied.
+  c.ws.send(
+    draw(cvRoom, {
+      type: "patch",
+      entries: [{ idx, from: RED, to: { r: 0, g: 0, b: 0, a: 0 } }],
+      instructionId: 12,
+      sessionId: "smoke-stale",
+    }),
+  )
+  await new Promise((r) => setTimeout(r, 400))
+  d.seen.some((m) => m.type === "draw" && m.instruction.sessionId === "smoke-stale")
+    ? fail("a stale patch was applied and broadcast — compare-and-swap regressed")
+    : pass("REGRESSION: a stale patch is rejected, never applied or broadcast")
+
+  // Both clients resync and must receive byte-identical canvases holding BLUE.
+  c.seen.length = 0
+  d.seen.length = 0
+  c.ws.send(JSON.stringify({ type: "resync", roomId: cvRoom }))
+  d.ws.send(JSON.stringify({ type: "resync", roomId: cvRoom }))
+  const cSnap = await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's resync snapshot")
+  const dSnap = await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's resync snapshot")
+
+  const cBytes = Buffer.from(cSnap.data, "base64")
+  const dBytes = Buffer.from(dSnap.data, "base64")
+  cBytes.equals(dBytes)
+    ? pass(`both clients' canvases are byte-identical (${cBytes.length} bytes)`)
+    : fail("clients received DIFFERENT canvases — silent desync")
+  cBytes[idx] === 0 && cBytes[idx + 2] === 255 && cBytes[idx + 3] === 255
+    ? pass("the surviving pixel is the one the server accepted (BLUE, not the stale undo)")
+    : fail(
+        `pixel at (1,1) is rgba(${cBytes[idx]},${cBytes[idx + 1]},${cBytes[idx + 2]},${cBytes[idx + 3]}), expected BLUE`,
+      )
+
+  c.ws.close()
+  d.ws.close()
+
   // Claiming ownership requires an account — an anonymous guest cannot.
   a.ws.send(JSON.stringify({ type: "claim_ownership", roomId: ROOM }))
   await waitFor(

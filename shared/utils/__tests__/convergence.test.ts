@@ -35,6 +35,7 @@ import {
   GREEN,
   RED,
   TRANSPARENT,
+  getPixel,
   makeCanvas,
 } from "./testHelpers"
 
@@ -59,7 +60,11 @@ function makeRoom(clientCount: number) {
         // Rejected or no-op: nothing is broadcast, so no client hears anything.
         return null
       }
-      clients.forEach((pixels) => applyDrawInstructionToCanvas(pixels, applied))
+      // Clients REPLAY: the server already decided. This asymmetry is the whole
+      // point — see PatchApplyMode in handleCanvasProtocol.ts.
+      clients.forEach((pixels) =>
+        applyDrawInstructionToCanvas(pixels, applied, "replay"),
+      )
       return applied
     },
   }
@@ -218,28 +223,11 @@ describe("convergence — every client ends byte-identical to the server", () =>
     expectConverged(room.server, room.clients)
   })
 
-  // KNOWN DIVERGENCE — documented, not yet fixed. See CLAUDE.md §14.
-  //
-  // `it.fails` asserts the body DOES fail, so this test is green while the bug
-  // exists and turns RED the moment someone fixes it — at which point delete the
-  // `.fails` and the §14 entry together. A skipped test would rot silently; this
-  // one cannot.
-  //
-  // The bug: clients re-run the compare-and-swap on a patch the SERVER has
-  // already run it on. Every other tool is unconditional, so any local drift
-  // heals on the next broadcast that touches the pixel. A patch is conditional,
-  // so if a client's optimistic undo moved the pixel off the value an incoming
-  // remote patch expects, the client SKIPS a write the server applied — and
-  // because the client still advances `lastRevision` from that message, the
-  // revision heartbeat (§5.3) never notices. It is silently diverged until an
-  // unrelated snapshot happens to arrive.
-  //
-  // The fix is small and points at the narrowing above: the server has already
-  // decided what applies, so a broadcast patch should be applied
-  // UNCONDITIONALLY by clients. Only the local optimistic path should CAS. That
-  // needs the fan-in point to distinguish the two callers, which is a sync-model
-  // change and so its own commit, not a drive-by.
-  it.fails("DIVERGES: two concurrent patches, one applied optimistically", () => {
+  // The regression test for the divergence the harness found. Before clients
+  // replayed instead of re-deciding, this ended with the server holding BLUE and
+  // the client holding TRANSPARENT — permanently, because the client still
+  // advanced its revision and so never asked to resync.
+  it("converges: two concurrent patches, one applied optimistically", () => {
     const room = makeRoom(1)
     const [clientA] = room.clients
     const idx = getIdxFromVec([1, 1])
@@ -260,9 +248,11 @@ describe("convergence — every client ends byte-identical to the server", () =>
       ...BASE,
     })
 
-    // A's pixel is TRANSPARENT, not the RED that patch expected, so A skips it
-    // while the server applied it. Server holds BLUE, A holds TRANSPARENT.
+    // A's pixel is TRANSPARENT, not the RED that patch expected. Under "decide"
+    // A would skip a write the server made; under "replay" it applies it and
+    // lands on the server's BLUE.
     expectConverged(room.server, room.clients)
+    expect(getPixel(room.server, 1, 1)).toEqual(BLUE)
   })
 
   it("re-converges a client that fell behind and was reset from the server's bytes", () => {

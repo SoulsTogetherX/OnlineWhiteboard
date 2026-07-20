@@ -219,9 +219,13 @@ export default function useRoomConnection(
             if (canvasState === null) {
               return
             }
+            // "replay": the server has already decided what this instruction
+            // applies. Re-running a patch's compare-and-swap here would let a
+            // client skip a write the server made, and silently diverge.
             applyDrawInstructionToCanvas(
               canvasState.imageData,
               message.instruction,
+              "replay",
             )
             updateCanvas(canvasRef.current)
             lastRevision.current = message.revision

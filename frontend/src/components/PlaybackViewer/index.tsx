@@ -83,7 +83,9 @@ export default function PlaybackViewer({
       renderedStepRef.current = 0
     }
     for (let i = renderedStepRef.current; i < step; i += 1) {
-      applyDrawInstructionToCanvas(working, playback.steps[i].instruction)
+      // "replay": these steps are logged history, already decided. Re-running a
+      // patch's CAS here would animate a canvas that never existed.
+      applyDrawInstructionToCanvas(working, playback.steps[i].instruction, "replay")
     }
     renderedStepRef.current = step
     ctx.putImageData(working, 0, 0)

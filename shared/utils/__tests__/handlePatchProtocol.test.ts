@@ -104,6 +104,56 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
     expect(getPixel(pixels, 6, 6)).toEqual(TRANSPARENT)
   })
 
+  it('applies unconditionally in "replay" mode, ignoring the `from` color', () => {
+    // Replay means somebody else already ran the compare-and-swap. Re-running it
+    // is what let a client skip a write the server had made (see PatchApplyMode
+    // in handleCanvasProtocol.ts).
+    const pixels = makeCanvas()
+    setPixel(pixels, 1, 1, GREEN) // NOT the `from` the entry expects
+    const idx = getIdxFromVec([1, 1])
+
+    const applied = handleDrawPatchInstruction(
+      pixels,
+      patch([{ idx, from: RED, to: BLUE }]),
+      "replay",
+    )
+
+    expect(getPixel(pixels, 1, 1)).toEqual(BLUE)
+    expect(applied).toHaveLength(1)
+  })
+
+  it('reports every entry as applied in "replay" mode', () => {
+    // The return value feeds the undo/redo stacks and the "partially applied"
+    // notice. In replay nothing is ever dropped, so it must report all of them.
+    const pixels = makeCanvas()
+    const entries: PatchEntry[] = [
+      { idx: getIdxFromVec([0, 0]), from: RED, to: BLUE },
+      { idx: getIdxFromVec([1, 0]), from: RED, to: GREEN },
+    ]
+
+    const applied = handleDrawPatchInstruction(pixels, patch(entries), "replay")
+
+    expect(applied).toEqual(entries)
+    expect(getPixel(pixels, 0, 0)).toEqual(BLUE)
+    expect(getPixel(pixels, 1, 0)).toEqual(GREEN)
+  })
+
+  it('defaults to "decide" when no mode is given', () => {
+    // A bare call means "I am the one deciding". Pinned because the default is
+    // what every existing caller relies on, and flipping it would silently turn
+    // the server into a replayer that never rejects a stale undo.
+    const pixels = makeCanvas()
+    setPixel(pixels, 1, 1, GREEN)
+
+    const applied = handleDrawPatchInstruction(
+      pixels,
+      patch([{ idx: getIdxFromVec([1, 1]), from: RED, to: BLUE }]),
+    )
+
+    expect(applied).toHaveLength(0)
+    expect(getPixel(pixels, 1, 1)).toEqual(GREEN)
+  })
+
   it("handles an empty entry list without touching the canvas", () => {
     const pixels = makeCanvas()
     setPixel(pixels, 1, 1, RED)

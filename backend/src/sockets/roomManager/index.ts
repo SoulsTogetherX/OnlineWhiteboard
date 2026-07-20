@@ -311,7 +311,11 @@ export default class RoomManager {
       // The SAME shared, unit-tested function the live path uses. Replay is just
       // "apply these instructions in order" — deterministic because they carry a
       // monotonic revision and follow a known snapshot.
-      applyDrawInstructionToCanvas(stored.pixels, event.instruction)
+      //
+      // "replay", not "decide": the log holds what each patch ACTUALLY applied
+      // when it was first decided. Re-deciding it against a rebuilt buffer would
+      // let recovery reach a different canvas than the one that was live.
+      applyDrawInstructionToCanvas(stored.pixels, event.instruction, "replay")
       revision = event.revision
     }
     if (events.length > 0) {

@@ -12,21 +12,52 @@ import { isValidDrawInstruction } from "./validateInstruction"
 import type { DrawInstruction } from "../types/drawProtocol"
 //#endregion
 
+//#region Patch Apply Mode
+// Who is allowed to DECIDE what a patch applies.
+//
+// Only two callers decide: the server applying a freshly-arrived patch (it is
+// the authority), and a client applying its own undo optimistically (it is
+// proposing one). Both compare-and-swap, so an entry whose pixel has moved on is
+// dropped. Everybody else is REPLAYING a decision that has already been made —
+// a client receiving a broadcast, the server rebuilding a room from its event
+// log, the playback viewer animating history — and must apply every entry
+// unconditionally.
+//
+// Getting this wrong is not a performance detail, it is a silent desync, and it
+// was a real bug (CLAUDE.md §14, fixed by the commit that introduced this type).
+// Every tool except patch is unconditional, so ordinary drift heals on the next
+// broadcast that touches the pixel. A patch is conditional, so a client that
+// re-ran the CAS could SKIP a write the server had applied — and since it still
+// advanced `lastRevision` from that message, the revision heartbeat (§5.3) never
+// noticed. The client stayed diverged until an unrelated snapshot arrived.
+//
+// The invariant this restores: a client's canvas is a pure function of its last
+// snapshot plus every broadcast since, applied unconditionally in order.
+// Optimistic local writes may differ transiently, but every pixel the server
+// changed was broadcast, so every difference is eventually overwritten. That is
+// what makes optimistic drawing safe.
+export type PatchApplyMode = "decide" | "replay"
+//#endregion
+
 //#region Server-Driven Canvas Methods
 // Applies inst and returns what actually happened. For pencil/eraser/bucket
 // this is unconditional — the whole instruction always applies, so it's
-// just handed back. For patch (undo/redo) it's conditional — only entries
-// that passed the compare-and-swap check applied, so a new instruction
-// carrying just that subset is returned, or null if nothing applied at all.
+// just handed back. For patch (undo/redo) it depends on `mode`: "decide" runs
+// the compare-and-swap and returns just the subset that landed (or null if
+// nothing did), while "replay" applies every entry and returns all of them.
 //
 // This is the single fan-in point for every instruction that arrives over the
 // network — the server calls it from RoomManager.applyInstruction, and clients
 // call it for each broadcast they receive. That makes it the right and only
 // place to validate untrusted input: returning null here means the canvas is
 // untouched, the revision does not advance, and nothing is broadcast.
+//
+// `mode` defaults to "decide" because that is what a bare call means: I am the
+// one deciding. A caller replaying somebody else's decision has to say so.
 export function applyDrawInstructionToCanvas(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: DrawInstruction,
+  mode: PatchApplyMode = "decide",
 ): DrawInstruction | null {
   if (!isValidDrawInstruction(inst)) {
     return null
@@ -50,7 +81,7 @@ export function applyDrawInstructionToCanvas(
       return inst
     }
     case "patch": {
-      const applied = handleDrawPatchInstruction(pixels, inst)
+      const applied = handleDrawPatchInstruction(pixels, inst, mode)
       if (applied.length === 0) {
         return null
       }
