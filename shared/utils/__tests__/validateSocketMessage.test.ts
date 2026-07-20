@@ -9,6 +9,7 @@ import { describe, expect, it } from "vitest"
 import { isValidClientMessage } from "../validateSocketMessage"
 import { isValidDrawInstruction } from "../validateInstruction"
 import { MAX_PATCH_ENTRIES } from "../../constants/canvas"
+import { ROLES } from "../../types/identity"
 import {
   MAX_CHECKPOINT_NAME_LENGTH,
   MAX_ID_LENGTH,
@@ -120,35 +121,91 @@ describe("isValidClientMessage — cursor", () => {
   })
 })
 
-describe("isValidClientMessage — room actions and votes", () => {
-  it("accepts only the known action", () => {
+describe("isValidClientMessage — room actions and permissions", () => {
+  it("accepts only the known room action", () => {
     expect(
-      isValidClientMessage({ type: "request_action", roomId: "r", action: "clear" }),
+      isValidClientMessage({ type: "room_action", roomId: "r", action: "clear" }),
     ).toBe(true)
     expect(
-      isValidClientMessage({ type: "request_action", roomId: "r", action: "drop" }),
+      isValidClientMessage({ type: "room_action", roomId: "r", action: "drop" }),
     ).toBe(false)
-    expect(isValidClientMessage({ type: "request_action", roomId: "r" })).toBe(
+    expect(isValidClientMessage({ type: "room_action", roomId: "r" })).toBe(false)
+  })
+
+  it("accepts the bare ownership and editor-request messages", () => {
+    expect(isValidClientMessage({ type: "claim_ownership", roomId: "r" })).toBe(
+      true,
+    )
+    expect(isValidClientMessage({ type: "request_editor", roomId: "r" })).toBe(
+      true,
+    )
+    expect(isValidClientMessage({ type: "claim_ownership" })).toBe(false)
+  })
+
+  it("requires a real boolean on set_open_editing", () => {
+    expect(
+      isValidClientMessage({ type: "set_open_editing", roomId: "r", enabled: false }),
+    ).toBe(true)
+    // The dangerous case: the STRING "false" is truthy, so a loose check would
+    // turn "lock the room" into "open the room".
+    expect(
+      isValidClientMessage({ type: "set_open_editing", roomId: "r", enabled: "false" }),
+    ).toBe(false)
+    expect(
+      isValidClientMessage({ type: "set_open_editing", roomId: "r", enabled: 0 }),
+    ).toBe(false)
+    expect(isValidClientMessage({ type: "set_open_editing", roomId: "r" })).toBe(
       false,
     )
   })
 
-  it("requires a boolean approve on a vote", () => {
+  it("requires a boolean approve on respond_editor", () => {
     expect(
       isValidClientMessage({
-        type: "vote",
+        type: "respond_editor",
         roomId: "r",
-        voteId: "v1",
+        userId: "u1",
         approve: true,
       }),
     ).toBe(true)
-    // Truthy but not a boolean — the exact shape a loose check would let through.
     expect(
       isValidClientMessage({
-        type: "vote",
+        type: "respond_editor",
         roomId: "r",
-        voteId: "v1",
+        userId: "u1",
         approve: "yes",
+      }),
+    ).toBe(false)
+  })
+
+  it("accepts only roles from the shared ROLES list", () => {
+    for (const role of ROLES) {
+      expect(
+        isValidClientMessage({
+          type: "set_member_role",
+          roomId: "r",
+          userId: "u1",
+          role,
+        }),
+      ).toBe(true)
+    }
+    // An unknown role must be stopped here, not at the database's CHECK
+    // constraint — otherwise a bad message becomes a 500.
+    expect(
+      isValidClientMessage({
+        type: "set_member_role",
+        roomId: "r",
+        userId: "u1",
+        role: "superuser",
+      }),
+    ).toBe(false)
+    // "guest" is a CONNECTION role, never a stored one.
+    expect(
+      isValidClientMessage({
+        type: "set_member_role",
+        roomId: "r",
+        userId: "u1",
+        role: "guest",
       }),
     ).toBe(false)
   })

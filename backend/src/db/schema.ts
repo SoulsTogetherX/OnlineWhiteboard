@@ -41,6 +41,9 @@ export interface RoomsTable {
   width: number
   height: number
   revision: Generated<number>
+  // Whether people without edit authority (guests AND viewers) may draw.
+  // Generated because the column has a database default.
+  open_editing: Generated<boolean>
   created_at: Timestamp
   updated_at: Timestamp
 }

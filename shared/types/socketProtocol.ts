@@ -1,6 +1,6 @@
 //#region Imports
 import type { DrawInstruction } from "./drawProtocol"
-import type { Participant } from "./identity"
+import type { Participant, RoomRole } from "./identity"
 import type { Vec } from "./primitive"
 //#endregion
 
@@ -29,20 +29,52 @@ export type ClientSocketMessage =
       pos: Vec | null
     }
   | {
-      // Request a room-wide destructive action (currently only "clear"). If the
-      // requester is the only recent editor the server applies it immediately;
-      // otherwise it opens a vote among the recent editors.
-      type: "request_action"
+      // A room-wide destructive action, applied immediately. OWNER ONLY.
+      //
+      // This replaced a consensus vote among recent editors. The vote was
+      // removed because a single accountable owner is simpler to reason about
+      // and to explain, and it deleted a whole class of stuck-vote edge cases
+      // (an AFK voter freezing the board, a voter leaving mid-vote, two votes
+      // racing). See the decision record in CLAUDE.md.
+      type: "room_action"
       roomId: string
       action: RoomAction
     }
   | {
-      // A recent editor's vote on an open request. The server tallies these and
-      // resolves the vote when everyone has approved (or anyone rejects).
-      type: "vote"
+      // Take ownership of a room that has none. Signed-in visitors only, and
+      // only while the room is unowned — ownership is opt-in, never assigned
+      // automatically, and persists across sessions once claimed.
+      type: "claim_ownership"
       roomId: string
-      voteId: string
+    }
+  | {
+      // Turn open editing on or off. OWNER ONLY. When off, only owner/editor
+      // may draw; when on, viewers and guests may too.
+      type: "set_open_editing"
+      roomId: string
+      enabled: boolean
+    }
+  | {
+      // A signed-in viewer asking the owner for editor access. Meaningless from
+      // a guest (no account to promote) or from someone who already has it.
+      type: "request_editor"
+      roomId: string
+    }
+  | {
+      // The owner's answer to a pending request. OWNER ONLY.
+      type: "respond_editor"
+      roomId: string
+      userId: string
       approve: boolean
+    }
+  | {
+      // Directly set a member's role. OWNER ONLY. Promoting someone to owner is
+      // an ownership TRANSFER — the current owner becomes an editor in the same
+      // transaction, because a room has exactly one owner.
+      type: "set_member_role"
+      roomId: string
+      userId: string
+      role: RoomRole
     }
   | {
       // Save the current canvas as a named, durable version. Editors only.
@@ -72,9 +104,16 @@ export type ClientSocketMessage =
       fromCheckpointId?: string
     }
 
-// Room-wide actions that require consensus. Kept as its own type so resize
-// (P1d) slots in beside clear without touching the message shapes.
+// Room-wide destructive actions, owner-only. Kept as its own type so resize
+// slots in beside clear without touching the message shapes.
 export type RoomAction = "clear"
+
+// A pending request for editor access, as shown to the owner. Carries the
+// account id (the owner needs it to answer) and the display name to show.
+export type EditorRequest = {
+  userId: string
+  name: string
+}
 
 // A saved version's metadata as seen by clients (no pixel bytes — those are only
 // materialised on restore/playback). createdAt is an ISO string over the wire.
@@ -97,6 +136,12 @@ export type ServerSocketMessage =
       type: "ready"
       roomId: string
       revision: number
+      // The room's permission state, sent with the very first message so the
+      // client never renders a toolbar before it knows what this connection is
+      // allowed to do. Without it there is a window where the UI shows drawing
+      // tools that the server would reject.
+      openEditing: boolean
+      hasOwner: boolean
       // Who the server decided this connection is (account or guest), plus the
       // current roster. `self` lets a guest client learn its generated name and
       // colour, which it has no other way of knowing.
@@ -144,33 +189,30 @@ export type ServerSocketMessage =
       pos: Vec | null
     }
   | {
-      // A vote has opened. Sent to every recent editor (the voters). `voters` is
-      // the number whose approval is needed; the initiator is counted as already
-      // approving. `deadline` is an epoch-ms timestamp after which it auto-fails.
-      type: "vote_started"
+      // The room's permission state. Sent on join and broadcast whenever it
+      // changes, so every client can grey out controls using the same facts the
+      // server enforces with.
+      type: "room_settings"
       roomId: string
-      voteId: string
-      action: RoomAction
-      initiatorName: string
-      voters: number
-      approvals: number
-      deadline: number
+      openEditing: boolean
+      hasOwner: boolean
     }
   | {
-      // Running tally as votes come in.
-      type: "vote_update"
+      // Pending editor requests. Sent ONLY to the owner — the list names people
+      // who want promoting, and nobody else has any use for it or any right to
+      // it. Ephemeral: requests live in memory and disappear when the requester
+      // disconnects, because a request from someone who has left is noise.
+      type: "editor_requests"
       roomId: string
-      voteId: string
-      voters: number
-      approvals: number
+      requests: EditorRequest[]
     }
   | {
-      // The vote ended. `approved` true means the action was applied (the canvas
-      // change arrives separately as the normal "draw"/"clear" broadcast).
-      type: "vote_resolved"
+      // This connection's own identity changed — almost always its role, after
+      // claiming ownership or being promoted. Sent only to the affected socket;
+      // everyone else learns the same thing from the presence broadcast.
+      type: "role_changed"
       roomId: string
-      voteId: string
-      approved: boolean
+      self: Participant
     }
   | {
       // The room's saved versions. Sent on join and whenever the list changes

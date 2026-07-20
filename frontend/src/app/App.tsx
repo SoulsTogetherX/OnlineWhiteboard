@@ -11,7 +11,6 @@ import ColorPopup from "@/components/Popups/ColorPopup"
 import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
 import PresenceRoster from "@/components/PresenceRoster"
-import VotePrompt from "@/components/VotePrompt"
 import Dashboard from "@/components/Dashboard"
 import CheckpointsPopup from "@/components/Popups/CheckpointsPopup"
 import PlaybackViewer from "@/components/PlaybackViewer"
@@ -125,9 +124,8 @@ export default function App() {
     sendDrawInstruction,
     loadRoom,
     sendCursor,
-    activeVote,
-    requestClear,
-    castVote,
+    settings,
+    clearCanvas,
     checkpoints,
     createCheckpoint,
     restoreCheckpoint,
@@ -159,14 +157,17 @@ export default function App() {
 
   // Canvas Setup
   useCanvasMotion(frameRef, canvasRef)
-  // Keep the drawing lock in step with this connection's role.
-  // Uses the shared canDraw rule rather than re-testing for "viewer" inline, so
-  // the client's drawing lock and the server's rejection path can never disagree
-  // about who is allowed to draw.
-  const isViewer = !canDraw(self?.role ?? "guest")
+  // Keep the drawing lock in step with this connection's role AND the room's
+  // open-editing setting. Uses the shared canDraw rule rather than re-testing
+  // roles inline, so the client's drawing lock and the server's rejection path
+  // can never disagree about who is allowed to draw.
+  //
+  // Reacts to settings.openEditing too, so an owner turning editing off locks
+  // everyone else's tools on the next broadcast — no reconnect needed.
+  const isReadOnly = !canDraw(self?.role ?? "guest", settings.openEditing)
   useEffect(() => {
-    viewOnlyRef.current = isViewer
-  }, [isViewer])
+    viewOnlyRef.current = isReadOnly
+  }, [isReadOnly])
 
   useCanvasDrawing(
     canvasRef,
@@ -255,7 +256,7 @@ export default function App() {
         strokeSize={strokeSize}
         onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
-        onClear={requestClear}
+        onClear={clearCanvas}
         onDownload={() => {
           if (canvasRef.current) {
             downloadCanvasImage(canvasRef.current, roomId)
@@ -266,7 +267,6 @@ export default function App() {
         canUndo={canUndo}
         canRedo={canRedo}
       />
-      <VotePrompt vote={activeVote} onVote={castVote} />
       <CanvasBoard canvasRef={canvasRef} />
       <CursorOverlay
         canvasRef={canvasRef}

@@ -36,3 +36,46 @@ export async function pruneStaleRooms(
   return Number(result.numDeletedRows ?? 0n)
 }
 //#endregion
+
+//#region Room settings
+// Whether people without edit authority may draw in this room.
+//
+// Defaults to TRUE for a room that does not exist yet, matching the column
+// default. That matters because a room row is only created on first save, so a
+// brand-new room is legitimately absent here while people are already drawing
+// in it — returning "locked" for an unknown room would make every new room open
+// in a state nobody chose.
+export async function getOpenEditing(roomId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("rooms")
+    .select("open_editing")
+    .where("id", "=", roomId)
+    .executeTakeFirst()
+  return row?.open_editing ?? true
+}
+
+// Persists the toggle. Upserts because the owner may flip it before the room
+// has ever been saved, and the setting must survive that.
+export async function setOpenEditing(
+  roomId: string,
+  enabled: boolean,
+): Promise<void> {
+  await db
+    .insertInto("rooms")
+    .values({
+      id: roomId,
+      width: 0,
+      height: 0,
+      open_editing: enabled,
+      created_at: new Date(),
+      updated_at: new Date(),
+    })
+    .onConflict((oc) =>
+      // Only the setting is touched on conflict. Width/height above are
+      // placeholders for the insert path and must NOT overwrite a real room's
+      // dimensions, which saveCanvas owns.
+      oc.column("id").doUpdateSet({ open_editing: enabled }),
+    )
+    .execute()
+}
+//#endregion

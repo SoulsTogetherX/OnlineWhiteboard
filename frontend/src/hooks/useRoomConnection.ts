@@ -20,11 +20,11 @@ import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
   CheckpointInfo,
   ClientSocketMessage,
+  EditorRequest,
   PlaybackStep,
-  RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
-import type { Participant } from "@shared/types/identity"
+import type { Participant, RoomRole } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
 import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
@@ -36,15 +36,12 @@ const DEFAULT_ROOM_ID = "testRoom"
 //#endregion
 
 //#region Type Def
-// The vote prompt this client should show, mirrored from the server's
-// vote_started/vote_update messages. Null when there's no vote to act on.
-export interface ActiveVote {
-  voteId: string
-  action: RoomAction
-  initiatorName: string
-  voters: number
-  approvals: number
-  deadline: number
+// The room's permission state, mirrored from the server. Every control that can
+// be greyed out reads from here, using the SAME shared predicates the server
+// enforces with — so the UI cannot promise something the server will reject.
+export interface RoomSettings {
+  openEditing: boolean
+  hasOwner: boolean
 }
 
 // The payload to animate a history playback.
@@ -62,10 +59,17 @@ export interface UseRoomConnectionResult {
   loadRoom: (nextRoomId: string) => void
   sendDrawInstruction: (action: DrawInstruction) => void
   sendCursor: (pos: Vec | null) => void
-  // Destructive-action voting.
-  activeVote: ActiveVote | null
-  requestClear: () => void
-  castVote: (approve: boolean) => void
+  // Room permissions and ownership.
+  settings: RoomSettings
+  clearCanvas: () => void
+  claimOwnership: () => void
+  setOpenEditing: (enabled: boolean) => void
+  // Editor access requests. `editorRequests` is only ever populated for an
+  // owner — the server sends the list to nobody else.
+  editorRequests: EditorRequest[]
+  requestEditor: () => void
+  respondEditor: (userId: string, approve: boolean) => void
+  setMemberRole: (userId: string, role: RoomRole) => void
   // Checkpoints (saved versions) + history playback.
   checkpoints: CheckpointInfo[]
   createCheckpoint: (name: string) => void
@@ -103,7 +107,14 @@ export default function useRoomConnection(
   const [participants, setParticipants] = useState<Participant[]>([])
   const [self, setSelf] = useState<Participant | null>(null)
   const [socketLabel, setSocketLabel] = useState<string>("Connecting")
-  const [activeVote, setActiveVote] = useState<ActiveVote | null>(null)
+  const [settings, setSettings] = useState<RoomSettings>({
+    // Optimistic defaults matching the server's column default, replaced by the
+    // real values in the very first "ready" message. Defaulting to open avoids a
+    // flash of disabled tools on every join.
+    openEditing: true,
+    hasOwner: false,
+  })
+  const [editorRequests, setEditorRequests] = useState<EditorRequest[]>([])
   const [checkpoints, setCheckpoints] = useState<CheckpointInfo[]>([])
   const [playback, setPlayback] = useState<PlaybackData | null>(null)
 
@@ -136,7 +147,34 @@ export default function useRoomConnection(
         case "ready":
           setSelf(message.self)
           setParticipants(message.participants)
+          setSettings({
+            openEditing: message.openEditing,
+            hasOwner: message.hasOwner,
+          })
           lastRevision.current = message.revision
+          break
+
+        case "room_settings":
+          if (message.roomId === roomId) {
+            setSettings({
+              openEditing: message.openEditing,
+              hasOwner: message.hasOwner,
+            })
+          }
+          break
+
+        case "editor_requests":
+          if (message.roomId === roomId) {
+            setEditorRequests(message.requests)
+          }
+          break
+
+        case "role_changed":
+          // Only this connection's own identity. Everyone else's view of us
+          // arrives through the presence broadcast instead.
+          if (message.roomId === roomId) {
+            setSelf(message.self)
+          }
           break
 
         case "presence": {
@@ -210,39 +248,6 @@ export default function useRoomConnection(
           }
           break
 
-        case "vote_started":
-          if (message.roomId === roomId) {
-            setActiveVote({
-              voteId: message.voteId,
-              action: message.action,
-              initiatorName: message.initiatorName,
-              voters: message.voters,
-              approvals: message.approvals,
-              deadline: message.deadline,
-            })
-          }
-          break
-
-        case "vote_update":
-          // Update the running tally, but only for the vote we're showing.
-          setActiveVote((current) =>
-            current && current.voteId === message.voteId
-              ? {
-                  ...current,
-                  voters: message.voters,
-                  approvals: message.approvals,
-                }
-              : current,
-          )
-          break
-
-        case "vote_resolved":
-          // Dismiss the prompt whichever way it went; the canvas change (if
-          // approved) arrives separately as a normal "draw".
-          setActiveVote((current) =>
-            current && current.voteId === message.voteId ? null : current,
-          )
-          break
 
         case "checkpoints":
           if (message.roomId === roomId) {
@@ -324,20 +329,41 @@ export default function useRoomConnection(
     [roomId, send],
   )
 
-  const requestClear = useCallback(() => {
-    send({ type: "request_action", roomId, action: "clear" })
+  // Owner-only actions. Each is sent optimistically and the server is the
+  // authority: if this connection is not the owner the message is rejected and
+  // an "error" comes back, so a stale client cannot act on a permission it lost.
+  const clearCanvas = useCallback(() => {
+    send({ type: "room_action", roomId, action: "clear" })
   }, [roomId, send])
 
-  const castVote = useCallback(
-    (approve: boolean) => {
-      setActiveVote((current) => {
-        if (current) {
-          send({ type: "vote", roomId, voteId: current.voteId, approve })
-        }
-        // Dismiss our own prompt immediately; the server confirms via
-        // vote_resolved. Rejecting is final for us either way.
-        return null
-      })
+  const claimOwnership = useCallback(() => {
+    send({ type: "claim_ownership", roomId })
+  }, [roomId, send])
+
+  const setOpenEditing = useCallback(
+    (enabled: boolean) => {
+      // No optimistic local update: the authoritative value comes back in a
+      // room_settings broadcast. Setting it locally first would briefly show
+      // permissions the server had not agreed to.
+      send({ type: "set_open_editing", roomId, enabled })
+    },
+    [roomId, send],
+  )
+
+  const requestEditor = useCallback(() => {
+    send({ type: "request_editor", roomId })
+  }, [roomId, send])
+
+  const respondEditor = useCallback(
+    (userId: string, approve: boolean) => {
+      send({ type: "respond_editor", roomId, userId, approve })
+    },
+    [roomId, send],
+  )
+
+  const setMemberRole = useCallback(
+    (userId: string, role: RoomRole) => {
+      send({ type: "set_member_role", roomId, userId, role })
     },
     [roomId, send],
   )
@@ -381,7 +407,11 @@ export default function useRoomConnection(
       setRoomId(trimmedRoomId)
       setParticipants([])
       setSelf(null)
-      setActiveVote(null)
+      // Permissions are per-room, so they must not survive a room change —
+      // carrying an owner's settings into the next room would briefly show
+      // controls this connection has no right to there.
+      setSettings({ openEditing: true, hasOwner: false })
+      setEditorRequests([])
       setCheckpoints([])
       setPlayback(null)
       cursorsRef.current.clear()
@@ -400,9 +430,14 @@ export default function useRoomConnection(
     loadRoom,
     sendDrawInstruction,
     sendCursor,
-    activeVote,
-    requestClear,
-    castVote,
+    settings,
+    clearCanvas,
+    claimOwnership,
+    setOpenEditing,
+    editorRequests,
+    requestEditor,
+    respondEditor,
+    setMemberRole,
     checkpoints,
     createCheckpoint,
     restoreCheckpoint,

@@ -101,9 +101,22 @@ export function messageCost(message: ClientSocketMessage): number {
     case "request_playback":
       return 50
 
-    // Cheap control messages.
-    case "request_action":
-    case "vote":
+    // Owner-only and destructive: a clear repaints the entire buffer and is
+    // logged and broadcast like any other instruction.
+    case "room_action":
+      return 10
+
+    // Permission changes all write to Postgres, and several of them re-resolve
+    // every member's role afterwards.
+    case "claim_ownership":
+    case "set_open_editing":
+    case "respond_editor":
+    case "set_member_role":
+      return 20
+
+    // In-memory only, but still metered so the owner cannot be spammed with
+    // request notifications.
+    case "request_editor":
       return 5
 
     default:

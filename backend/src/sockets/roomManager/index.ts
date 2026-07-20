@@ -11,9 +11,19 @@ import {
   loadEventsSince,
   type DrawEvent,
 } from "@/db/eventRepository"
-import { pruneStaleRooms } from "@/db/roomRepository"
+import {
+  getOpenEditing,
+  pruneStaleRooms,
+  setOpenEditing,
+} from "@/db/roomRepository"
 import { deleteExpiredSessions } from "@/db/sessionRepository"
-import { ensureMembership } from "@/db/roomMembersRepository"
+import {
+  claimOwnership,
+  ensureMembership,
+  resolveRole,
+  roomHasOwner,
+  setRole,
+} from "@/db/roomMembersRepository"
 import {
   countCheckpoints,
   createCheckpoint,
@@ -31,7 +41,12 @@ import {
   SocketRateLimiter,
   messageCost,
 } from "@/security/socketLimits"
-import { canDraw, hasEditAuthority } from "@shared/types/identity"
+import {
+  canDraw,
+  canManageRoom,
+  canRequestEditor,
+  hasEditAuthority,
+} from "@shared/types/identity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
@@ -40,7 +55,7 @@ import type {
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
 import type { DrawInstruction } from "@shared/types/drawProtocol"
-import type { Participant } from "@shared/types/identity"
+import type { Participant, RoomRole } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 //#endregion
 
@@ -77,28 +92,9 @@ const ROOM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
 // months, so the exact cadence doesn't matter, only that it happens.
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
-// A destructive room action (clear) needs consensus from everyone who has drawn
-// recently. "Recently" is this window; an editor who drew longer ago than this
-// no longer gets a vote, which stops a long-idle participant blocking the board.
-const RECENT_EDITOR_WINDOW_MS = 15 * 60 * 1000 // 15 minutes
-
-// A vote auto-fails if it isn't unanimous within this long — so one AFK voter
-// can't leave the board frozen behind a pending vote forever.
-const VOTE_TIMEOUT_MS = 30_000
 //#endregion
 
 //#region Type Defs
-// An open vote on a destructive action. `voters` is everyone whose approval is
-// required (the recent editors); `approvals` is who has said yes so far.
-type VoteState = {
-  voteId: string
-  action: RoomAction
-  voters: Set<string>
-  approvals: Set<string>
-  timer: NodeJS.Timeout
-  deadline: number
-}
-
 type RoomState = {
   roomId: string
   clients: Set<ClientSocket>
@@ -113,11 +109,18 @@ type RoomState = {
   // Guards against a flush starting while the previous one is still in flight
   // (the timer can fire again mid-await).
   isFlushing: boolean
-  // connectionId -> timestamp of that connection's last applied change. Drives
-  // who gets a vote on a destructive action.
-  recentEditors: Map<string, number>
-  // The single in-flight vote, or null. At most one at a time per room.
-  activeVote: VoteState | null
+  // Whether people without edit authority may draw here. Mirrored in memory
+  // from rooms.open_editing so the hot path — every single draw message —
+  // answers the permission question without a query.
+  openEditing: boolean
+  // Whether the room currently has an owner. Also mirrored, for the same reason:
+  // it gates the "claim ownership" affordance every client asks about on join.
+  hasOwner: boolean
+  // Pending editor requests, keyed by account id. Deliberately IN MEMORY and not
+  // persisted: a request is a live "please let me in now" from someone present,
+  // and one left over from a visitor who closed their tab days ago is noise the
+  // owner would have to dismiss. Cleared when the requester disconnects.
+  editorRequests: Map<string, { name: string; connectionId: string }>
 }
 //#endregion
 
@@ -269,6 +272,8 @@ export default class RoomManager {
       type: "ready",
       roomId,
       revision: room.revision,
+      openEditing: room.openEditing,
+      hasOwner: room.hasOwner,
       self: socket.identity,
       participants: this.roster(room),
     })
@@ -318,6 +323,13 @@ export default class RoomManager {
     // Guarantee the FK target for draw_events exists before the first flush.
     await ensureRoom(roomId)
 
+    // Permission state is read ONCE here and mirrored in memory for the room's
+    // lifetime. Every draw message asks "may this connection draw?", so querying
+    // it per message would put a database round trip on the hottest path in the
+    // application. Both are kept in step by the handlers that change them.
+    const openEditing = await getOpenEditing(roomId)
+    const hasOwner = await roomHasOwner(roomId)
+
     const room: RoomState = {
       roomId,
       clients: new Set<ClientSocket>(),
@@ -326,8 +338,9 @@ export default class RoomManager {
       isDirty: false,
       eventBuffer: [],
       isFlushing: false,
-      recentEditors: new Map<string, number>(),
-      activeVote: null,
+      openEditing,
+      hasOwner,
+      editorRequests: new Map<string, { name: string; connectionId: string }>(),
       saveTimer: setInterval(
         () => void this.saveRoom(roomId),
         SAVE_INTERVAL_MS,
@@ -400,13 +413,34 @@ export default class RoomManager {
       return
     }
 
-    if (message.type === "request_action") {
-      this.handleActionRequest(socket, room, message.action)
+    if (message.type === "room_action") {
+      this.handleRoomAction(socket, room, message.action)
       return
     }
 
-    if (message.type === "vote") {
-      this.handleVote(socket, room, message.voteId, message.approve)
+    if (message.type === "claim_ownership") {
+      void this.handleClaimOwnership(socket, room)
+      return
+    }
+    if (message.type === "set_open_editing") {
+      void this.handleSetOpenEditing(socket, room, message.enabled)
+      return
+    }
+    if (message.type === "request_editor") {
+      this.handleRequestEditor(socket, room)
+      return
+    }
+    if (message.type === "respond_editor") {
+      void this.handleRespondEditor(
+        socket,
+        room,
+        message.userId,
+        message.approve,
+      )
+      return
+    }
+    if (message.type === "set_member_role") {
+      void this.handleSetMemberRole(socket, room, message.userId, message.role)
       return
     }
 
@@ -428,33 +462,32 @@ export default class RoomManager {
     }
 
     // Only "draw" remains — TypeScript has narrowed the union accordingly.
-    // Viewers are read-only: reject their draws (the client also greys out the
-    // tools, but the server is the authority — a crafted client can't bypass it).
-    if (!canDraw(socket.identity.role)) {
+    //
+    // The client greys out its tools using this same shared rule, but that is
+    // cosmetic: this check is the one that matters, because a crafted client
+    // simply would not run the cosmetic one. Note it reads the room's live
+    // openEditing, so revoking open editing takes effect on the very next
+    // message — no reconnect, no cache to invalidate.
+    if (!canDraw(socket.identity.role, room.openEditing)) {
       this.send(socket, {
         type: "error",
-        message: "You have view-only access to this room.",
+        message: "You do not have permission to draw in this room.",
       })
       return
     }
 
-    // Clients may not clear directly: "clear" is a room action that only the
-    // server applies after a vote. Rejecting it here is what makes the vote the
-    // ONLY path to wiping a shared board.
+    // Clients may not clear directly. Clear is a room action the server applies
+    // on the owner's behalf; rejecting it here is what makes owner-only the ONLY
+    // path to wiping a shared board, rather than something the UI merely hides.
     if (message.instruction.type === "clear") {
       this.send(socket, {
         type: "error",
-        message: "Clear must go through a vote (request_action).",
+        message: "Clear is a room action (room_action), not a draw instruction.",
       })
       return
     }
 
-    const applied = this.applyInstruction(room, message.instruction)
-    // Anyone whose instruction actually landed is now a "recent editor" and gets
-    // a say in the next destructive-action vote.
-    if (applied) {
-      room.recentEditors.set(socket.connectionId, Date.now())
-    }
+    this.applyInstruction(room, message.instruction)
   }
 
   // Relays a cursor position to everyone else in the room. Pure pass-through:
@@ -528,165 +561,282 @@ export default class RoomManager {
     return applied
   }
 
-  //#region Voting on destructive actions
-  // Handles a request to clear the board. If the requester is the only recent
-  // editor, it happens immediately; otherwise a vote opens among the recent
-  // editors and the requester's own approval is counted.
-  private handleActionRequest(
+  //#region Ownership, permissions and editor requests
+  // Applies a destructive room action immediately. OWNER ONLY.
+  //
+  // This replaced a consensus vote among recent editors. A single accountable
+  // owner deleted an entire family of edge cases — an AFK voter freezing the
+  // board, a voter disconnecting mid-vote, two votes racing, a vote outliving
+  // the room — none of which existed to serve a user need. They existed to
+  // serve the voting mechanism.
+  private handleRoomAction(
     socket: ClientSocket,
     room: RoomState,
     action: RoomAction,
   ): void {
-    // A viewer can't initiate a destructive action any more than they can draw.
-    if (!canDraw(socket.identity.role)) {
+    if (!canManageRoom(socket.identity.role)) {
       this.send(socket, {
         type: "error",
-        message: "You have view-only access to this room.",
-      })
-      return
-    }
-    if (room.activeVote) {
-      this.send(socket, {
-        type: "error",
-        message: "A vote is already in progress for this room.",
+        message: "Only the room owner can do that.",
       })
       return
     }
 
-    // Voters = currently-connected recent editors, plus the requester (so they
-    // always have a say in their own request).
-    const now = Date.now()
-    const voters = new Set<string>([socket.connectionId])
-    room.clients.forEach((client) => {
-      const lastEdit = room.recentEditors.get(client.connectionId)
-      if (lastEdit !== undefined && now - lastEdit <= RECENT_EDITOR_WINDOW_MS) {
-        voters.add(client.connectionId)
-      }
-    })
-
-    // Nobody else has drawn recently — no consensus needed.
-    if (voters.size <= 1) {
-      this.applyRoomAction(room, action)
-      return
-    }
-
-    const vote: VoteState = {
-      voteId: randomUUID(),
-      action,
-      voters,
-      approvals: new Set<string>([socket.connectionId]),
-      deadline: now + VOTE_TIMEOUT_MS,
-      timer: setTimeout(
-        () => this.resolveVote(room, false),
-        VOTE_TIMEOUT_MS,
-      ),
-    }
-    room.activeVote = vote
-
-    this.broadcastToVoters(room, vote, {
-      type: "vote_started",
-      roomId: room.roomId,
-      voteId: vote.voteId,
-      action,
-      initiatorName: socket.identity.name,
-      voters: vote.voters.size,
-      approvals: vote.approvals.size,
-      deadline: vote.deadline,
-    })
-  }
-
-  private handleVote(
-    socket: ClientSocket,
-    room: RoomState,
-    voteId: string,
-    approve: boolean,
-  ): void {
-    const vote = room.activeVote
-    // Ignore stale votes (already resolved / superseded) and non-voters.
-    if (!vote || vote.voteId !== voteId) {
-      return
-    }
-    if (!vote.voters.has(socket.connectionId)) {
-      return
-    }
-
-    // Any single rejection kills the whole vote — a clear must be unanimous.
-    if (!approve) {
-      this.resolveVote(room, false)
-      return
-    }
-
-    vote.approvals.add(socket.connectionId)
-    this.broadcastToVoters(room, vote, {
-      type: "vote_update",
-      roomId: room.roomId,
-      voteId: vote.voteId,
-      voters: vote.voters.size,
-      approvals: vote.approvals.size,
-    })
-    this.checkVoteComplete(room)
-  }
-
-  private checkVoteComplete(room: RoomState): void {
-    const vote = room.activeVote
-    if (!vote) {
-      return
-    }
-    // Unanimous once every voter is in the approvals set.
-    for (const voter of vote.voters) {
-      if (!vote.approvals.has(voter)) {
-        return
-      }
-    }
-    this.resolveVote(room, true)
-  }
-
-  private resolveVote(room: RoomState, approved: boolean): void {
-    const vote = room.activeVote
-    if (!vote) {
-      return
-    }
-    clearTimeout(vote.timer)
-    room.activeVote = null
-
-    this.broadcast(room, {
-      type: "vote_resolved",
-      roomId: room.roomId,
-      voteId: vote.voteId,
-      approved,
-    })
-
-    if (approved) {
-      this.applyRoomAction(room, vote.action)
-    }
-  }
-
-  // Applies a resolved room action. `clear` is applied as a server-generated
-  // ClearInstruction so it flows through the same log + broadcast path as any
-  // draw (clients apply it via the normal "draw" handler). Recent editors are
-  // reset afterwards — the board is now blank, so there's no recent work left to
-  // protect and a subsequent clear needn't re-vote.
-  private applyRoomAction(room: RoomState, action: RoomAction): void {
     if (action === "clear") {
+      // Applied as a server-generated instruction so it flows through the same
+      // log, broadcast and replay path as any other change — recovery treats it
+      // identically and no client needs a special case.
       this.applyInstruction(room, {
         type: "clear",
         instructionId: -1,
         sessionId: "server",
       })
-      room.recentEditors.clear()
     }
   }
 
-  private broadcastToVoters(
+  // Takes ownership of a room that has none. Signed-in visitors only, and never
+  // automatic: opening a link must not silently hand you powers you did not ask
+  // for and were never told about.
+  private async handleClaimOwnership(
+    socket: ClientSocket,
     room: RoomState,
-    vote: VoteState,
-    message: ServerSocketMessage,
-  ): void {
-    const payload = JSON.stringify(message)
-    room.clients.forEach((client) => {
-      if (vote.voters.has(client.connectionId)) {
-        this.sendRaw(client, payload)
+  ): Promise<void> {
+    if (!socket.userId) {
+      this.send(socket, {
+        type: "error",
+        message: "Sign in to take ownership of a room.",
+      })
+      return
+    }
+
+    try {
+      const role = await claimOwnership(room.roomId, socket.userId)
+      if (!role) {
+        // Lost the race, or it was already owned. Either way the answer is the
+        // same and the client's stale view gets corrected below.
+        room.hasOwner = true
+        this.broadcastRoomSettings(room)
+        this.send(socket, {
+          type: "error",
+          message: "This room already has an owner.",
+        })
+        return
       }
+
+      room.hasOwner = true
+      await this.refreshRoles(room)
+      this.broadcastRoomSettings(room)
+      // A brand-new owner needs to see anything already waiting for them.
+      this.sendEditorRequests(socket, room)
+    } catch (error) {
+      console.error(`Failed to claim ownership of ${room.roomId}:`, error)
+      this.send(socket, {
+        type: "error",
+        message: "Could not take ownership.",
+      })
+    }
+  }
+
+  // Turns open editing on or off. OWNER ONLY.
+  private async handleSetOpenEditing(
+    socket: ClientSocket,
+    room: RoomState,
+    enabled: boolean,
+  ): Promise<void> {
+    if (!canManageRoom(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only the room owner can change who may draw.",
+      })
+      return
+    }
+
+    try {
+      await setOpenEditing(room.roomId, enabled)
+      // Mirror in memory only AFTER the write succeeds, so a failed write can
+      // never leave the server enforcing a rule it did not persist.
+      room.openEditing = enabled
+      this.broadcastRoomSettings(room)
+    } catch (error) {
+      console.error(`Failed to set open editing on ${room.roomId}:`, error)
+      this.send(socket, {
+        type: "error",
+        message: "Could not change that setting.",
+      })
+    }
+  }
+
+  // A signed-in viewer asking the owner for edit access.
+  private handleRequestEditor(socket: ClientSocket, room: RoomState): void {
+    if (!socket.userId) {
+      this.send(socket, {
+        type: "error",
+        message: "Sign in to request edit access.",
+      })
+      return
+    }
+    if (!canRequestEditor(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "You already have edit access.",
+      })
+      return
+    }
+    if (!room.hasOwner) {
+      this.send(socket, {
+        type: "error",
+        message: "This room has no owner to ask.",
+      })
+      return
+    }
+
+    // Keyed by account, so spamming the button or opening five tabs still
+    // produces exactly one entry for the owner to act on.
+    room.editorRequests.set(socket.userId, {
+      name: socket.identity.name,
+      connectionId: socket.connectionId,
+    })
+    this.broadcastEditorRequests(room)
+  }
+
+  // The owner's answer. OWNER ONLY.
+  private async handleRespondEditor(
+    socket: ClientSocket,
+    room: RoomState,
+    userId: string,
+    approve: boolean,
+  ): Promise<void> {
+    if (!canManageRoom(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only the room owner can answer requests.",
+      })
+      return
+    }
+
+    // Removed whether approved or denied — either way it has been dealt with,
+    // and leaving a denied request in the list would make it un-dismissable.
+    const pending = room.editorRequests.delete(userId)
+    if (!pending) {
+      return
+    }
+
+    try {
+      if (approve) {
+        await setRole(room.roomId, userId, "editor")
+        await this.refreshRoles(room)
+      }
+      this.broadcastEditorRequests(room)
+    } catch (error) {
+      console.error(`Failed to answer editor request in ${room.roomId}:`, error)
+      this.send(socket, {
+        type: "error",
+        message: "Could not update that member.",
+      })
+    }
+  }
+
+  // Sets a member's role directly. OWNER ONLY.
+  private async handleSetMemberRole(
+    socket: ClientSocket,
+    room: RoomState,
+    userId: string,
+    role: RoomRole,
+  ): Promise<void> {
+    if (!canManageRoom(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only the room owner can change roles.",
+      })
+      return
+    }
+
+    try {
+      // setRole refuses to demote the only owner (that would orphan the room)
+      // and treats a promotion to owner as an atomic TRANSFER.
+      const changed = await setRole(room.roomId, userId, role)
+      if (!changed) {
+        this.send(socket, {
+          type: "error",
+          message:
+            "Could not change that role. Transfer ownership instead of demoting the owner.",
+        })
+        return
+      }
+      // A transfer changes TWO people's roles, so re-resolve everyone rather
+      // than assuming only the target moved.
+      await this.refreshRoles(room)
+      this.broadcastRoomSettings(room)
+    } catch (error) {
+      console.error(`Failed to set role in ${room.roomId}:`, error)
+      this.send(socket, { type: "error", message: "Could not change that role." })
+    }
+  }
+
+  // Re-reads every signed-in connection's role from the database and pushes the
+  // change to anyone whose role actually moved.
+  //
+  // Re-resolving EVERYONE rather than patching the one account that was targeted
+  // is deliberate: an ownership transfer demotes the previous owner as a side
+  // effect, and a client whose powers silently vanished without being told would
+  // keep showing controls the server now rejects.
+  private async refreshRoles(room: RoomState): Promise<void> {
+    let rosterChanged = false
+
+    for (const client of room.clients) {
+      if (!client.userId) {
+        continue
+      }
+      try {
+        const role = (await resolveRole(room.roomId, client.userId)) ?? "viewer"
+        if (client.identity.role === role) {
+          continue
+        }
+        client.identity.role = role
+        rosterChanged = true
+        this.send(client, {
+          type: "role_changed",
+          roomId: room.roomId,
+          self: client.identity,
+        })
+      } catch (error) {
+        console.error(`Failed to refresh a role in ${room.roomId}:`, error)
+      }
+    }
+
+    room.hasOwner = await roomHasOwner(room.roomId)
+    if (rosterChanged) {
+      this.broadcastPresence(room)
+    }
+  }
+
+  // Editor requests go ONLY to owners. The list names people asking for
+  // promotion; nobody else has a use for it or a right to it.
+  private broadcastEditorRequests(room: RoomState): void {
+    room.clients.forEach((client) => {
+      if (canManageRoom(client.identity.role)) {
+        this.sendEditorRequests(client, room)
+      }
+    })
+  }
+
+  private sendEditorRequests(socket: ClientSocket, room: RoomState): void {
+    this.send(socket, {
+      type: "editor_requests",
+      roomId: room.roomId,
+      requests: [...room.editorRequests.entries()].map(([userId, info]) => ({
+        userId,
+        name: info.name,
+      })),
+    })
+  }
+
+  private broadcastRoomSettings(room: RoomState): void {
+    this.broadcast(room, {
+      type: "room_settings",
+      roomId: room.roomId,
+      openEditing: room.openEditing,
+      hasOwner: room.hasOwner,
     })
   }
   //#endregion
@@ -777,7 +927,6 @@ export default class RoomManager {
       room.pixels.set(checkpoint.pixels)
       room.revision += 1
       room.isDirty = true
-      room.recentEditors.set(socket.connectionId, Date.now())
 
       // Persist immediately so the restore is durable and becomes the new base,
       // then push it to everyone as a snapshot.
@@ -925,27 +1074,19 @@ export default class RoomManager {
     }
 
     room.clients.delete(socket)
-    room.recentEditors.delete(socket.connectionId)
     this.broadcastPresence(room)
 
-    // If the leaver was a voter in an open vote, drop them. Their absence may
-    // complete the vote (everyone remaining has approved) or, if no voters are
-    // left, cancel it.
-    const vote = room.activeVote
-    if (vote && vote.voters.has(socket.connectionId)) {
-      vote.voters.delete(socket.connectionId)
-      vote.approvals.delete(socket.connectionId)
-      if (vote.voters.size === 0) {
-        this.resolveVote(room, false)
-      } else {
-        this.broadcastToVoters(room, vote, {
-          type: "vote_update",
-          roomId: room.roomId,
-          voteId: vote.voteId,
-          voters: vote.voters.size,
-          approvals: vote.approvals.size,
-        })
-        this.checkVoteComplete(room)
+    // Drop any editor request this connection was the source of. A request is a
+    // live "let me in now" from someone present; leaving one behind after they
+    // close the tab gives the owner a prompt about a person who is not there.
+    //
+    // Matched on connectionId, not account: the same account in another tab is a
+    // different connection and its request should survive this one closing.
+    if (socket.userId) {
+      const pending = room.editorRequests.get(socket.userId)
+      if (pending && pending.connectionId === socket.connectionId) {
+        room.editorRequests.delete(socket.userId)
+        this.broadcastEditorRequests(room)
       }
     }
 
@@ -970,9 +1111,6 @@ export default class RoomManager {
     clearInterval(room.saveTimer)
     clearInterval(room.snapshotTimer)
     clearInterval(room.flushTimer)
-    if (room.activeVote) {
-      clearTimeout(room.activeVote.timer)
-    }
     this.rooms.delete(room.roomId)
   }
 

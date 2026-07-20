@@ -192,6 +192,13 @@ jobs:
       - name: Security probe
         run: node scripts/security-probe.mjs http://localhost:8080
 
+      # Drives the whole permission model with real accounts: nobody is
+      # auto-owner, ownership is claimed, locking stops viewers and guests, and
+      # an editor request round-trips. Permission rules are the kind of thing
+      # unit tests can agree on while the wiring is wrong.
+      - name: Permissions probe
+        run: node scripts/permissions-probe.mjs http://localhost:8080
+
       # Only on failure, and only then — a green run should stay quiet.
       - name: Dump logs on failure
         if: failure()

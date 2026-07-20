@@ -24,6 +24,7 @@ import {
   MAX_ROOM_ID_LENGTH,
 } from "../constants/protocol"
 import { isValidDrawInstruction, isValidVec } from "./validateInstruction"
+import { ROLES } from "../types/identity"
 
 import type { ClientSocketMessage } from "../types/socketProtocol"
 //#endregion
@@ -90,14 +91,35 @@ export function isValidClientMessage(
         (message.pos === null || isValidVec(message.pos))
       )
 
-    case "request_action":
+    case "room_action":
       return isRoomId(message.roomId) && message.action === "clear"
 
-    case "vote":
+    case "claim_ownership":
+    case "request_editor":
+      return isRoomId(message.roomId)
+
+    case "set_open_editing":
+      // Must be a real boolean, not merely truthy: "false" as a string is
+      // exactly the shape that would silently ENABLE editing when the sender
+      // meant to disable it.
+      return isRoomId(message.roomId) && typeof message.enabled === "boolean"
+
+    case "respond_editor":
       return (
         isRoomId(message.roomId) &&
-        isId(message.voteId) &&
+        isId(message.userId) &&
         typeof message.approve === "boolean"
+      )
+
+    case "set_member_role":
+      // Checked against the shared ROLES list, so an unknown role string can
+      // never reach the database's CHECK constraint and turn a bad message into
+      // a 500.
+      return (
+        isRoomId(message.roomId) &&
+        isId(message.userId) &&
+        typeof message.role === "string" &&
+        (ROLES as readonly string[]).includes(message.role)
       )
 
     case "create_checkpoint":

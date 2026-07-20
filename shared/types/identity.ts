@@ -56,10 +56,27 @@ export type Participant = {
 // the SAME rule the server enforces (the server is still the source of truth —
 // the client checks are cosmetic).
 
-// Can this role draw / take part in destructive-action votes? Everyone except a
-// viewer.
-export function canDraw(role: ConnectionRole): boolean {
-  return role !== "viewer"
+// May this connection draw?
+//
+// This is the one authorisation rule that depends on ROOM STATE as well as
+// role, which is why it takes a second argument. Owners and editors always may;
+// everyone below them (viewers and guests alike) may only while the room is in
+// open-editing mode.
+//
+// Guests and viewers are treated identically here on purpose. The alternative —
+// letting anonymous guests draw while a signed-in reader could not — reads as a
+// bug to anyone who hits it, because signing in would visibly REDUCE what you
+// can do. The distinction between the two is elsewhere: a viewer is a member, so
+// they can be promoted and can request promotion; a guest is nobody yet.
+//
+// Passing openEditing explicitly rather than defaulting it is deliberate. A
+// default would let a call site silently omit the room state and get a
+// permissive answer, which is exactly the mistake that must not compile.
+export function canDraw(role: ConnectionRole, openEditing: boolean): boolean {
+  if (role === "owner" || role === "editor") {
+    return true
+  }
+  return openEditing
 }
 
 // Does this role have EDIT AUTHORITY — the bar for making/restoring checkpoints
@@ -71,8 +88,17 @@ export function hasEditAuthority(role: ConnectionRole): boolean {
   return role === "owner" || role === "editor"
 }
 
-// Can this role manage the room (change members' roles)? Owner only.
+// Can this role manage the room — clear the canvas, assign roles, toggle open
+// editing, resize? Owner only. There is exactly one owner per room (enforced by
+// a partial unique index), so this is also "is this THE owner".
 export function canManageRoom(role: ConnectionRole): boolean {
   return role === "owner"
+}
+
+// May this connection ask the owner for editor access? Only a signed-in member
+// who is currently a viewer: an owner or editor has nothing to ask for, and a
+// guest has no account to promote.
+export function canRequestEditor(role: ConnectionRole): boolean {
+  return role === "viewer"
 }
 //#endregion

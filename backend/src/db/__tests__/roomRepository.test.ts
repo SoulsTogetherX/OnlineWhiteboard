@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import { getOpenEditing, setOpenEditing } from "../roomRepository"
 import { db } from "../pool"
 import { appendDrawEvents, ensureRoom } from "../eventRepository"
 import { pruneStaleRooms } from "../roomRepository"
@@ -158,5 +159,57 @@ describe.skipIf(!DB_CONFIGURED)("roomRepository — stale-room cleanup (integrat
     expect(still?.id).toBe(id)
     expect(deleted).toBeGreaterThanOrEqual(0)
   })
+
+  //#region Open editing
+  it("defaults an unknown room to OPEN, matching the column default", async () => {
+    // A room row only exists after its first save, so a brand-new room people
+    // are already drawing in is legitimately absent here. Returning "locked"
+    // for it would put every new room into a state nobody chose.
+    expect(await getOpenEditing(`never-created-${freshId()}`)).toBe(true)
+  })
+
+  it("persists the toggle both ways", async () => {
+    const id = freshId()
+    await insertRoomAt(id, daysAgo(1))
+
+    await setOpenEditing(id, false)
+    expect(await getOpenEditing(id)).toBe(false)
+
+    await setOpenEditing(id, true)
+    expect(await getOpenEditing(id)).toBe(true)
+  })
+
+  it("can set the toggle before the room has ever been saved", async () => {
+    // The owner may lock a room the instant they claim it, which can happen
+    // before any snapshot has been written.
+    const id = freshId()
+    await setOpenEditing(id, false)
+    expect(await getOpenEditing(id)).toBe(false)
+
+    await db.deleteFrom("rooms").where("id", "=", id).execute()
+  })
+
+  it("does not clobber a room's dimensions when toggling", async () => {
+    // setOpenEditing upserts, and its insert path carries placeholder
+    // width/height. Those must never overwrite a real room's dimensions —
+    // saveCanvas owns those.
+    const id = freshId()
+    await insertRoomAt(id, daysAgo(1))
+    const before = await db
+      .selectFrom("rooms")
+      .select(["width", "height"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+
+    await setOpenEditing(id, false)
+
+    const after = await db
+      .selectFrom("rooms")
+      .select(["width", "height"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+    expect(after).toEqual(before)
+  })
+  //#endregion
 })
 //#endregion

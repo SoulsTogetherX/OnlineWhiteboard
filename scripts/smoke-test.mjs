@@ -112,6 +112,17 @@ async function main() {
     ? pass("ready roster includes self")
     : fail("ready roster does not include self")
 
+  // Permission state must arrive with the FIRST message, before any UI could
+  // render tools this connection may not be allowed to use.
+  ready.openEditing === true && ready.hasOwner === false
+    ? pass("ready carries room permissions (open, unowned)")
+    : fail(
+        `ready permissions wrong: openEditing=${ready.openEditing} hasOwner=${ready.hasOwner}`,
+      )
+  ready.self?.role === "guest"
+    ? pass("an anonymous connection is a guest, not a member")
+    : fail(`expected guest role, got ${ready.self?.role}`)
+
   const snapshot = await waitFor(
     a.seen,
     (m) => m.type === "canvas_snapshot",
@@ -207,6 +218,36 @@ async function main() {
   b.seen.some((m) => m.type === "cursor" && m.connectionId === undefined)
     ? fail("a cursor message arrived without a connectionId")
     : pass("relayed cursors carry a connectionId")
+
+  // --- Permissions are enforced by the SERVER ------------------------------
+  // A guest asking to wipe the board must be refused. The UI hides this button
+  // from non-owners, but hiding a control is not a permission check — only this
+  // is. A crafted client would simply not run the hiding code.
+  const revisionBeforeClear = fanout.revision
+  a.ws.send(JSON.stringify({ type: "room_action", roomId: ROOM, action: "clear" }))
+  await waitFor(a.seen, (m) => m.type === "error", "a rejection of the guest clear")
+  pass("guest's clear request is rejected (owner-only)")
+
+  // And the canvas must be untouched: a rejected action must not advance the
+  // revision, because that would mean it partially happened.
+  await new Promise((r) => setTimeout(r, 300))
+  b.seen.some(
+    (m) =>
+      m.type === "draw" &&
+      m.instruction?.type === "clear" &&
+      m.revision > revisionBeforeClear,
+  )
+    ? fail("the rejected clear was broadcast anyway")
+    : pass("rejected clear never reached the canvas or other clients")
+
+  // Claiming ownership requires an account — an anonymous guest cannot.
+  a.ws.send(JSON.stringify({ type: "claim_ownership", roomId: ROOM }))
+  await waitFor(
+    a.seen,
+    (m) => m.type === "error" && /sign in/i.test(m.message ?? ""),
+    "a rejection of the guest ownership claim",
+  )
+  pass("guest cannot claim ownership (sign-in required)")
 
   a.ws.close()
   b.ws.close()

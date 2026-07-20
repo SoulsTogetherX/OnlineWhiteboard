@@ -20,6 +20,7 @@ import { db } from "./pool"
 
 import * as m001 from "./migrations/001_initial_schema"
 import * as m002 from "./migrations/002_email_at_rest"
+import * as m003 from "./migrations/003_room_open_editing"
 //#endregion
 
 //#region Provider
@@ -35,6 +36,7 @@ import * as m002 from "./migrations/002_email_at_rest"
 const migrations: Record<string, Migration> = {
   "001_initial_schema": m001,
   "002_email_at_rest": m002,
+  "003_room_open_editing": m003,
 }
 
 class ExplicitMigrationProvider implements MigrationProvider {
