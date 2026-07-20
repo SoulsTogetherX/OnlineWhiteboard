@@ -19,6 +19,7 @@ import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
 import SideBar from "@/components/SideBar"
 import type { TabId } from "@/components/SideBar"
+import RoomTab from "@/components/SideBar/RoomTab"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
@@ -136,6 +137,14 @@ export default function App() {
     sendCursor,
     settings,
     clearCanvas,
+    claimOwnership,
+    releaseOwnership,
+    setOpenEditing,
+    resize,
+    canvasDims,
+    editorRequests,
+    requestEditor,
+    respondEditor,
     checkpoints,
     createCheckpoint,
     restoreCheckpoint,
@@ -173,6 +182,15 @@ export default function App() {
     },
     [setColor, addRecent, selectTool],
   )
+
+  // Downloading the current canvas as a PNG. Shared by the old toolbar and the
+  // new Room tab (§12.9: the second caller is where duplicated logic becomes a
+  // helper).
+  const handleDownload = useCallback(() => {
+    if (canvasRef.current) {
+      downloadCanvasImage(canvasRef.current, roomId)
+    }
+  }, [roomId])
 
   // Canvas Setup
   useCanvasMotion(frameRef, canvasRef)
@@ -276,11 +294,7 @@ export default function App() {
         onStrokeSizeChange={setStrokeSize}
         openRoomPicker={() => setIsRoomOpen(true)}
         onClear={clearCanvas}
-        onDownload={() => {
-          if (canvasRef.current) {
-            downloadCanvasImage(canvasRef.current, roomId)
-          }
-        }}
+        onDownload={handleDownload}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
@@ -358,18 +372,38 @@ export default function App() {
         onLogin={login}
         onRegister={register}
       />
-      {/* Phase 5 sidebar shell. Its three tabs are placeholders for now — they
-          are filled in by the Room, Drawing and Timeline commits, at which point
-          the superseded floating controls above move into components/Old. */}
+      {/* Phase 5 sidebar. The Room tab is wired; Drawing and Timeline are still
+          placeholders, filled in by later commits. As each tab lands, the
+          superseded floating controls above move into components/Old. */}
       <SideBar
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen((open) => !open)}
         activeTab={sidebarTab}
         onTabChange={setSidebarTab}
       >
-        <p className="sidebar-placeholder">
-          The {sidebarTab} controls will live here.
-        </p>
+        {sidebarTab === "room" ? (
+          <RoomTab
+            participants={participants}
+            self={self}
+            openEditing={settings.openEditing}
+            hasOwner={settings.hasOwner}
+            canvasWidth={canvasDims.width}
+            canvasHeight={canvasDims.height}
+            onClaimOwnership={claimOwnership}
+            onReleaseOwnership={releaseOwnership}
+            onSetOpenEditing={setOpenEditing}
+            onResize={resize}
+            onClear={clearCanvas}
+            onDownload={handleDownload}
+            editorRequests={editorRequests}
+            onRequestEditor={requestEditor}
+            onRespondEditor={respondEditor}
+          />
+        ) : (
+          <p className="sidebar-placeholder">
+            The {sidebarTab} controls will live here.
+          </p>
+        )}
       </SideBar>
     </div>
   )

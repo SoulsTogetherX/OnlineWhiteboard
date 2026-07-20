@@ -1,0 +1,75 @@
+.editor-requests {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  padding: 0.6rem;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 0.4rem;
+}
+
+.editor-requests-heading {
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.editor-requests-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.editor-request {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.editor-request-name {
+  flex: 1 1 auto;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 0.85rem;
+}
+
+.editor-request-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.3rem;
+}
+
+.editor-request-approve,
+.editor-request-deny {
+  padding: 0.2rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.3rem;
+
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
+.editor-request-approve {
+  border-color: var(--accent-color);
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.editor-request-deny {
+  background-color: var(--popup-background);
+  color: var(--text-color);
+}
+
+.editor-request-approve:focus-visible,
+.editor-request-deny:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}

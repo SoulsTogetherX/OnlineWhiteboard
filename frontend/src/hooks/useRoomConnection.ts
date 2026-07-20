@@ -36,6 +36,7 @@ import {
   getCanvasState,
   updateCanvas,
 } from "@shared/utils/helperProtocolMethods"
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 //#endregion
 
 //#region Constants
@@ -79,6 +80,9 @@ export interface UseRoomConnectionResult {
   setOpenEditing: (enabled: boolean) => void
   // Owner-only: resize the room's canvas. The new size comes back as a snapshot.
   resize: (width: number, height: number) => void
+  // The room's current canvas dimensions, updated from every applied snapshot.
+  // The resize control reads these to show and pre-fill the current size.
+  canvasDims: { width: number; height: number }
   // Set whenever an applied snapshot CHANGED the canvas dimensions (a resize),
   // carrying the old and new dims. The app re-anchors anything keyed to the old
   // size (the undo/redo stacks) to the new one. Null until the first resize.
@@ -161,6 +165,13 @@ export default function useRoomConnection(
     from: { width: number; height: number }
     to: { width: number; height: number }
   } | null>(null)
+  // The current room size, mirrored as state so the resize control re-renders
+  // when a snapshot changes it. Starts at the creation default and is corrected
+  // by the first snapshot on join.
+  const [canvasDims, setCanvasDims] = useState<{
+    width: number
+    height: number
+  }>(DEFAULT_CANVAS_DIMS)
 
   // Serialises everything that touches the canvas, in arrival order.
   //
@@ -411,6 +422,14 @@ export default function useRoomConnection(
               setCanvasResize({ from: prevDims, to: nextDims })
             }
             knownDims.current = nextDims
+            // Mirror the size to state so the resize control reflects it. Guard
+            // on the values (every snapshot is a fresh object, and a same-size
+            // resync arrives routinely) so an unchanged size triggers no render.
+            setCanvasDims((prev) =>
+              prev.width === nextDims.width && prev.height === nextDims.height
+                ? prev
+                : nextDims,
+            )
 
             // The snapshot header carries the room's dimensions; sizing the
             // element to them here is what makes a live resize take effect on the
@@ -647,6 +666,9 @@ export default function useRoomConnection(
       setEditorRequests([])
       setCheckpoints([])
       setPlayback(null)
+      // Back to the creation default until the new room's first snapshot lands,
+      // so the resize control never shows the previous room's size.
+      setCanvasDims(DEFAULT_CANVAS_DIMS)
       cursorsRef.current.clear()
       setCursorIds([])
       setSocketLabel("Connecting")
@@ -669,6 +691,7 @@ export default function useRoomConnection(
     releaseOwnership,
     setOpenEditing,
     resize,
+    canvasDims,
     canvasResize,
     editorRequests,
     requestEditor,
