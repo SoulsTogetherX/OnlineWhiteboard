@@ -35,6 +35,7 @@ import {
   oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { compressSnapshotPayload } from "@/sockets/snapshotCompression"
 import { encodeBinaryFrame } from "@shared/utils/binaryFrame"
 import { isValidClientMessage } from "@shared/utils/validateSocketMessage"
 import { MAX_CHECKPOINT_NAME_LENGTH } from "@shared/constants/protocol"
@@ -1290,14 +1291,19 @@ export default class RoomManager {
   }
 
   private makeSnapshotFrame(room: RoomState): Uint8Array {
+    // compressSnapshotPayload copies when it returns "none", and deflate
+    // inherently produces a new buffer — so either way the frame no longer
+    // aliases room.pixels, which live draws keep mutating while it is queued.
+    const { payload, compression } = compressSnapshotPayload(room.pixels)
     const header: ServerSocketMessage = {
       type: "canvas_snapshot",
       roomId: room.roomId,
       revision: room.revision,
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
+      compression,
     }
-    return encodeBinaryFrame(header, Buffer.from(room.pixels))
+    return encodeBinaryFrame(header, payload)
   }
 
   private broadcast(room: RoomState, message: ServerSocketMessage): void {

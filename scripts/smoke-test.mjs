@@ -16,6 +16,8 @@
  * each is marked REGRESSION with what it guards.
  */
 
+import { inflateRawSync } from "node:zlib"
+
 const BASE = process.argv[2] ?? "http://localhost:8080"
 const WS_BASE = BASE.replace(/^http/, "ws")
 const ROOM = `smoke-${process.pid}`
@@ -49,8 +51,12 @@ function decodeFrame(buffer) {
   const header = JSON.parse(
     Buffer.from(bytes.subarray(3, payloadStart)).toString("utf8"),
   )
-  // `pixels` rides alongside the header so assertions can reach both.
-  return { ...header, pixels: Buffer.from(bytes.subarray(payloadStart)) }
+  const raw = Buffer.from(bytes.subarray(payloadStart))
+  // `pixels` is the DECODED canvas; `wireBytes` is what actually crossed the
+  // network, so the compression assertions can compare the two.
+  const pixels =
+    header.compression === "deflate-raw" ? inflateRawSync(raw) : raw
+  return { ...header, pixels, wireBytes: raw.length }
 }
 
 function connect(room) {
@@ -175,6 +181,18 @@ async function main() {
   snapshot.data === undefined
     ? pass("snapshot header carries no base64 `data` field")
     : fail("snapshot still carries a base64 `data` field — binary frames regressed")
+
+  // Compression is application-level, on the payload only. A blank canvas is
+  // 57,600 mostly-identical bytes, so deflate should crush it to a tiny
+  // fraction; asserting a real ratio (not just "it decoded") is what catches
+  // compression being silently skipped.
+  snapshot.compression === "deflate-raw" && snapshot.wireBytes < expectedBytes / 4
+    ? pass(
+        `snapshot payload is deflated on the wire (${snapshot.wireBytes} B -> ${snapshot.pixels.length} B, ${(snapshot.pixels.length / snapshot.wireBytes).toFixed(1)}x)`,
+      )
+    : fail(
+        `expected a deflated payload well under ${expectedBytes / 4} B, got compression=${snapshot.compression} wireBytes=${snapshot.wireBytes}`,
+      )
 
   await waitFor(a.seen, (m) => m.type === "pong", '"pong" for the ping sent at open')
   pass("REGRESSION: ping sent at open is answered (room-load race)")

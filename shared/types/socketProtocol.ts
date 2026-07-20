@@ -115,6 +115,16 @@ export type ClientSocketMessage =
 // slots in beside clear without touching the message shapes.
 export type RoomAction = "clear"
 
+// How a snapshot frame's payload is encoded. "deflate-raw" is raw DEFLATE with
+// no gzip/zlib wrapper — the frame header already identifies the payload, so a
+// wrapper would be pure overhead, and the browser's DecompressionStream speaks
+// it natively.
+//
+// Compression is applied to the payload ONLY, never to the transport. See
+// backend/src/sockets/snapshotCompression.ts and CLAUDE.md §16 for why
+// permessage-deflate stays off.
+export type SnapshotCompression = "none" | "deflate-raw"
+
 // A pending request for editor access, as shown to the owner. Carries the
 // account id (the owner needs it to answer) and the display name to show.
 export type EditorRequest = {
@@ -170,11 +180,18 @@ export type ServerSocketMessage =
       //
       // There is deliberately no `data` field. The pixels are not part of the
       // header, so nothing can accidentally serialise them back into JSON.
+      //
+      // `compression` describes the payload. It is a header FIELD rather than a
+      // second frame layout, which is the whole reason the envelope carries a
+      // JSON header: adding compression cost no format change and no version
+      // bump. The server picks per snapshot and may answer "none" when
+      // compressing would have made the payload bigger.
       type: "canvas_snapshot"
       roomId: string
       revision: number
       width: number
       height: number
+      compression: SnapshotCompression
     }
   | {
       // Tiny periodic heartbeat replacing the old full-canvas broadcast.

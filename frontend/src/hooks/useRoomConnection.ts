@@ -16,6 +16,7 @@ import {
   applySnapshotToCanvas,
 } from "@shared/utils/handleCanvasProtocol"
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
+import { decompressSnapshotPayload } from "@/utils/snapshotCompression"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
@@ -131,6 +132,27 @@ export default function useRoomConnection(
   const sendRef = useRef<(message: ClientSocketMessage) => boolean>(() => false)
   const lastRevision = useRef<number>(0)
 
+  // Serialises everything that touches the canvas, in arrival order.
+  //
+  // Needed because inflating a compressed snapshot is asynchronous — the browser
+  // has no synchronous inflate — so a snapshot can no longer be applied in the
+  // turn it arrives. Without this, a draw landing mid-inflate would apply to the
+  // current buffer and then be wiped by a snapshot describing an OLDER revision,
+  // and lastRevision would go backwards. The client would recover on the next
+  // revision_check, but only after up to 10 seconds of showing a canvas missing
+  // a stroke everyone else could see.
+  //
+  // A promise chain rather than a "pending draws" queue because it needs no
+  // bookkeeping to be correct: whatever order messages arrived in is the order
+  // they are applied, whether or not any of them needed to await. Draws pay one
+  // microtask, which is nothing next to the network hop they just made.
+  const canvasWork = useRef<Promise<void>>(Promise.resolve())
+  const enqueueCanvasWork = useCallback((work: () => void | Promise<void>) => {
+    canvasWork.current = canvasWork.current.then(work).catch(() => {
+      // One failed frame must not poison the chain for every later message.
+    })
+  }, [])
+
   const handleSocketMessage = useCallback(
     (_socket: WebSocket, event: MessageEvent) => {
       let message: ServerSocketMessage
@@ -227,9 +249,17 @@ export default function useRoomConnection(
           break
         }
 
-        case "draw":
-          if (message.roomId === roomId && canvasRef.current) {
-            const canvasState = getCanvasState(canvasRef.current)
+        case "draw": {
+          if (message.roomId !== roomId) {
+            break
+          }
+          const drawMessage = message
+          enqueueCanvasWork(() => {
+            const canvas = canvasRef.current
+            if (!canvas) {
+              return
+            }
+            const canvasState = getCanvasState(canvas)
             if (canvasState === null) {
               return
             }
@@ -238,23 +268,41 @@ export default function useRoomConnection(
             // client skip a write the server made, and silently diverge.
             applyDrawInstructionToCanvas(
               canvasState.imageData,
-              message.instruction,
+              drawMessage.instruction,
               "replay",
             )
-            updateCanvas(canvasRef.current)
-            lastRevision.current = message.revision
-          }
+            updateCanvas(canvas)
+            lastRevision.current = drawMessage.revision
+          })
           break
+        }
 
-        case "canvas_snapshot":
+        case "canvas_snapshot": {
           // `payload` is null if this arrived as text, which the server never
           // sends — dropping it is right either way, since a snapshot header
           // with no pixels describes a canvas we do not have.
-          if (message.roomId === roomId && canvasRef.current && payload) {
-            applySnapshotToCanvas(canvasRef.current, payload)
-            lastRevision.current = message.revision
+          if (message.roomId !== roomId || !payload) {
+            break
           }
+          const snapshotMessage = message
+          const compressed = payload
+          enqueueCanvasWork(async () => {
+            const pixels = await decompressSnapshotPayload(
+              compressed,
+              snapshotMessage.compression,
+            )
+            const canvas = canvasRef.current
+            // A payload that would not inflate is dropped, leaving the previous
+            // canvas up. The next revision_check notices we are behind and asks
+            // for a fresh snapshot.
+            if (pixels === null || !canvas) {
+              return
+            }
+            applySnapshotToCanvas(canvas, pixels)
+            lastRevision.current = snapshotMessage.revision
+          })
           break
+        }
 
         case "revision_check":
           // Server's revision is strictly ahead of the last one we've

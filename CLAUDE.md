@@ -415,6 +415,15 @@ everywhere.
    drives it over HTTP and WebSocket via `scripts/smoke-test.mjs`. This is what proves the
    pieces agree, which unit tests cannot.
 
+> **Typecheck with `--noEmit`, never `tsc -b`.** Every package's `typecheck` script is
+> `tsc --noEmit` for a reason: `tsc -b` **emits** `.js` next to the `.ts` sources, and Vitest
+> then resolves the stale JavaScript in preference to the TypeScript. The symptom is
+> `Cannot find module '@shared/...'` from a `.js` file you never wrote, in tests that
+> passed a minute ago — it reads like the alias config broke, and *every* suite fails at
+> once, which by §12.1's own rule means "suspect the harness". Clean up with
+> `find <pkg>/src -name '*.js' -delete`, but scope it: `backend/src/types/ClientSocket.d.ts`
+> is a real tracked source file, and a broad `-name '*.d.ts' -delete` will eat it.
+
 Local integration tests: a native Windows Postgres on `:5432` **shadows** the Docker one for
 host connections — use a throwaway on a free port
 (`docker run -p 55432:5432 postgres:18-alpine`) and point `POSTGRES_PORT` at it.
