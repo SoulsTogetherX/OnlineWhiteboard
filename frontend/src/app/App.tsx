@@ -17,6 +17,8 @@ import PlaybackViewer from "@/components/PlaybackViewer"
 import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
+import SideBar from "@/components/SideBar"
+import type { TabId } from "@/components/SideBar"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
@@ -61,6 +63,14 @@ export default function App() {
   const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY)
   const [isToolbarOpen, setIsToolbarOpen] = useState<boolean>(false)
   const isToolbarVisible = isDesktop || isToolbarOpen
+
+  // The new right sidebar (Phase 5). Retractable on both desktop and mobile, so
+  // unlike the toolbar its open state is a single flag the handle toggles rather
+  // than being forced open on desktop. It starts open on desktop and collapsed
+  // on mobile so a phone-sized canvas isn't covered on load; `isDesktop` is read
+  // synchronously on first render, so this initial value is already correct.
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(isDesktop)
+  const [sidebarTab, setSidebarTab] = useState<TabId>("drawing")
 
   // The selected tool is kept in BOTH a ref and state, deliberately:
   //   - the ref is what the pointer handlers read on every event, so changing
@@ -348,6 +358,19 @@ export default function App() {
         onLogin={login}
         onRegister={register}
       />
+      {/* Phase 5 sidebar shell. Its three tabs are placeholders for now — they
+          are filled in by the Room, Drawing and Timeline commits, at which point
+          the superseded floating controls above move into components/Old. */}
+      <SideBar
+        isOpen={isSidebarOpen}
+        onToggle={() => setIsSidebarOpen((open) => !open)}
+        activeTab={sidebarTab}
+        onTabChange={setSidebarTab}
+      >
+        <p className="sidebar-placeholder">
+          The {sidebarTab} controls will live here.
+        </p>
+      </SideBar>
     </div>
   )
 }

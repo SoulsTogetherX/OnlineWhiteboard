@@ -8,6 +8,15 @@
   background-color: var(--room-background);
 }
 
+/* Transitional: the sidebar tabs render this until the Room/Drawing/Timeline
+   commits fill them in, at which point it is removed. Muted so it reads as a
+   deliberate placeholder rather than broken content. */
+.sidebar-placeholder {
+  margin: 0;
+  color: var(--sub-text-color);
+  font-style: italic;
+}
+
 .undo-notice {
   position: fixed;
   left: 50%;

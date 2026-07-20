@@ -1,0 +1,39 @@
+.tab-bar {
+  display: flex;
+  flex-shrink: 0;
+
+  border-bottom: 1px solid var(--border-color);
+  background-color: var(--toolbar-background);
+}
+
+.tab-bar-button {
+  flex: 1 1 0;
+
+  padding: 0.6rem 0.4rem;
+
+  border-bottom: 2px solid transparent;
+
+  color: var(--text-color);
+  font-size: 0.9rem;
+  text-align: center;
+
+  cursor: pointer;
+  user-select: none;
+}
+
+.tab-bar-button:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.tab-bar-button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+}
+
+/* The active tab reads as raised: it carries the accent underline and drops the
+   toolbar tint so it visually joins the panel below it. */
+.tab-bar-button-active {
+  border-bottom-color: var(--accent-color);
+  background-color: var(--popup-background);
+  font-weight: 600;
+}
