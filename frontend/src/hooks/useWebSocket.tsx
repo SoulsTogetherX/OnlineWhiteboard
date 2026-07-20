@@ -7,7 +7,7 @@ type MaybeRefOrGetter<T> = T | React.RefObject<T> | (() => T)
 
 export type WebSocketURL = string | URL | undefined
 export type WebSocketStatus = "OPENED" | "CONNECTING" | "CLOSED"
-export type WebSocketMessage = string | ArrayBuffer | Blob
+export type WebSocketMessage = string | ArrayBufferLike | ArrayBufferView | Blob
 export type WebSocketPayload = WebSocketMessage | Record<string, unknown>
 
 export type WebSocketResult = {
@@ -86,6 +86,16 @@ function toWebSocketUrl(url: WebSocketURL, roomId: string): string | undefined {
 }
 
 function serializeSocketPayload(payload: WebSocketPayload): WebSocketMessage {
+  // Binary payloads pass straight through — a Uint8Array (a patch frame) is an
+  // object, so it MUST be caught before the JSON branch below or it would be
+  // stringified to "{}" and silently corrupted.
+  if (
+    payload instanceof ArrayBuffer ||
+    ArrayBuffer.isView(payload) ||
+    payload instanceof Blob
+  ) {
+    return payload
+  }
   if (typeof payload === "object" && payload !== null) {
     return JSON.stringify(payload)
   }
@@ -155,7 +165,14 @@ export default function useWebSocket(
     if (!socket || socket.readyState !== WebSocket.OPEN) return false
 
     try {
-      socket.send(serializeSocketPayload(payload))
+      // The cast bridges our loose WebSocketMessage (which allows a
+      // SharedArrayBuffer-backed view) to the DOM send signature (which does
+      // not). Every value we ever pass is a string, a JSON string, or a patch
+      // frame backed by a fresh ArrayBuffer — never shared — so the runtime
+      // contract holds; only the types are stricter than reality here.
+      socket.send(
+        serializeSocketPayload(payload) as Parameters<WebSocket["send"]>[0],
+      )
       return true
     } catch (error) {
       console.error("Failed to serialize or send data:", error)

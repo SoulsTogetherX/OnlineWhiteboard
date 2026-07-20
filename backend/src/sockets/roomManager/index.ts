@@ -37,6 +37,7 @@ import {
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { compressSnapshotPayload } from "@/sockets/snapshotCompression"
 import { encodeBinaryFrame } from "@shared/utils/binaryFrame"
+import { decodePatchDrawFrame } from "@shared/utils/patchCodec"
 import { isValidClientMessage } from "@shared/utils/validateSocketMessage"
 import { MAX_CHECKPOINT_NAME_LENGTH } from "@shared/constants/protocol"
 import {
@@ -124,6 +125,13 @@ type RoomState = {
   // and one left over from a visitor who closed their tab days ago is noise the
   // owner would have to dismiss. Cleared when the requester disconnects.
   editorRequests: Map<string, { name: string; connectionId: string }>
+}
+
+// A frame buffered while the room loads, carrying the isBinary flag `ws` reports
+// alongside it — a Buffer alone cannot say whether it was a text or binary frame.
+type PendingFrame = {
+  raw: RawData
+  isBinary: boolean
 }
 //#endregion
 
@@ -231,16 +239,20 @@ export default class RoomManager {
       socket.isAlive = true
     })
 
-    const pending: RawData[] = []
+    // isBinary rides with each buffered frame: `ws` reports it per message, and
+    // a patch draw arrives as a binary frame while everything else is text. The
+    // two cannot be told apart from the Buffer alone, so it must be captured here
+    // and replayed with the frame it belongs to.
+    const pending: PendingFrame[] = []
     let isReady = false
 
-    socket.on("message", (raw) => {
+    socket.on("message", (raw, isBinary) => {
       if (isReady) {
-        void this.handleMessage(socket, raw)
+        void this.handleMessage(socket, raw, isBinary)
         return
       }
       if (pending.length < MAX_PENDING_MESSAGES) {
-        pending.push(raw)
+        pending.push({ raw, isBinary })
       }
     })
     // Also registered before the await: a client that disconnects mid-load
@@ -296,8 +308,8 @@ export default class RoomManager {
     // flipping the flag would let a message that arrives mid-drain jump ahead
     // of the queue and apply out of order.
     isReady = true
-    for (const raw of pending) {
-      await this.handleMessage(socket, raw)
+    for (const frame of pending) {
+      await this.handleMessage(socket, frame.raw, frame.isBinary)
     }
   }
 
@@ -413,8 +425,9 @@ export default class RoomManager {
   private async handleMessage(
     socket: ClientSocket,
     raw: RawData,
+    isBinary: boolean,
   ): Promise<void> {
-    const message = this.parseMessage(raw)
+    const message = this.parseMessage(raw, isBinary)
 
     // Charge for the message BEFORE acting on it, and charge for invalid ones
     // too. Validation bounds what a single message can do; only this bounds how
@@ -574,8 +587,33 @@ export default class RoomManager {
   // handlers. `isValidClientMessage` closes that: an unrecognised type, a
   // missing roomId or an over-long id is dropped here and never reaches a
   // handler.
-  private parseMessage(raw: RawData): ClientSocketMessage | null {
+  // Normalises the RawData `ws` delivers into a single Uint8Array the frame
+  // decoder can read. `ws` hands back a Buffer by default; the Buffer[] arm
+  // covers the fragmented case, which only occurs if buffer concatenation is
+  // ever disabled, but is cheap to be correct about.
+  private toUint8Array(raw: RawData): Uint8Array {
+    if (Buffer.isBuffer(raw)) {
+      return raw
+    }
+    if (Array.isArray(raw)) {
+      return Buffer.concat(raw)
+    }
+    return new Uint8Array(raw)
+  }
+
+  private parseMessage(
+    raw: RawData,
+    isBinary: boolean,
+  ): ClientSocketMessage | null {
     try {
+      // A binary frame is only ever a packed patch draw. decodePatchDrawFrame
+      // rebuilds the exact shape a JSON patch would have had, so the SAME
+      // validation gate below guards both transports — the server never learns,
+      // or needs to learn, which one a patch arrived on.
+      if (isBinary) {
+        const candidate = decodePatchDrawFrame(this.toUint8Array(raw))
+        return isValidClientMessage(candidate) ? candidate : null
+      }
       const text = Buffer.isBuffer(raw) ? raw.toString("utf8") : raw.toString()
       const parsed: unknown = JSON.parse(text)
       return isValidClientMessage(parsed) ? parsed : null

@@ -14,20 +14,22 @@ const app = express()
 const server = createServer(app)
 // Largest client->server frame we will even buffer. `ws` defaults to 100 MiB,
 // which means a single message could ask the server to allocate and parse 100 MB
-// of JSON before any of our validation ran — validation cannot protect you from
-// a payload it never gets to see.
+// before any of our validation ran — validation cannot protect you from a
+// payload it never gets to see.
 //
 // The bound is derived, not guessed. The biggest LEGITIMATE message is an undo
-// patch covering every pixel: MAX_PATCH_ENTRIES entries, each serialising to
-// roughly 95 bytes ({"idx":57596,"from":{"r":..,"g":..,"b":..,"a":..},"to":{...}}).
-// 14400 * 95 is about 1.4 MB, so 4 MiB leaves generous headroom while still
-// being ~25x smaller than the default.
+// patch covering every pixel: MAX_PATCH_ENTRIES entries. As JSON that was ~1.4 MB
+// (~95 bytes an entry), which is the ONLY reason this had to be 4 MiB. Now that
+// patches travel as a packed binary frame (shared/utils/patchCodec.ts) an entry
+// is 12 bytes flat, so the same worst case is MAX_PATCH_ENTRIES * 12 ≈ 173 KB.
+// 256 KiB gives that ~1.5x headroom for the frame header and any future slack,
+// and every other client->server message is far smaller — so this is now a tight
+// bound rather than a loose one, exactly as OWASP prefers.
 //
-// OWASP suggests 64 KB as a starting point; that is right for a chat-shaped
-// protocol and wrong for this one, because a legitimate bucket-fill undo is
-// megabytes as JSON. Phase 3's binary frames + payload compression will shrink
-// this dramatically, at which point this number should come down with it.
-const MAX_SOCKET_PAYLOAD_BYTES = 4 * 1024 * 1024
+// Phase 4 makes the canvas resizable, which raises MAX_PATCH_ENTRIES with the
+// area; this ceiling must be revisited then so a legitimate full-canvas undo on
+// the largest allowed canvas still fits.
+const MAX_SOCKET_PAYLOAD_BYTES = 256 * 1024
 
 const wss = new WebSocketServer({
   noServer: true,

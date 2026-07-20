@@ -107,6 +107,38 @@ function waitFor(seen, predicate, what, timeoutMs = 8_000) {
 const draw = (roomId, instruction) =>
   JSON.stringify({ type: "draw", roomId, instruction })
 
+// Encodes a patch draw as the binary frame a real client now sends: the draw
+// message (minus entries) as the JSON header, 12 packed bytes per entry as the
+// payload. Hand-rolled to keep this probe dependency-free; keep it in step with
+// shared/utils/patchCodec.ts, same as decodeFrame mirrors binaryFrame.ts.
+function encodePatchFrame(roomId, instruction) {
+  const { entries, ...instructionHeader } = instruction
+  const payload = Buffer.alloc(entries.length * 12)
+  entries.forEach((e, i) => {
+    const o = i * 12
+    payload.writeUInt32BE(e.idx, o)
+    payload[o + 4] = e.from.r
+    payload[o + 5] = e.from.g
+    payload[o + 6] = e.from.b
+    payload[o + 7] = e.from.a
+    payload[o + 8] = e.to.r
+    payload[o + 9] = e.to.g
+    payload[o + 10] = e.to.b
+    payload[o + 11] = e.to.a
+  })
+  const header = Buffer.from(
+    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
+    "utf8",
+  )
+  const frame = Buffer.alloc(3 + header.length + payload.length)
+  frame[0] = BINARY_FRAME_VERSION
+  frame[1] = (header.length >> 8) & 0xff
+  frame[2] = header.length & 0xff
+  header.copy(frame, 3)
+  payload.copy(frame, 3 + header.length)
+  return frame
+}
+
 async function main() {
   console.log(`smoke test -> ${BASE} (room "${ROOM}")\n`)
 
@@ -397,9 +429,11 @@ async function main() {
   )
   await waitFor(d.seen, (m) => m.type === "draw" && m.instruction.sessionId === "smoke-c", "the shared start state")
 
-  // D's undo lands first and moves the pixel RED -> BLUE.
+  // D's undo lands first and moves the pixel RED -> BLUE. Sent as a BINARY patch
+  // frame — the path real clients now use — so this also proves the server
+  // decodes a packed patch into the same message a JSON one would have been.
   d.ws.send(
-    draw(cvRoom, {
+    encodePatchFrame(cvRoom, {
       type: "patch",
       entries: [{ idx, from: RED, to: BLUE }],
       instructionId: 11,
@@ -409,16 +443,16 @@ async function main() {
   const dPatch = await waitFor(
     c.seen,
     (m) => m.type === "draw" && m.instruction.sessionId === "smoke-d",
-    "D's patch to reach C",
+    "D's binary patch to reach C",
   )
   dPatch.instruction.entries?.length === 1
-    ? pass("a patch that passes compare-and-swap is broadcast with its entry")
+    ? pass("a BINARY patch that passes compare-and-swap is decoded and broadcast")
     : fail(`expected 1 applied entry, got ${dPatch.instruction.entries?.length}`)
 
   // C's undo of the SAME pixel is now stale: it expects RED, the server holds
-  // BLUE. It must be rejected wholesale, not applied.
+  // BLUE. It must be rejected wholesale, not applied. Also a binary frame.
   c.ws.send(
-    draw(cvRoom, {
+    encodePatchFrame(cvRoom, {
       type: "patch",
       entries: [{ idx, from: RED, to: { r: 0, g: 0, b: 0, a: 0 } }],
       instructionId: 12,

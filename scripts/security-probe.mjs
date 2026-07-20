@@ -15,7 +15,7 @@
  *
  * NOTE on the payload-limit case: `maxPayload` is real and was verified
  * DETERMINISTICALLY by connecting straight to the backend inside its container —
- * an 8 MiB frame against the 4 MiB ceiling closes the socket with 1009 every
+ * an 8 MiB frame against the 256 KiB ceiling closes the socket with 1009 every
  * time. Through the nginx proxy, however, whether that close arrives inside the
  * probe's window varies run to run (it depends on how the 8 MiB send is flushed
  * and buffered). So the 1009 check is INFORMATIONAL here: asserting on it would
@@ -33,6 +33,40 @@ const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
 
 // Mirrors the canvas pixel count — the largest patch that can ever be legitimate.
 const MAX_PATCH_ENTRIES = 120 * 120
+
+// Packs a patch draw as the binary frame real clients send. Mirrors
+// shared/utils/patchCodec.ts. The oversized-patch check below MUST use this: as
+// JSON, MAX_PATCH_ENTRIES+1 entries is ~1.37 MB, which now trips maxPayload
+// (256 KiB) and closes the socket — testing the wrong bound. Packed it is
+// ~173 KB, under maxPayload, so it reaches the COUNT check this test is about.
+const BINARY_FRAME_VERSION = 1
+function encodePatchFrame(roomId, instruction) {
+  const { entries, ...instructionHeader } = instruction
+  const payload = Buffer.alloc(entries.length * 12)
+  entries.forEach((e, i) => {
+    const o = i * 12
+    payload.writeUInt32BE(e.idx, o)
+    payload[o + 4] = e.from.r
+    payload[o + 5] = e.from.g
+    payload[o + 6] = e.from.b
+    payload[o + 7] = e.from.a
+    payload[o + 8] = e.to.r
+    payload[o + 9] = e.to.g
+    payload[o + 10] = e.to.b
+    payload[o + 11] = e.to.a
+  })
+  const header = Buffer.from(
+    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
+    "utf8",
+  )
+  const frame = Buffer.alloc(3 + header.length + payload.length)
+  frame[0] = BINARY_FRAME_VERSION
+  frame[1] = (header.length >> 8) & 0xff
+  frame[2] = header.length & 0xff
+  header.copy(frame, 3)
+  payload.copy(frame, 3 + header.length)
+  return frame
+}
 
 let pass = 0
 let fail = 0
@@ -108,7 +142,8 @@ console.log(`security probe -> ${BASE} (room "${ROOM}")\n`)
 // --- 2. An oversized patch is dropped, never applied or broadcast -----------
 // Every entry below is individually valid; only the LIST is illegal. That is
 // exactly what per-entry validation cannot catch, and it was unbounded until
-// MAX_PATCH_ENTRIES existed.
+// MAX_PATCH_ENTRIES existed. Sent as a binary frame so it clears maxPayload and
+// actually reaches the count bound in decodePatchEntries (see encodePatchFrame).
 {
   const a = await connect()
   const b = await connect()
@@ -129,20 +164,16 @@ console.log(`security probe -> ${BASE} (room "${ROOM}")\n`)
         broadcastSeen = true
       }
     } catch {
-      /* other traffic is not this check's concern */
+      /* other traffic (incl. binary frames) is not this check's concern */
     }
   })
 
   a.send(
-    JSON.stringify({
-      type: "draw",
-      roomId: ROOM,
-      instruction: {
-        type: "patch",
-        entries,
-        instructionId: 1,
-        sessionId: "probe",
-      },
+    encodePatchFrame(ROOM, {
+      type: "patch",
+      entries,
+      instructionId: 1,
+      sessionId: "probe",
     }),
   )
 

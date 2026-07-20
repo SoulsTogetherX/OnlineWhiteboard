@@ -16,6 +16,7 @@ import {
   applySnapshotToCanvas,
 } from "@shared/utils/handleCanvasProtocol"
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
+import { encodePatchDrawFrame } from "@shared/utils/patchCodec"
 import { decompressSnapshotPayload } from "@/utils/snapshotCompression"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
@@ -382,6 +383,14 @@ export default function useRoomConnection(
 
   const sendDrawInstruction = useCallback(
     (instruction: DrawInstruction) => {
+      // Patches go out as a binary frame — an undo of a large fill is thousands
+      // of entries, ~1.4 MB as JSON but ~12 bytes each packed. Every other tool
+      // is a handful of numbers, so it stays JSON where it is easiest to read on
+      // the wire. Both arrive at the server as an identical "draw" message.
+      if (instruction.type === "patch") {
+        send(encodePatchDrawFrame(roomId, instruction))
+        return
+      }
       const message: ClientSocketMessage = {
         type: "draw",
         roomId,
