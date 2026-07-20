@@ -11,7 +11,7 @@
 // short enough that a million of them is trivial storage.
 const MAX_ROOM_ID_LENGTH = 64
 
-// Checkpoint and vote ids are server-generated UUIDs (36 chars). The cap exists
+// Checkpoint and account ids are server-generated UUIDs (36 chars). The cap exists
 // so a client can't hand back a megabyte where an id belongs; it is not a format
 // check — the lookup itself is what rejects an id that doesn't exist.
 const MAX_ID_LENGTH = 64

@@ -109,6 +109,7 @@ export function messageCost(message: ClientSocketMessage): number {
     // Permission changes all write to Postgres, and several of them re-resolve
     // every member's role afterwards.
     case "claim_ownership":
+    case "release_ownership":
     case "set_open_editing":
     case "respond_editor":
     case "set_member_role":

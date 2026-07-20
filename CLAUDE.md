@@ -436,6 +436,33 @@ evidence it does what it claims, at the cheapest level that actually demonstrate
 State in the commit message *how* it was verified, with observed values where possible.
 "Typechecks" is not an answer for anything with runtime behaviour.
 
+#### Trust the failure signal before you trust the failure
+
+Two separate incidents in this repo produced the *same* misleading symptom — a test
+reporting `fetch failed` while the application was fine — and both cost a wrong diagnosis:
+
+1. **A masked exit code.** `docker compose up --wait -d | tail -2 && node smoke-test.mjs`
+   does not do what it looks like. A pipeline's exit status is the status of its **last**
+   command, so `&&` saw `tail` succeed. Compose had failed, the stack was never up, and the
+   smoke test ran against nothing — reporting what looked exactly like a broken app.
+2. **A host resolution quirk.** `localhost` resolving to IPv6 `::1`, where the published
+   port refused, while `127.0.0.1` worked (see §9).
+
+The rules that follow from this:
+
+- **Never pipe a command whose exit code you are about to branch on.** Either drop the
+  pipe, or `set -o pipefail` first, or capture the status explicitly:
+  ```bash
+  set -o pipefail                       # simplest fix; failure propagates through pipes
+  docker compose ... up --wait -d; rc=$? # or capture it before trimming output
+  ```
+- **When a probe fails, confirm the harness before blaming the code.** Is the stack up
+  (`docker compose ps`)? Is the port answering (`curl`)? A green container list and a
+  failing probe is a *contradiction*, and the contradiction is the clue.
+- **Suspicion is proportional to symptom breadth.** One assertion failing is usually the
+  code. *Everything* failing at once — especially the very first network call — is usually
+  the harness.
+
 ### 12.2 Commit after each verified feature
 
 One concern per commit, on a feature branch, **after** it is verified. Commit messages

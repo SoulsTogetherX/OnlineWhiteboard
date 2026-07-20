@@ -97,6 +97,33 @@ export async function claimOwnership(
   }
 }
 
+// Gives up ownership, leaving the room unowned. Returns true if this user was
+// the owner and has been stepped down.
+//
+// The `role = 'owner'` predicate in the WHERE clause is the authorisation: a
+// non-owner's UPDATE matches zero rows and changes nothing, so there is no
+// check-then-write window for two requests to slip through.
+//
+// They become an EDITOR rather than a viewer, so handing back the crown never
+// silently costs them the ability to draw in a room they had locked.
+//
+// Note this deliberately does what setRole REFUSES to do — leave a room with no
+// owner. There it would be an accident that orphans a room; here it is the
+// entire point, which is why it is a separate function rather than a flag.
+export async function releaseOwnership(
+  roomId: string,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .updateTable("room_members")
+    .set({ role: "editor", updated_at: new Date() })
+    .where("room_id", "=", roomId)
+    .where("user_id", "=", userId)
+    .where("role", "=", "owner")
+    .executeTakeFirst()
+  return Number(result.numUpdatedRows ?? 0n) > 0
+}
+
 export async function roomHasOwner(roomId: string): Promise<boolean> {
   const row = await db
     .selectFrom("room_members")

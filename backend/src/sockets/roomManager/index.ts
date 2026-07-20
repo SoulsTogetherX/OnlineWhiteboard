@@ -20,6 +20,7 @@ import { deleteExpiredSessions } from "@/db/sessionRepository"
 import {
   claimOwnership,
   ensureMembership,
+  releaseOwnership,
   resolveRole,
   roomHasOwner,
   setRole,
@@ -422,6 +423,10 @@ export default class RoomManager {
       void this.handleClaimOwnership(socket, room)
       return
     }
+    if (message.type === "release_ownership") {
+      void this.handleReleaseOwnership(socket, room)
+      return
+    }
     if (message.type === "set_open_editing") {
       void this.handleSetOpenEditing(socket, room, message.enabled)
       return
@@ -563,12 +568,8 @@ export default class RoomManager {
 
   //#region Ownership, permissions and editor requests
   // Applies a destructive room action immediately. OWNER ONLY.
-  //
-  // This replaced a consensus vote among recent editors. A single accountable
-  // owner deleted an entire family of edge cases — an AFK voter freezing the
-  // board, a voter disconnecting mid-vote, two votes racing, a vote outliving
-  // the room — none of which existed to serve a user need. They existed to
-  // serve the voting mechanism.
+  // Why ownership rather than group consensus gates this is recorded in
+  // CLAUDE.md's decision record.
   private handleRoomAction(
     socket: ClientSocket,
     room: RoomState,
@@ -633,6 +634,49 @@ export default class RoomManager {
       this.send(socket, {
         type: "error",
         message: "Could not take ownership.",
+      })
+    }
+  }
+
+  // Gives up ownership, leaving the room unowned so somebody else can take it.
+  private async handleReleaseOwnership(
+    socket: ClientSocket,
+    room: RoomState,
+  ): Promise<void> {
+    if (!socket.userId || !canManageRoom(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only the room owner can release ownership.",
+      })
+      return
+    }
+
+    try {
+      const released = await releaseOwnership(room.roomId, socket.userId)
+      if (!released) {
+        // Lost a race with a transfer, or never actually held it. Correct the
+        // client's view rather than leaving it showing a control it cannot use.
+        await this.refreshRoles(room)
+        this.broadcastRoomSettings(room)
+        return
+      }
+
+      // Any pending editor requests die with the ownership: there is now nobody
+      // to answer them, and they would sit unanswerable until someone claimed
+      // the room.
+      const hadRequests = room.editorRequests.size > 0
+      room.editorRequests.clear()
+
+      await this.refreshRoles(room)
+      this.broadcastRoomSettings(room)
+      if (hadRequests) {
+        this.broadcastEditorRequests(room)
+      }
+    } catch (error) {
+      console.error(`Failed to release ownership of ${room.roomId}:`, error)
+      this.send(socket, {
+        type: "error",
+        message: "Could not release ownership.",
       })
     }
   }

@@ -95,6 +95,7 @@ export function isValidClientMessage(
       return isRoomId(message.roomId) && message.action === "clear"
 
     case "claim_ownership":
+    case "release_ownership":
     case "request_editor":
       return isRoomId(message.roomId)
 

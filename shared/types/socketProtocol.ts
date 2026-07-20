@@ -30,12 +30,8 @@ export type ClientSocketMessage =
     }
   | {
       // A room-wide destructive action, applied immediately. OWNER ONLY.
-      //
-      // This replaced a consensus vote among recent editors. The vote was
-      // removed because a single accountable owner is simpler to reason about
-      // and to explain, and it deleted a whole class of stuck-vote edge cases
-      // (an AFK voter freezing the board, a voter leaving mid-vote, two votes
-      // racing). See the decision record in CLAUDE.md.
+      // Why a single accountable owner rather than group consensus is recorded
+      // in CLAUDE.md's decision record.
       type: "room_action"
       roomId: string
       action: RoomAction
@@ -45,6 +41,17 @@ export type ClientSocketMessage =
       // only while the room is unowned — ownership is opt-in, never assigned
       // automatically, and persists across sessions once claimed.
       type: "claim_ownership"
+      roomId: string
+    }
+  | {
+      // Give up ownership, leaving the room unowned so somebody else can claim
+      // it. OWNER ONLY (it is a no-op for anyone else by construction).
+      //
+      // The releasing owner becomes an EDITOR, not a viewer: they are handing
+      // back a crown, not asking to be locked out of a board they have been
+      // running. Dropping them to viewer would mean releasing ownership could
+      // silently cost them the ability to draw in their own locked room.
+      type: "release_ownership"
       roomId: string
     }
   | {

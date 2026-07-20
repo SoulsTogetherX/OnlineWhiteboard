@@ -224,7 +224,7 @@ export default function ToolMenu({
             type="button"
             className="tool-button"
             onClick={onClear}
-            title="Clear the canvas (needs a vote if others drew recently)"
+            title="Clear the canvas (room owner only)"
           >
             <svg
               className="button-icon"

@@ -219,6 +219,49 @@ await waitFor(
 )
 pass("an editor cannot change room settings (owner only)")
 
+// --- 10. Ownership can be given up, and the room reclaimed -----------------
+a.ws.send(JSON.stringify({ type: "release_ownership", roomId: ROOM }))
+await waitFor(
+  a.seen,
+  (m) => m.type === "role_changed" && m.self.role === "editor",
+  "A to step down",
+)
+pass("releasing ownership steps the owner down to EDITOR, not viewer")
+
+await waitFor(
+  c.seen,
+  (m) => m.type === "room_settings" && m.hasOwner === false,
+  "the room to report itself unowned",
+)
+pass("the room becomes unowned and broadcasts it")
+
+// The former owner must lose the powers, immediately.
+a.ws.send(JSON.stringify({ type: "set_open_editing", roomId: ROOM, enabled: true }))
+await waitFor(
+  a.seen,
+  (m) => m.type === "error" && /owner/i.test(m.message ?? ""),
+  "the former owner's settings change to be refused",
+)
+pass("a released owner immediately loses management rights")
+
+// ...but keeps edit access, which is the whole reason they step down to editor.
+a.ws.send(JSON.stringify(stroke(5)))
+await waitFor(
+  a.seen,
+  (m) => m.type === "draw" && m.instruction?.instructionId === 5,
+  "the former owner's stroke",
+)
+pass("a released owner keeps edit access in the still-locked room")
+
+// And somebody else can now take it.
+c.ws.send(JSON.stringify({ type: "claim_ownership", roomId: ROOM }))
+await waitFor(
+  c.seen,
+  (m) => m.type === "role_changed" && m.self.role === "owner",
+  "C to claim the released room",
+)
+pass("a released room can be claimed by someone else")
+
 a.ws.close()
 c.ws.close()
 

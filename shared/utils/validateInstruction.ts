@@ -173,7 +173,7 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
     case "clear":
       // No fields beyond the base (already checked above). The GATE on clear is
       // authorisation, not shape: the server refuses a client-originated clear
-      // and only ever applies one it generated after a vote — so this returning
+      // and only ever applies one it generated for the owner — so this returning
       // true is safe, and lets a clear replay from the event log like anything else.
       return true
     default:

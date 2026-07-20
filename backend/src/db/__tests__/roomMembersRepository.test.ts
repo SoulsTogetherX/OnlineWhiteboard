@@ -8,6 +8,7 @@ import { ensureRoom } from "../eventRepository"
 import {
   claimOwnership,
   ensureMembership,
+  releaseOwnership,
   roomHasOwner,
   listMembers,
   listRoomsForUser,
@@ -131,6 +132,51 @@ describe.skipIf(!DB_CONFIGURED)("roomMembersRepository (integration)", () => {
     expect(results.filter((r) => r === "owner")).toHaveLength(1)
     expect(results.filter((r) => r === null)).toHaveLength(2)
     expect(await roomHasOwner(roomId)).toBe(true)
+  })
+
+  it("lets an owner release the room, leaving it claimable again", async () => {
+    const roomId = await makeRoom()
+    const alice = await makeUser()
+    const bob = await makeUser()
+    await ensureMembership(roomId, alice)
+    await ensureMembership(roomId, bob)
+    await claimOwnership(roomId, alice)
+
+    expect(await releaseOwnership(roomId, alice)).toBe(true)
+    expect(await roomHasOwner(roomId)).toBe(false)
+    // Handing back the crown must not cost them the ability to draw in a room
+    // they may have locked, so they step down to editor, not viewer.
+    expect(await resolveRole(roomId, alice)).toBe("editor")
+
+    // And the room is genuinely free — somebody else can now take it.
+    expect(await claimOwnership(roomId, bob)).toBe("owner")
+  })
+
+  it("ignores a release from someone who is not the owner", async () => {
+    const roomId = await makeRoom()
+    const alice = await makeUser()
+    const bob = await makeUser()
+    await ensureMembership(roomId, alice)
+    await ensureMembership(roomId, bob)
+    await claimOwnership(roomId, alice)
+
+    // The role predicate in the UPDATE is the authorisation: a non-owner
+    // matches zero rows and nothing changes.
+    expect(await releaseOwnership(roomId, bob)).toBe(false)
+    expect(await roomHasOwner(roomId)).toBe(true)
+    expect(await resolveRole(roomId, alice)).toBe("owner")
+    expect(await resolveRole(roomId, bob)).toBe("viewer")
+  })
+
+  it("release is idempotent — a double release cannot orphan twice", async () => {
+    const roomId = await makeRoom()
+    const alice = await makeUser()
+    await ensureMembership(roomId, alice)
+    await claimOwnership(roomId, alice)
+
+    expect(await releaseOwnership(roomId, alice)).toBe(true)
+    expect(await releaseOwnership(roomId, alice)).toBe(false)
+    expect(await resolveRole(roomId, alice)).toBe("editor")
   })
 
   it("lets the owner change another member's role", async () => {

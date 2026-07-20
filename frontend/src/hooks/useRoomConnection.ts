@@ -63,6 +63,7 @@ export interface UseRoomConnectionResult {
   settings: RoomSettings
   clearCanvas: () => void
   claimOwnership: () => void
+  releaseOwnership: () => void
   setOpenEditing: (enabled: boolean) => void
   // Editor access requests. `editorRequests` is only ever populated for an
   // owner — the server sends the list to nobody else.
@@ -340,6 +341,13 @@ export default function useRoomConnection(
     send({ type: "claim_ownership", roomId })
   }, [roomId, send])
 
+  // The UI shows exactly one of claim/release depending on whether this
+  // connection is the owner, so these are two messages rather than one toggle —
+  // a toggle would be ambiguous if the client's view of ownership were stale.
+  const releaseOwnership = useCallback(() => {
+    send({ type: "release_ownership", roomId })
+  }, [roomId, send])
+
   const setOpenEditing = useCallback(
     (enabled: boolean) => {
       // No optimistic local update: the authoritative value comes back in a
@@ -433,6 +441,7 @@ export default function useRoomConnection(
     settings,
     clearCanvas,
     claimOwnership,
+    releaseOwnership,
     setOpenEditing,
     editorRequests,
     requestEditor,
