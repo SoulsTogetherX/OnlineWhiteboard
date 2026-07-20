@@ -2,6 +2,7 @@
 import { useEffect } from "react"
 
 import {
+  canvasDimsOf,
   getCanvasState,
   getIdxFromVec,
   getPosCorrected,
@@ -32,12 +33,13 @@ export default function useEyedropper(
       if (!active.current) {
         return
       }
-      const canvasState = getCanvasState(canvas)
+      const dims = canvasDimsOf(canvas)
+      const canvasState = getCanvasState(canvas, dims)
       if (!canvasState) {
         return
       }
       const [pos] = getPosCorrected(ev, canvas)
-      const idx = getIdxFromVec(pos)
+      const idx = getIdxFromVec(pos, dims)
       const data = canvasState.imageData.data
       onPick({
         r: data[idx],

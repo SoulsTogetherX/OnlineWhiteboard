@@ -5,7 +5,11 @@ import useSessionID from "./useSessionID"
 import { holdLocalPixels } from "@/utils/localHold"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
+import {
+  canvasDimsOf,
+  getCanvasState,
+  updateCanvas,
+} from "@shared/utils/helperProtocolMethods"
 
 import type {
   DrawInstruction,
@@ -115,7 +119,8 @@ export default function useUndoRedo(
       if (!canvas) {
         return null
       }
-      const canvasState = getCanvasState(canvas)
+      const dims = canvasDimsOf(canvas)
+      const canvasState = getCanvasState(canvas, dims)
       if (!canvasState) {
         return null
       }
@@ -130,11 +135,12 @@ export default function useUndoRedo(
       const applied = applyDrawInstructionToCanvas(
         canvasState.imageData,
         instruction,
+        dims,
       )
       if (!applied) {
         return null
       }
-      updateCanvas(canvas)
+      updateCanvas(canvas, dims)
 
       const appliedPatch = applied as PatchInstruction
       // An undo/redo is a local action too — hold the pixels it just changed so a

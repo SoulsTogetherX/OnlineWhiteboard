@@ -7,6 +7,7 @@ import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
 import {
   BASE,
   BLUE,
+  DIMS,
   GREEN,
   RED,
   getPixel,
@@ -26,7 +27,7 @@ describe("handleDrawFillInstruction — flood fill", () => {
   it("floods an empty canvas entirely", () => {
     const pixels = makeCanvas()
 
-    handleDrawFillInstruction(pixels, fill([0, 0]))
+    handleDrawFillInstruction(pixels, fill([0, 0]), DIMS)
 
     expect(paintedCount(pixels)).toBe(TOTAL_PIXELS)
     expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(RED)
@@ -34,10 +35,10 @@ describe("handleDrawFillInstruction — flood fill", () => {
 
   it("is a no-op when the target already holds the fill color", () => {
     const pixels = makeCanvas()
-    handleDrawFillInstruction(pixels, fill([0, 0]))
+    handleDrawFillInstruction(pixels, fill([0, 0]), DIMS)
     const before = Array.from(pixels)
 
-    handleDrawFillInstruction(pixels, fill([10, 10]))
+    handleDrawFillInstruction(pixels, fill([10, 10]), DIMS)
 
     expect(Array.from(pixels)).toEqual(before)
   })
@@ -51,13 +52,13 @@ describe("handleDrawFillInstruction — flood fill", () => {
       nextPos: [number, number],
     ): LineInstruction =>
       ({ type: "pencil", prevPos, nextPos, color: BLUE, ...BASE }) as LineInstruction
-    handleDrawLineInstruction(pixels, wall([2, 2], [8, 2]))
-    handleDrawLineInstruction(pixels, wall([8, 2], [8, 8]))
-    handleDrawLineInstruction(pixels, wall([8, 8], [2, 8]))
-    handleDrawLineInstruction(pixels, wall([2, 8], [2, 2]))
+    handleDrawLineInstruction(pixels, wall([2, 2], [8, 2]), DIMS)
+    handleDrawLineInstruction(pixels, wall([8, 2], [8, 8]), DIMS)
+    handleDrawLineInstruction(pixels, wall([8, 8], [2, 8]), DIMS)
+    handleDrawLineInstruction(pixels, wall([2, 8], [2, 2]), DIMS)
 
     // Fill the interior.
-    handleDrawFillInstruction(pixels, fill([5, 5], RED))
+    handleDrawFillInstruction(pixels, fill([5, 5], RED), DIMS)
 
     // Interior is red...
     expect(getPixel(pixels, 5, 5)).toEqual(RED)
@@ -76,7 +77,7 @@ describe("handleDrawFillInstruction — flood fill", () => {
     setPixel(pixels, 0, 0, GREEN)
     setPixel(pixels, 1, 1, GREEN)
 
-    handleDrawFillInstruction(pixels, fill([0, 0], RED))
+    handleDrawFillInstruction(pixels, fill([0, 0], RED), DIMS)
 
     expect(getPixel(pixels, 0, 0)).toEqual(RED)
     expect(getPixel(pixels, 1, 1)).toEqual(GREEN)
@@ -84,9 +85,9 @@ describe("handleDrawFillInstruction — flood fill", () => {
 
   it("replaces an existing region wholesale", () => {
     const pixels = makeCanvas()
-    handleDrawFillInstruction(pixels, fill([0, 0], RED))
+    handleDrawFillInstruction(pixels, fill([0, 0], RED), DIMS)
 
-    handleDrawFillInstruction(pixels, fill([60, 60], BLUE))
+    handleDrawFillInstruction(pixels, fill([60, 60], BLUE), DIMS)
 
     expect(getPixel(pixels, 0, 0)).toEqual(BLUE)
     expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(BLUE)
@@ -96,12 +97,9 @@ describe("handleDrawFillInstruction — flood fill", () => {
     const pixels = makeCanvas()
     // Vertical wall down column 1 — the region left of it is a 1px strip
     // pinned against the canvas edge.
-    handleDrawLineInstruction(
-      pixels,
-      { type: "pencil", prevPos: [1, 0], nextPos: [1, CANVAS_HEIGHT - 1], color: BLUE, ...BASE } as LineInstruction,
-    )
+    handleDrawLineInstruction(pixels, { type: "pencil", prevPos: [1, 0], nextPos: [1, CANVAS_HEIGHT - 1], color: BLUE, ...BASE } as LineInstruction, DIMS)
 
-    handleDrawFillInstruction(pixels, fill([0, 0], RED))
+    handleDrawFillInstruction(pixels, fill([0, 0], RED), DIMS)
 
     expect(getPixel(pixels, 0, 0)).toEqual(RED)
     expect(getPixel(pixels, 0, CANVAS_HEIGHT - 1)).toEqual(RED)

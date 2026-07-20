@@ -9,7 +9,7 @@ import { appendDrawEvents, ensureRoom } from "../eventRepository"
 import { pruneStaleRooms } from "../roomRepository"
 import { saveCanvas } from "../canvasRepository"
 import { runMigrations } from "../migrate"
-import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -114,7 +114,7 @@ describe.skipIf(!DB_CONFIGURED)("roomRepository — stale-room cleanup (integrat
   it("cascades: deleting a stale room removes its snapshot and events too", async () => {
     const id = freshId()
     // Give it a snapshot (via saveCanvas) and an event...
-    await saveCanvas(id, new Uint8ClampedArray(CANVAS_BYTES), 5)
+    await saveCanvas(id, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 5)
     await ensureRoom(id)
     await appendDrawEvents(id, [{ revision: 6, instruction: pencil() }])
     // ...then age it past the cutoff. saveCanvas stamped NOW(), so overwrite it.

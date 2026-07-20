@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest"
 
 import { isValidClientMessage } from "../validateSocketMessage"
 import { isValidDrawInstruction } from "../validateInstruction"
+import { DIMS } from "./testHelpers"
 import { MAX_PATCH_ENTRIES } from "../../constants/canvas"
 import { ROLES } from "../../types/identity"
 import {
@@ -274,7 +275,7 @@ describe("patch entry-count bound (memory DoS)", () => {
         entries,
         instructionId: 1,
         sessionId: "s",
-      }),
+      }, DIMS),
     ).toBe(true)
   })
 
@@ -288,7 +289,7 @@ describe("patch entry-count bound (memory DoS)", () => {
         entries,
         instructionId: 1,
         sessionId: "s",
-      }),
+      }, DIMS),
     ).toBe(false)
   })
 

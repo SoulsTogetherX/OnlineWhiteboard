@@ -12,14 +12,13 @@ import {
 import { mulberry32, randomSeed } from "./random"
 
 import {
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
   DEFAULT_COLOR,
   DEFAULT_STROKE_SIZE,
   MAX_SPRAY_DENSITY,
   MAX_SPRAY_RADIUS,
 } from "../constants/canvas"
 
+import type { CanvasDims } from "../constants/canvas"
 import type {
   BaseInstruction,
   PatchEntry,
@@ -50,6 +49,7 @@ function setPixelSpray(
   fields: { pos: Vec; radius: number; density: number; seed: number },
   color: ColorType,
   setPixel: (idx: number, color: ColorType) => void,
+  dims: CanvasDims,
 ): void {
   const rand = mulberry32(fields.seed)
   const [cx, cy] = fields.pos
@@ -59,8 +59,8 @@ function setPixelSpray(
     const dist = Math.sqrt(rand()) * fields.radius
     const x = Math.round(cx + Math.cos(angle) * dist)
     const y = Math.round(cy + Math.sin(angle) * dist)
-    if (x >= 0 && y >= 0 && x < CANVAS_WIDTH && y < CANVAS_HEIGHT) {
-      setPixel(getIdxFromVec([x, y]), color)
+    if (x >= 0 && y >= 0 && x < dims.width && y < dims.height) {
+      setPixel(getIdxFromVec([x, y], dims), color)
     }
   }
 }
@@ -78,6 +78,7 @@ function handlePuff(
   canvas: HTMLCanvasElement,
   base: BaseInstruction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): SprayInstruction | null {
   // Clamp the centre to the canvas — spraying with the pointer just past the
@@ -87,7 +88,7 @@ function handlePuff(
   const density = sprayDensityFor(radius)
   const seed = randomSeed()
 
-  const canvasState = getCanvasState(canvas)
+  const canvasState = getCanvasState(canvas, dims)
   if (canvasState === null) {
     return null
   }
@@ -99,8 +100,8 @@ function handlePuff(
   }
 
   const fields = { pos, radius, density, seed }
-  setPixelSpray(fields, base.color ?? DEFAULT_COLOR, drawer)
-  updateCanvas(canvas)
+  setPixelSpray(fields, base.color ?? DEFAULT_COLOR, drawer, dims)
+  updateCanvas(canvas, dims)
   return createInstruction(base, fields)
 }
 //#endregion
@@ -111,27 +112,30 @@ export function handleDrawSprayStart(
   base: BaseInstruction,
   _da: SprayAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): SprayInstruction | null {
-  return handlePuff(canvas, base, ev, record)
+  return handlePuff(canvas, base, ev, dims, record)
 }
 export function handleDrawSprayMotion(
   canvas: HTMLCanvasElement,
   base: BaseInstruction,
   _da: SprayAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): SprayInstruction | null {
-  return handlePuff(canvas, base, ev, record)
+  return handlePuff(canvas, base, ev, dims, record)
 }
 export function handleDrawSprayLeave(
   canvas: HTMLCanvasElement,
   base: BaseInstruction,
   _da: SprayAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): SprayInstruction | null {
-  return handlePuff(canvas, base, ev, record)
+  return handlePuff(canvas, base, ev, dims, record)
 }
 export function handleDrawSprayFinish(
   _canvas: HTMLCanvasElement,
@@ -144,8 +148,9 @@ export function handleDrawSprayFinish(
 export function handleDrawSprayInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: SprayInstruction,
+  dims: CanvasDims,
 ): void {
   const drawer = getDrawerMethod("spray", pixels)
-  setPixelSpray(inst, inst.color ?? DEFAULT_COLOR, drawer)
+  setPixelSpray(inst, inst.color ?? DEFAULT_COLOR, drawer, dims)
 }
 //#endregion

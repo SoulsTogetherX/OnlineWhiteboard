@@ -24,7 +24,7 @@
 //#region Imports
 import { gunzipSync, gzipSync } from "node:zlib"
 
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 //#endregion
 
 //#region Pack / Unpack
@@ -53,7 +53,7 @@ export function unpackPixels(stored: Buffer): Uint8ClampedArray | null {
   // A stream that decompresses cleanly but holds the wrong number of bytes is
   // still unusable — and would otherwise produce a canvas of the wrong length
   // that every index calculation downstream trusts.
-  if (raw.length !== CANVAS_BYTES) {
+  if (raw.length !== canvasBytes(DEFAULT_CANVAS_DIMS)) {
     return null
   }
 

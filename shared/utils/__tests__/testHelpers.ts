@@ -1,19 +1,25 @@
 //#region Imports
-import { CANVAS_BYTES, CANVAS_WIDTH } from "../../constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "../../constants/canvas"
 
+import type { CanvasDims } from "../../constants/canvas"
 import type { ColorType } from "../../types/primitive"
 //#endregion
 
 //#region Canvas Helpers
+// The dimensions the shared tests exercise. Exported so a test that needs to
+// pass dims into a now-parameterised function has one obvious value to use, and
+// so a future test at a different size can override the default here.
+export const DIMS: CanvasDims = DEFAULT_CANVAS_DIMS
+
 // A bare RGBA buffer, exactly what RoomState.pixels is on the server. Every
 // shared draw function accepts this directly, which is the whole reason the
 // protocol is testable without a DOM.
-export function makeCanvas(): Uint8ClampedArray {
-  return new Uint8ClampedArray(CANVAS_BYTES)
+export function makeCanvas(dims: CanvasDims = DIMS): Uint8ClampedArray {
+  return new Uint8ClampedArray(canvasBytes(dims))
 }
 
-export function idxOf(x: number, y: number): number {
-  return (y * CANVAS_WIDTH + x) << 2
+export function idxOf(x: number, y: number, dims: CanvasDims = DIMS): number {
+  return (y * dims.width + x) * 4
 }
 
 export function getPixel(

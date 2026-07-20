@@ -11,7 +11,7 @@ import {
 } from "../helperProtocolMethods"
 import { CANVAS_WIDTH, DEFAULT_COLOR } from "../../constants/canvas"
 
-import { BLUE, RED, makeCanvas } from "./testHelpers"
+import { BLUE, DIMS, RED, makeCanvas } from "./testHelpers"
 
 import type { PatchEntry } from "../../types/drawProtocol"
 import type { ColorPalette } from "../../types/primitive"
@@ -34,17 +34,17 @@ describe("clamp", () => {
 
 describe("getIdxFromVec", () => {
   it("maps the origin to byte 0", () => {
-    expect(getIdxFromVec([0, 0])).toBe(0)
+    expect(getIdxFromVec([0, 0], DIMS)).toBe(0)
   })
 
   it("advances 4 bytes per pixel along x (RGBA stride)", () => {
-    expect(getIdxFromVec([1, 0])).toBe(4)
-    expect(getIdxFromVec([2, 0])).toBe(8)
+    expect(getIdxFromVec([1, 0], DIMS)).toBe(4)
+    expect(getIdxFromVec([2, 0], DIMS)).toBe(8)
   })
 
   it("advances a full row (WIDTH * 4 bytes) per unit of y", () => {
-    expect(getIdxFromVec([0, 1])).toBe(CANVAS_WIDTH * 4)
-    expect(getIdxFromVec([3, 2])).toBe((2 * CANVAS_WIDTH + 3) * 4)
+    expect(getIdxFromVec([0, 1], DIMS)).toBe(CANVAS_WIDTH * 4)
+    expect(getIdxFromVec([3, 2], DIMS)).toBe((2 * CANVAS_WIDTH + 3) * 4)
   })
 })
 
@@ -54,16 +54,16 @@ describe("getLookAtMethod / getDrawerMethod", () => {
     const write = getDrawerMethod("pencil", pixels)
     const read = getLookAtMethod("pencil", pixels)
 
-    write(getIdxFromVec([4, 7]), RED)
+    write(getIdxFromVec([4, 7], DIMS), RED)
 
-    expect(read(getIdxFromVec([4, 7]))).toEqual(RED)
+    expect(read(getIdxFromVec([4, 7], DIMS))).toEqual(RED)
   })
 
   it("reads an untouched pixel as fully transparent", () => {
     const pixels = makeCanvas()
     const read = getLookAtMethod("pencil", pixels)
 
-    expect(read(getIdxFromVec([0, 0]))).toEqual({ r: 0, g: 0, b: 0, a: 0 })
+    expect(read(getIdxFromVec([0, 0], DIMS))).toEqual({ r: 0, g: 0, b: 0, a: 0 })
   })
 })
 
@@ -77,10 +77,10 @@ describe("withRecording", () => {
     const read = getLookAtMethod("pencil", pixels)
     const write = withRecording(read, getDrawerMethod("pencil", pixels), sink)
 
-    write(getIdxFromVec([1, 1]), RED)
+    write(getIdxFromVec([1, 1], DIMS), RED)
 
     expect(sink).toEqual([
-      { idx: getIdxFromVec([1, 1]), from: { r: 0, g: 0, b: 0, a: 0 }, to: RED },
+      { idx: getIdxFromVec([1, 1], DIMS), from: { r: 0, g: 0, b: 0, a: 0 }, to: RED },
     ])
   })
 
@@ -90,9 +90,9 @@ describe("withRecording", () => {
     const read = getLookAtMethod("pencil", pixels)
     const write = withRecording(read, getDrawerMethod("pencil", pixels), sink)
 
-    write(getIdxFromVec([1, 1]), RED)
+    write(getIdxFromVec([1, 1], DIMS), RED)
 
-    expect(read(getIdxFromVec([1, 1]))).toEqual(RED)
+    expect(read(getIdxFromVec([1, 1], DIMS))).toEqual(RED)
   })
 
   it("records `from` as the value at the time of the write, not the original", () => {
@@ -100,7 +100,7 @@ describe("withRecording", () => {
     const sink: PatchEntry[] = []
     const read = getLookAtMethod("pencil", pixels)
     const write = withRecording(read, getDrawerMethod("pencil", pixels), sink)
-    const idx = getIdxFromVec([2, 2])
+    const idx = getIdxFromVec([2, 2], DIMS)
 
     write(idx, RED)
     write(idx, BLUE)

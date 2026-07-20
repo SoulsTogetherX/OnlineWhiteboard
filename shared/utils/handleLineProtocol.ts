@@ -13,6 +13,7 @@ import {
 
 import { DEFAULT_COLOR, DEFAULT_STROKE_SIZE } from "../constants/canvas"
 
+import type { CanvasDims } from "../constants/canvas"
 import type {
   BaseInstruction,
   LineAction,
@@ -27,6 +28,7 @@ function setPixelLine(
   action: LineAction,
   color: ColorType,
   setPixel: (idx: number, color: ColorType) => void,
+  dims: CanvasDims,
   size: number = DEFAULT_STROKE_SIZE,
 ): void {
   if (!action.prevPos || !action.nextPos) {
@@ -52,11 +54,11 @@ function setPixelLine(
 
   const paint = (px: number, py: number): void => {
     if (stamped === null) {
-      setPixel(getIdxFromVec([px, py]), color)
+      setPixel(getIdxFromVec([px, py], dims), color)
       return
     }
-    forEachDiscPixel(px, py, size, (vec) => {
-      const idx = getIdxFromVec(vec)
+    forEachDiscPixel(px, py, size, dims, (vec) => {
+      const idx = getIdxFromVec(vec, dims)
       if (stamped.has(idx)) {
         return
       }
@@ -107,6 +109,7 @@ function handleDraw(
   base: BaseInstruction,
   da: LineAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): LineInstruction | null {
   // RAW position, deliberately unclamped. The action tracks where the pointer
@@ -125,12 +128,12 @@ function handleDraw(
   // clipped to the canvas and the visible part is drawn; only a segment that
   // misses the canvas completely (both ends outside, e.g. moving around beyond
   // the edge) draws nothing.
-  const segment = clipSegmentToCanvas(da.prevPos, da.nextPos)
+  const segment = clipSegmentToCanvas(da.prevPos, da.nextPos, dims)
   if (segment === null) {
     return null
   }
 
-  const canvasState = getCanvasState(canvas)
+  const canvasState = getCanvasState(canvas, dims)
   if (canvasState === null) {
     return null
   }
@@ -146,9 +149,10 @@ function handleDraw(
     { ...da, prevPos, nextPos },
     base.color ?? DEFAULT_COLOR,
     drawer,
+    dims,
     base.size,
   )
-  updateCanvas(canvas)
+  updateCanvas(canvas, dims)
   // `...base` in createInstruction carries `size` onto the wire instruction, so
   // the server and every other client stamp the same-width stroke.
   return createInstruction(da, base, prevPos, nextPos)
@@ -161,6 +165,7 @@ export function handleDrawLineStart(
   base: BaseInstruction,
   da: LineAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): LineInstruction | null {
   // A gesture always starts on the canvas — useDrag binds pointerdown to the
@@ -170,7 +175,7 @@ export function handleDrawLineStart(
 
   da.prevPos = start
   da.nextPos = start
-  return handleDraw(canvas, base, da, ev, record)
+  return handleDraw(canvas, base, da, ev, dims, record)
 }
 export function handleDrawLineFinish(
   _canvas: HTMLCanvasElement,
@@ -185,24 +190,27 @@ export function handleDrawLineMotion(
   base: BaseInstruction,
   da: LineAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): LineInstruction | null {
-  return handleDraw(canvas, base, da, ev, record)
+  return handleDraw(canvas, base, da, ev, dims, record)
 }
 export function handleDrawLineLeave(
   canvas: HTMLCanvasElement,
   base: BaseInstruction,
   da: LineAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): LineInstruction | null {
-  return handleDraw(canvas, base, da, ev, record)
+  return handleDraw(canvas, base, da, ev, dims, record)
 }
 export function handleDrawLineInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: LineInstruction,
+  dims: CanvasDims,
 ): void {
   const drawer = getDrawerMethod(inst.type, pixels)
-  setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer, inst.size)
+  setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer, dims, inst.size)
 }
 //#endregion

@@ -3,7 +3,11 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  DEFAULT_CANVAS_DIMS,
+} from "@shared/constants/canvas"
 import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
   appendDrawEvents,
@@ -373,7 +377,12 @@ export default class RoomManager {
       // "replay", not "decide": the log holds what each patch ACTUALLY applied
       // when it was first decided. Re-deciding it against a rebuilt buffer would
       // let recovery reach a different canvas than the one that was live.
-      applyDrawInstructionToCanvas(stored.pixels, event.instruction, "replay")
+      applyDrawInstructionToCanvas(
+        stored.pixels,
+        event.instruction,
+        DEFAULT_CANVAS_DIMS,
+        "replay",
+      )
       revision = event.revision
     }
     if (events.length > 0) {
@@ -628,7 +637,11 @@ export default class RoomManager {
     room: RoomState,
     instruction: DrawInstruction,
   ): DrawInstruction | null {
-    const applied = applyDrawInstructionToCanvas(room.pixels, instruction)
+    const applied = applyDrawInstructionToCanvas(
+      room.pixels,
+      instruction,
+      DEFAULT_CANVAS_DIMS,
+    )
     if (!applied) {
       return null
     }

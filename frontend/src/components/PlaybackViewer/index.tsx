@@ -3,7 +3,11 @@ import { useEffect, useRef, useState } from "react"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import {
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  DEFAULT_CANVAS_DIMS,
+} from "@shared/constants/canvas"
 
 import type { PlaybackData } from "@/hooks/useRoomConnection"
 
@@ -55,9 +59,12 @@ export default function PlaybackViewer({
     if (!playback) {
       return
     }
-    const base = createImageDataFromBase64(playback.base)
+    // Playback still runs at the default dimensions: the playback message does
+    // not yet carry per-room dims (a gap for resized rooms, tracked for the
+    // timeline work). Decode against the default; a mismatched length returns
+    // null and animates nothing rather than throwing.
+    const base = createImageDataFromBase64(playback.base, DEFAULT_CANVAS_DIMS)
     if (base === null) {
-      // Wrong number of bytes for this canvas — nothing sensible to animate.
       return
     }
     baseRef.current = base
@@ -89,7 +96,12 @@ export default function PlaybackViewer({
     for (let i = renderedStepRef.current; i < step; i += 1) {
       // "replay": these steps are logged history, already decided. Re-running a
       // patch's CAS here would animate a canvas that never existed.
-      applyDrawInstructionToCanvas(working, playback.steps[i].instruction, "replay")
+      applyDrawInstructionToCanvas(
+        working,
+        playback.steps[i].instruction,
+        { width: base.width, height: base.height },
+        "replay",
+      )
     }
     renderedStepRef.current = step
     ctx.putImageData(working, 0, 0)

@@ -19,7 +19,7 @@ import {
   oldestCheckpointRevision,
 } from "../checkpointRepository"
 import { runMigrations } from "../migrate"
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -36,7 +36,7 @@ async function makeRoom(): Promise<string> {
 }
 
 function patterned(seed: number): Uint8ClampedArray {
-  const px = new Uint8ClampedArray(CANVAS_BYTES)
+  const px = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
   for (let i = 0; i < px.length; i += 4) {
     px[i] = (i + seed) % 256
     px[i + 3] = 255

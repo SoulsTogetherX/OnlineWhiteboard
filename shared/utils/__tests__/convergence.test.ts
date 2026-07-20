@@ -32,6 +32,7 @@ import { getIdxFromVec } from "../helperProtocolMethods"
 import {
   BASE,
   BLUE,
+  DIMS,
   GREEN,
   RED,
   TRANSPARENT,
@@ -55,7 +56,7 @@ function makeRoom(clientCount: number) {
     clients,
     // Returns what the server broadcast, so a test can assert on the narrowing.
     deliver(instruction: DrawInstruction): DrawInstruction | null {
-      const applied = applyDrawInstructionToCanvas(server, instruction)
+      const applied = applyDrawInstructionToCanvas(server, instruction, DIMS)
       if (applied === null) {
         // Rejected or no-op: nothing is broadcast, so no client hears anything.
         return null
@@ -63,7 +64,7 @@ function makeRoom(clientCount: number) {
       // Clients REPLAY: the server already decided. This asymmetry is the whole
       // point — see PatchApplyMode in handleCanvasProtocol.ts.
       clients.forEach((pixels) =>
-        applyDrawInstructionToCanvas(pixels, applied, "replay"),
+        applyDrawInstructionToCanvas(pixels, applied, DIMS, "replay"),
       )
       return applied
     },
@@ -151,8 +152,8 @@ describe("convergence — every client ends byte-identical to the server", () =>
     // broadcasting `instruction` instead of `applied` — all seven tests still
     // passed. The case where it genuinely matters is the one below.
     const room = makeRoom(2)
-    const kept = getIdxFromVec([1, 1])
-    const clobbered = getIdxFromVec([2, 2])
+    const kept = getIdxFromVec([1, 1], DIMS)
+    const clobbered = getIdxFromVec([2, 2], DIMS)
 
     // Paint RED at both, everywhere, through the normal path so server and
     // clients agree on the starting state.
@@ -194,7 +195,7 @@ describe("convergence — every client ends byte-identical to the server", () =>
     }
 
     // Optimistic local paint, before the server has seen anything.
-    applyDrawInstructionToCanvas(sender, stroke)
+    applyDrawInstructionToCanvas(sender, stroke, DIMS)
     // Then the round trip: server applies and broadcasts back to the sender.
     room.deliver(stroke)
 
@@ -230,7 +231,7 @@ describe("convergence — every client ends byte-identical to the server", () =>
   it("converges: two concurrent patches, one applied optimistically", () => {
     const room = makeRoom(1)
     const [clientA] = room.clients
-    const idx = getIdxFromVec([1, 1])
+    const idx = getIdxFromVec([1, 1], DIMS)
 
     room.deliver({ type: "pencil", prevPos: [1, 1], nextPos: [1, 1], color: RED, ...BASE })
 
@@ -239,7 +240,7 @@ describe("convergence — every client ends byte-identical to the server", () =>
       type: "patch",
       entries: [{ idx, from: RED, to: TRANSPARENT }],
       ...BASE,
-    })
+    }, DIMS)
 
     // Meanwhile B's undo of the same pixel reaches the server first and applies.
     room.deliver({

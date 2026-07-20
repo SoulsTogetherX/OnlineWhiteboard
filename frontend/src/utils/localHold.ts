@@ -25,7 +25,7 @@
 //#endregion
 
 //#region Imports
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { PatchEntry } from "@shared/types/drawProtocol"
 import type { ColorType } from "@shared/types/primitive"
@@ -134,6 +134,8 @@ export function clearHolds(): void {
   holds.clear()
 }
 
-// Exposed for the test only: the buffer length a hold index is bounded against.
-export const HOLD_BUFFER_BYTES = CANVAS_BYTES
+// Exposed for the test only: the default-canvas buffer length. Holds are bounded
+// against the live buffer's actual length (overlayHolds), not this — it exists
+// only so a test can size a representative buffer.
+export const HOLD_BUFFER_BYTES = canvasBytes(DEFAULT_CANVAS_DIMS)
 //#endregion

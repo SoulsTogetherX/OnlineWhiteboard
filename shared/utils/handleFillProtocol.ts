@@ -9,9 +9,10 @@ import {
   withRecording,
 } from "./helperProtocolMethods"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
+import { DEFAULT_COLOR } from "../constants/canvas"
 import { colorsEqual } from "../types/primitive"
 
+import type { CanvasDims } from "../constants/canvas"
 import type {
   BaseInstruction,
   FillAction,
@@ -26,6 +27,7 @@ function setPixelFill(
   action: FillAction,
   newColor: ColorType,
   imageData: ImageData | Uint8ClampedArray<ArrayBufferLike>,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): void {
   // Get Data
@@ -39,7 +41,7 @@ function setPixelFill(
   }
 
   // Get Info
-  const startIdx = getIdxFromVec(startPos)
+  const startIdx = getIdxFromVec(startPos, dims)
   const targetColor = getColor(startIdx)
 
   if (colorsEqual(targetColor, newColor)) {
@@ -64,13 +66,13 @@ function setPixelFill(
     for (const [dx, dy] of directions) {
       const nx = x + dx,
         ny = y + dy
-      const idx = getIdxFromVec([nx, ny])
+      const idx = getIdxFromVec([nx, ny], dims)
 
       if (
         0 <= nx &&
         0 <= ny &&
-        nx < CANVAS_WIDTH &&
-        ny < CANVAS_HEIGHT &&
+        nx < dims.width &&
+        ny < dims.height &&
         colorsEqual(targetColor, getColor(idx))
       ) {
         setColor(idx, newColor)
@@ -106,6 +108,7 @@ export function handleDrawFillFinish(
   base: BaseInstruction,
   da: FillAction,
   ev: PointerEvent,
+  dims: CanvasDims,
   record?: PatchEntry[],
 ): FillInstruction | null {
   const next = getPosCorrected(ev, canvas)
@@ -114,13 +117,19 @@ export function handleDrawFillFinish(
     return null
   }
 
-  const canvasState = getCanvasState(canvas)
+  const canvasState = getCanvasState(canvas, dims)
   if (canvasState === null) {
     return null
   }
 
-  setPixelFill(da, base.color ?? DEFAULT_COLOR, canvasState.imageData, record)
-  updateCanvas(canvas)
+  setPixelFill(
+    da,
+    base.color ?? DEFAULT_COLOR,
+    canvasState.imageData,
+    dims,
+    record,
+  )
+  updateCanvas(canvas, dims)
   return createInstruction(da, base)
 }
 export function handleDrawFillMotion(
@@ -142,7 +151,8 @@ export function handleDrawFillLeave(
 export function handleDrawFillInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: FillInstruction,
+  dims: CanvasDims,
 ): void {
-  setPixelFill(inst, inst.color ?? DEFAULT_COLOR, pixels)
+  setPixelFill(inst, inst.color ?? DEFAULT_COLOR, pixels, dims)
 }
 //#endregion

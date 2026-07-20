@@ -31,7 +31,11 @@ import type {
 import type { Participant, RoomRole } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
-import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocolMethods"
+import {
+  canvasDimsOf,
+  getCanvasState,
+  updateCanvas,
+} from "@shared/utils/helperProtocolMethods"
 //#endregion
 
 //#region Constants
@@ -166,13 +170,14 @@ export default function useRoomConnection(
   // as it reads them, so a paint after expiry naturally reveals the converged
   // pixel underneath.
   const paintHeld = useCallback((canvas: HTMLCanvasElement) => {
-    const canvasState = getCanvasState(canvas)
+    const dims = canvasDimsOf(canvas)
+    const canvasState = getCanvasState(canvas, dims)
     if (canvasState === null) {
       return
     }
     const overlay = overlayHolds(canvasState.imageData.data, Date.now())
     if (overlay === null) {
-      updateCanvas(canvas)
+      updateCanvas(canvas, dims)
     } else {
       canvasState.ctx.putImageData(
         new ImageData(overlay, canvas.width, canvas.height),
@@ -315,7 +320,8 @@ export default function useRoomConnection(
             if (!canvas) {
               return
             }
-            const canvasState = getCanvasState(canvas)
+            const dims = canvasDimsOf(canvas)
+            const canvasState = getCanvasState(canvas, dims)
             if (canvasState === null) {
               return
             }
@@ -325,6 +331,7 @@ export default function useRoomConnection(
             applyDrawInstructionToCanvas(
               canvasState.imageData,
               drawMessage.instruction,
+              dims,
               "replay",
             )
             // repaintWithHolds, not updateCanvas: if this remote instruction
@@ -359,7 +366,13 @@ export default function useRoomConnection(
             if (pixels === null || !canvas) {
               return
             }
-            applySnapshotToCanvas(canvas, pixels)
+            // The snapshot header carries the room's dimensions; sizing the
+            // element to them here is what makes a live resize take effect on the
+            // client.
+            applySnapshotToCanvas(canvas, pixels, {
+              width: snapshotMessage.width,
+              height: snapshotMessage.height,
+            })
             // A snapshot replaces the whole buffer, so re-composite any live
             // holds on top — otherwise a resync arriving right after a local
             // stroke would blink it away before its 100 ms were up.

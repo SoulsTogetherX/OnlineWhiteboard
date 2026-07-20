@@ -3,24 +3,24 @@ import { inflateRawSync } from "node:zlib"
 
 import { compressSnapshotPayload } from "@/sockets/snapshotCompression"
 
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 describe("compressSnapshotPayload", () => {
   it("deflates a blank canvas to a tiny fraction of its size", () => {
     // The common case by a wide margin: every client joining an empty room gets
     // this, and 57,600 identical bytes is exactly what deflate is best at.
-    const blank = new Uint8Array(CANVAS_BYTES)
+    const blank = new Uint8Array(canvasBytes(DEFAULT_CANVAS_DIMS))
 
     const { payload, compression } = compressSnapshotPayload(blank)
 
     expect(compression).toBe("deflate-raw")
-    expect(payload.length).toBeLessThan(CANVAS_BYTES / 100)
+    expect(payload.length).toBeLessThan(canvasBytes(DEFAULT_CANVAS_DIMS) / 100)
   })
 
   it("round-trips back to the exact original bytes", () => {
     // Snapshots are the recovery path — a lossy or misaligned round trip would
     // desynchronise every client that resynced.
-    const pixels = new Uint8Array(CANVAS_BYTES)
+    const pixels = new Uint8Array(canvasBytes(DEFAULT_CANVAS_DIMS))
     for (let i = 0; i < pixels.length; i += 4) {
       pixels[i] = (i / 4) % 256
       pixels[i + 1] = 0
@@ -60,7 +60,7 @@ describe("compressSnapshotPayload", () => {
     // send queue. If the payload were a view over it, the bytes on the wire
     // would be whatever the canvas looked like at flush time — disagreeing with
     // the revision in the frame's own header.
-    const pixels = new Uint8Array(CANVAS_BYTES)
+    const pixels = new Uint8Array(canvasBytes(DEFAULT_CANVAS_DIMS))
     pixels[0] = 11
 
     const { payload, compression } = compressSnapshotPayload(pixels)

@@ -7,7 +7,7 @@ import pool, { db } from "../pool"
 import { loadCanvas, saveCanvas } from "../canvasRepository"
 import { runMigrations } from "../migrate"
 
-import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 //#endregion
 
 //#region Gate
@@ -23,7 +23,7 @@ const DB_CONFIGURED = Boolean(process.env.POSTGRES_PASSWORD)
 // A distinctive, non-blank pixel pattern so a round-trip failure is obvious and
 // a blank-canvas fallback can never masquerade as success.
 function patternedCanvas(): Uint8ClampedArray {
-  const pixels = new Uint8ClampedArray(CANVAS_BYTES)
+  const pixels = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
   for (let i = 0; i < pixels.length; i += 4) {
     pixels[i] = i % 256 // R varies
     pixels[i + 1] = 0
@@ -65,7 +65,7 @@ describe.skipIf(!DB_CONFIGURED)("canvasRepository (integration)", () => {
     const result = await loadCanvas(freshRoomId())
 
     expect(result.revision).toBe(0)
-    expect(result.pixels).toHaveLength(CANVAS_BYTES)
+    expect(result.pixels).toHaveLength(canvasBytes(DEFAULT_CANVAS_DIMS))
     expect(result.pixels.every((byte) => byte === 0)).toBe(true)
   })
 
@@ -94,7 +94,7 @@ describe.skipIf(!DB_CONFIGURED)("canvasRepository (integration)", () => {
       .where("room_id", "=", roomId)
       .executeTakeFirstOrThrow()
 
-    expect(row.rgba.length).toBeLessThan(CANVAS_BYTES)
+    expect(row.rgba.length).toBeLessThan(canvasBytes(DEFAULT_CANVAS_DIMS))
     // gzip magic number — 0x1f 0x8b.
     expect([row.rgba[0], row.rgba[1]]).toEqual([0x1f, 0x8b])
   })

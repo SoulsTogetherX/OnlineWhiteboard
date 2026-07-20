@@ -3,9 +3,10 @@ import { db } from "./pool"
 import { packPixels, unpackPixels } from "./pixelStorage"
 
 import {
-  CANVAS_BYTES,
   CANVAS_HEIGHT,
   CANVAS_WIDTH,
+  DEFAULT_CANVAS_DIMS,
+  canvasBytes,
 } from "@shared/constants/canvas"
 //#endregion
 
@@ -18,7 +19,7 @@ export type StoredCanvas = {
 
 //#region Repository Methods
 function clearCanvas(): Uint8ClampedArray {
-  return new Uint8ClampedArray(CANVAS_BYTES)
+  return new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
 }
 
 // Loads a room's canvas from its latest checkpoint. In Stage 2 the latest

@@ -13,7 +13,7 @@ import {
 } from "../eventRepository"
 import { runMigrations } from "../migrate"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -71,7 +71,7 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
     expect(await eventCount(roomId)).toBe(5)
 
     // Checkpoint at revision 3: events 1..3 are now baked into the snapshot.
-    await saveCanvas(roomId, new Uint8ClampedArray(CANVAS_BYTES), 3)
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 3)
 
     // Only events strictly newer than the snapshot survive.
     const remaining = await loadEventsSince(roomId, 0)
@@ -91,7 +91,7 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
         batch.push(event(revision))
       }
       await appendDrawEvents(roomId, batch)
-      await saveCanvas(roomId, new Uint8ClampedArray(CANVAS_BYTES), revision)
+      await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), revision)
 
       // After each checkpoint the log is empty — everything drawn this round was
       // folded into the snapshot. It never grows with total drawing, only with
@@ -108,16 +108,16 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
     await ensureRoom(roomId)
 
     // Build a canvas by applying 3 strokes, then checkpoint it at revision 3.
-    const canvas = new Uint8ClampedArray(CANVAS_BYTES)
+    const canvas = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
     for (let r = 1; r <= 3; r += 1) {
-      applyDrawInstructionToCanvas(canvas, pencilAt(r))
+      applyDrawInstructionToCanvas(canvas, pencilAt(r), DEFAULT_CANVAS_DIMS)
     }
     await appendDrawEvents(roomId, [evAt(1), evAt(2), evAt(3)])
     await saveCanvas(roomId, canvas, 3) // compacts events 1..3 away
 
     // Two more strokes drawn AFTER the checkpoint — these live only in the log.
-    applyDrawInstructionToCanvas(canvas, pencilAt(4))
-    applyDrawInstructionToCanvas(canvas, pencilAt(5))
+    applyDrawInstructionToCanvas(canvas, pencilAt(4), DEFAULT_CANVAS_DIMS)
+    applyDrawInstructionToCanvas(canvas, pencilAt(5), DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [evAt(4), evAt(5)])
 
     // Recover exactly as the room manager does: snapshot + events after it.
@@ -125,7 +125,7 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
     const recovered = new Uint8ClampedArray(stored.pixels)
     const survivors = await loadEventsSince(roomId, stored.revision)
     for (const e of survivors) {
-      applyDrawInstructionToCanvas(recovered, e.instruction)
+      applyDrawInstructionToCanvas(recovered, e.instruction, DEFAULT_CANVAS_DIMS)
     }
 
     expect(stored.revision).toBe(3) // recovered from the compacted snapshot

@@ -23,6 +23,7 @@ import {
   handleDrawSprayStart,
 } from "@shared/utils/handleSprayProtocol"
 import {
+  canvasDimsOf,
   getDirectColor,
   getToolColor,
 } from "@shared/utils/helperProtocolMethods"
@@ -99,6 +100,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     baseInstruction.current.instructionId += 1
     baseInstruction.current.color = getToolColor(
@@ -118,6 +120,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -128,6 +131,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }
@@ -140,6 +144,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     let instruction: DrawInstruction | null = null
     switch (da.type) {
@@ -158,6 +163,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
         break
@@ -190,6 +196,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     switch (da.type) {
       case "pencil":
@@ -199,6 +206,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -209,6 +217,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }
@@ -221,6 +230,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     switch (da.type) {
       case "pencil":
@@ -230,6 +240,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -240,6 +251,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }

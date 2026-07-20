@@ -9,6 +9,7 @@ import { handleDrawSprayInstruction } from "./handleSprayProtocol"
 import { handleDrawPatchInstruction } from "./handlePatchProtocol"
 import { isValidDrawInstruction } from "./validateInstruction"
 
+import type { CanvasDims } from "../constants/canvas"
 import type { DrawInstruction } from "../types/drawProtocol"
 //#endregion
 
@@ -57,22 +58,23 @@ export type PatchApplyMode = "decide" | "replay"
 export function applyDrawInstructionToCanvas(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: DrawInstruction,
+  dims: CanvasDims,
   mode: PatchApplyMode = "decide",
 ): DrawInstruction | null {
-  if (!isValidDrawInstruction(inst)) {
+  if (!isValidDrawInstruction(inst, dims)) {
     return null
   }
 
   switch (inst.type) {
     case "pencil":
     case "eraser":
-      handleDrawLineInstruction(pixels, inst)
+      handleDrawLineInstruction(pixels, inst, dims)
       return inst
     case "bucket":
-      handleDrawFillInstruction(pixels, inst)
+      handleDrawFillInstruction(pixels, inst, dims)
       return inst
     case "spray":
-      handleDrawSprayInstruction(pixels, inst)
+      handleDrawSprayInstruction(pixels, inst, dims)
       return inst
     case "clear": {
       // Blank every byte — R, G, B and A all to 0 (fully transparent).
@@ -97,13 +99,17 @@ export function applyDrawInstructionToCanvas(
 export function applySnapshotToCanvas(
   canvas: HTMLCanvasElement,
   pixels: Uint8Array,
+  dims: CanvasDims,
 ): void {
-  const canvasState = getCanvasState(canvas)
+  // Size the element to the snapshot's dims FIRST — this is where a live resize
+  // takes effect on the client, because getCanvasState drops the stale cache and
+  // rebuilds at the new size when the dimensions change.
+  const canvasState = getCanvasState(canvas, dims)
   if (!canvasState) {
     return
   }
 
-  const imageData = createImageDataFromBytes(pixels)
+  const imageData = createImageDataFromBytes(pixels, dims)
   if (imageData === null) {
     return
   }

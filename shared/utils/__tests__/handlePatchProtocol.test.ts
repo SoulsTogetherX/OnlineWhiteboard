@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { handleDrawPatchInstruction } from "../handlePatchProtocol"
 import { getIdxFromVec } from "../helperProtocolMethods"
 
-import { BASE, BLUE, GREEN, RED, TRANSPARENT, getPixel, makeCanvas, setPixel } from "./testHelpers"
+import { BASE, BLUE, DIMS, GREEN, RED, TRANSPARENT, getPixel, makeCanvas, setPixel } from "./testHelpers"
 
 import type { PatchEntry, PatchInstruction } from "../../types/drawProtocol"
 
@@ -17,7 +17,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
   it("applies an entry when the pixel still holds the expected `from` color", () => {
     const pixels = makeCanvas()
     setPixel(pixels, 1, 1, RED)
-    const idx = getIdxFromVec([1, 1])
+    const idx = getIdxFromVec([1, 1], DIMS)
 
     const applied = handleDrawPatchInstruction(
       pixels,
@@ -33,7 +33,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
     // the pixel this undo expected to find RED at. Undoing must not clobber it.
     const pixels = makeCanvas()
     setPixel(pixels, 1, 1, GREEN)
-    const idx = getIdxFromVec([1, 1])
+    const idx = getIdxFromVec([1, 1], DIMS)
 
     const applied = handleDrawPatchInstruction(
       pixels,
@@ -51,9 +51,9 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
     setPixel(pixels, 2, 0, RED) // matches -> will apply
 
     const entries: PatchEntry[] = [
-      { idx: getIdxFromVec([0, 0]), from: RED, to: BLUE },
-      { idx: getIdxFromVec([1, 0]), from: RED, to: BLUE },
-      { idx: getIdxFromVec([2, 0]), from: RED, to: BLUE },
+      { idx: getIdxFromVec([0, 0], DIMS), from: RED, to: BLUE },
+      { idx: getIdxFromVec([1, 0], DIMS), from: RED, to: BLUE },
+      { idx: getIdxFromVec([2, 0], DIMS), from: RED, to: BLUE },
     ]
 
     const applied = handleDrawPatchInstruction(pixels, patch(entries))
@@ -71,7 +71,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
 
     const applied = handleDrawPatchInstruction(
       pixels,
-      patch([{ idx: getIdxFromVec([3, 3]), from: RED, to: BLUE }]),
+      patch([{ idx: getIdxFromVec([3, 3], DIMS), from: RED, to: BLUE }]),
     )
 
     expect(applied).toHaveLength(0)
@@ -81,7 +81,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
   it("round-trips: applying a patch then its reverse restores the original", () => {
     const pixels = makeCanvas()
     setPixel(pixels, 5, 5, RED)
-    const idx = getIdxFromVec([5, 5])
+    const idx = getIdxFromVec([5, 5], DIMS)
 
     handleDrawPatchInstruction(pixels, patch([{ idx, from: RED, to: BLUE }]))
     // The reverse patch is what useUndoRedo.reversed() builds.
@@ -92,7 +92,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
 
   it("can undo back to transparent", () => {
     const pixels = makeCanvas()
-    const idx = getIdxFromVec([6, 6])
+    const idx = getIdxFromVec([6, 6], DIMS)
     setPixel(pixels, 6, 6, RED)
 
     const applied = handleDrawPatchInstruction(
@@ -110,7 +110,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
     // in handleCanvasProtocol.ts).
     const pixels = makeCanvas()
     setPixel(pixels, 1, 1, GREEN) // NOT the `from` the entry expects
-    const idx = getIdxFromVec([1, 1])
+    const idx = getIdxFromVec([1, 1], DIMS)
 
     const applied = handleDrawPatchInstruction(
       pixels,
@@ -127,8 +127,8 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
     // notice. In replay nothing is ever dropped, so it must report all of them.
     const pixels = makeCanvas()
     const entries: PatchEntry[] = [
-      { idx: getIdxFromVec([0, 0]), from: RED, to: BLUE },
-      { idx: getIdxFromVec([1, 0]), from: RED, to: GREEN },
+      { idx: getIdxFromVec([0, 0], DIMS), from: RED, to: BLUE },
+      { idx: getIdxFromVec([1, 0], DIMS), from: RED, to: GREEN },
     ]
 
     const applied = handleDrawPatchInstruction(pixels, patch(entries), "replay")
@@ -147,7 +147,7 @@ describe("handleDrawPatchInstruction — compare-and-swap", () => {
 
     const applied = handleDrawPatchInstruction(
       pixels,
-      patch([{ idx: getIdxFromVec([1, 1]), from: RED, to: BLUE }]),
+      patch([{ idx: getIdxFromVec([1, 1], DIMS), from: RED, to: BLUE }]),
     )
 
     expect(applied).toHaveLength(0)
