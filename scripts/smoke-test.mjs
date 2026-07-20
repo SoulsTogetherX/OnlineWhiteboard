@@ -334,6 +334,18 @@ async function main() {
     ? fail("the rejected clear was broadcast anyway")
     : pass("rejected clear never reached the canvas or other clients")
 
+  // A guest resizing the canvas must be refused too — resize is owner-only, and
+  // it is a well-formed message (valid dims), so this proves the AUTHORISATION
+  // check, not the shape check, is doing the work. No other client should ever
+  // see a new-dimensioned snapshot from it.
+  a.seen.length = 0
+  a.ws.send(JSON.stringify({ type: "resize", roomId: ROOM, width: 300, height: 300 }))
+  await waitFor(a.seen, (m) => m.type === "error", "a rejection of the guest resize")
+  await new Promise((r) => setTimeout(r, 300))
+  b.seen.some((m) => m.type === "canvas_snapshot" && m.width === 300)
+    ? fail("the guest resize took effect and was broadcast")
+    : pass("guest's resize request is rejected (owner-only), never broadcast")
+
   // --- Simultaneous joins into a cold room ----------------------------------
   // REGRESSION (split-brain rooms): getOrCreateRoom checked `rooms`, then
   // awaited five database calls before publishing into it. Every joiner that

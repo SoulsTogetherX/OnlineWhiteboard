@@ -798,13 +798,17 @@ Sync-model risk called out below was real: the patch-replay fix and the cold-roo
 both surfaced here. Convergence is tested explicitly (unit harness + a byte-compare in the
 smoke test + a live browser drive), not just delivery.
 
-### Phase 4 — Per-room canvas resize (**largest**)
+### ✅ Phase 4 — Per-room canvas resize
 
-Canvas dimensions are currently compile-time constants used by *every* index calculation
-in `shared/` (`getIdxFromVec`, `isValidVec`, `clipSegmentToCanvas`, `forEachDiscPixel`,
-`createImageDataFromBase64`, the `loadCanvas` dimension guard). Making them per-room
-changes nearly every signature in that layer and re-parameterises its whole test suite.
-Crop/pad from top-left (§16); owner-only; forces a resync.
+Canvas dimensions moved from compile-time constants to a per-room `CanvasDims`
+(`shared/constants/canvas`), threaded through every index/bounds/validation/apply function
+in `shared/`. New rooms default to **256×256**; a room may be resized within **[16, 512]**
+(owner-only, `resize` socket message, crop/pad from top-left per §16, forcing a resync).
+The snapshot row is authoritative for a room's size; `resizePixels` does the crop/pad; a
+migration adds CHECK constraints on every stored dimension. `maxPayload` rose to 4 MiB to
+fit the largest full-canvas undo. The client adopts a live resize from the snapshot header
+and resets its undo stacks (stale byte indices) via `canvasResetKey`. Landed in three
+commits: the mechanical parameterisation, the per-room wiring, and the resize operation.
 
 ### Phase 5 — UI redesign (**large**)
 

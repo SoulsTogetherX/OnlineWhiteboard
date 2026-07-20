@@ -23,7 +23,7 @@ import {
   MAX_ID_LENGTH,
   MAX_ROOM_ID_LENGTH,
 } from "../constants/protocol"
-import { MAX_CANVAS_DIMS } from "../constants/canvas"
+import { MAX_CANVAS_DIMS, isValidCanvasDims } from "../constants/canvas"
 import { isValidDrawInstruction, isValidVec } from "./validateInstruction"
 import { ROLES } from "../types/identity"
 
@@ -112,6 +112,16 @@ export function isValidClientMessage(
       // exactly the shape that would silently ENABLE editing when the sender
       // meant to disable it.
       return isRoomId(message.roomId) && typeof message.enabled === "boolean"
+
+    case "resize":
+      // isValidCanvasDims enforces integer width/height within [MIN, MAX], the
+      // same gate the server applies the resize with — so a request for a zero,
+      // negative, or absurd size is dropped as malformed here and never reaches
+      // the (attacker-influenced) database CHECK as a 500.
+      return (
+        isRoomId(message.roomId) &&
+        isValidCanvasDims({ width: message.width, height: message.height })
+      )
 
     case "respond_editor":
       return (

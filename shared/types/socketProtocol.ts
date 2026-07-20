@@ -62,6 +62,17 @@ export type ClientSocketMessage =
       enabled: boolean
     }
   | {
+      // Resize the room's canvas. OWNER ONLY. Crop/pad from the top-left
+      // (§16 — lossless for the kept region, unlike resampling), then broadcast
+      // a fresh snapshot so every client adopts the new size. width/height must
+      // be within [MIN_CANVAS_DIMENSION, MAX_CANVAS_DIMENSION]; the server
+      // validates and ignores a no-op (same size).
+      type: "resize"
+      roomId: string
+      width: number
+      height: number
+    }
+  | {
       // A signed-in viewer asking the owner for editor access. Meaningless from
       // a guest (no account to promote) or from someone who already has it.
       type: "request_editor"

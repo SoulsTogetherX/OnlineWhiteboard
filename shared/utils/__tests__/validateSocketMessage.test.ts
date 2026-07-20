@@ -160,6 +160,26 @@ describe("isValidClientMessage — room actions and permissions", () => {
     )
   })
 
+  it("accepts a resize within bounds and rejects one outside them", () => {
+    expect(
+      isValidClientMessage({ type: "resize", roomId: "r", width: 300, height: 400 }),
+    ).toBe(true)
+    // Below MIN, above MAX, and non-integer are all rejected as malformed before
+    // they can reach the database CHECK constraint as a 500.
+    expect(
+      isValidClientMessage({ type: "resize", roomId: "r", width: 8, height: 100 }),
+    ).toBe(false)
+    expect(
+      isValidClientMessage({ type: "resize", roomId: "r", width: 513, height: 100 }),
+    ).toBe(false)
+    expect(
+      isValidClientMessage({ type: "resize", roomId: "r", width: 100.5, height: 100 }),
+    ).toBe(false)
+    expect(isValidClientMessage({ type: "resize", roomId: "r", width: 100 })).toBe(
+      false,
+    )
+  })
+
   it("requires a boolean approve on respond_editor", () => {
     expect(
       isValidClientMessage({

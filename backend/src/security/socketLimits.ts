@@ -106,6 +106,11 @@ export function messageCost(message: ClientSocketMessage): number {
     case "room_action":
       return 10
 
+    // A resize rewrites the whole buffer (crop/pad), persists a snapshot, and
+    // broadcasts it to everyone — the heaviest owner action, on par with a clear.
+    case "resize":
+      return 10
+
     // Permission changes all write to Postgres, and several of them re-resolve
     // every member's role afterwards.
     case "claim_ownership":

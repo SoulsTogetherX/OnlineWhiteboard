@@ -77,6 +77,11 @@ export interface UseRoomConnectionResult {
   claimOwnership: () => void
   releaseOwnership: () => void
   setOpenEditing: (enabled: boolean) => void
+  // Owner-only: resize the room's canvas. The new size comes back as a snapshot.
+  resize: (width: number, height: number) => void
+  // Bumps whenever an applied snapshot CHANGED the canvas dimensions (a resize).
+  // Anything keyed to the old size — the undo/redo stacks — resets on this.
+  canvasResetKey: number
   // Editor access requests. `editorRequests` is only ever populated for an
   // owner — the server sends the list to nobody else.
   editorRequests: EditorRequest[]
@@ -141,6 +146,13 @@ export default function useRoomConnection(
   // options useWebSocket is constructed with — a ref sidesteps the cycle.
   const sendRef = useRef<(message: ClientSocketMessage) => boolean>(() => false)
   const lastRevision = useRef<number>(0)
+
+  // The dimensions of the last snapshot we applied. Null until the first
+  // snapshot; a later snapshot with different dims is a resize (see the
+  // canvas_snapshot handler). `canvasResetKey` bumps on each such resize so the
+  // app can reset anything keyed to the old size (the undo/redo stacks).
+  const knownDims = useRef<{ width: number; height: number } | null>(null)
+  const [canvasResetKey, setCanvasResetKey] = useState(0)
 
   // Serialises everything that touches the canvas, in arrival order.
   //
@@ -370,13 +382,31 @@ export default function useRoomConnection(
             if (pixels === null || !canvas) {
               return
             }
+            // A snapshot whose dimensions differ from the last one we knew is a
+            // RESIZE. Everything keyed to the old size is now stale: live holds
+            // (old byte indices) and — signalled to the app via the reset key —
+            // the undo/redo stacks. Clear holds here; bump the key so App resets
+            // history. `knownDims` starts null so the FIRST snapshot on join is
+            // not treated as a resize.
+            const prevDims = knownDims.current
+            const nextDims = {
+              width: snapshotMessage.width,
+              height: snapshotMessage.height,
+            }
+            const resized =
+              prevDims !== null &&
+              (prevDims.width !== nextDims.width ||
+                prevDims.height !== nextDims.height)
+            if (resized) {
+              clearHolds()
+              setCanvasResetKey((key) => key + 1)
+            }
+            knownDims.current = nextDims
+
             // The snapshot header carries the room's dimensions; sizing the
             // element to them here is what makes a live resize take effect on the
             // client.
-            applySnapshotToCanvas(canvas, pixels, {
-              width: snapshotMessage.width,
-              height: snapshotMessage.height,
-            })
+            applySnapshotToCanvas(canvas, pixels, nextDims)
             // A snapshot replaces the whole buffer, so re-composite any live
             // holds on top — otherwise a resync arriving right after a local
             // stroke would blink it away before its 100 ms were up.
@@ -470,6 +500,9 @@ export default function useRoomConnection(
   useEffect(() => {
     return () => {
       clearHolds()
+      // Forget the last room's size so the next room's first snapshot is not
+      // mistaken for a resize.
+      knownDims.current = null
       if (holdExpiryTimer.current !== null) {
         window.clearTimeout(holdExpiryTimer.current)
         holdExpiryTimer.current = null
@@ -528,6 +561,15 @@ export default function useRoomConnection(
       // room_settings broadcast. Setting it locally first would briefly show
       // permissions the server had not agreed to.
       send({ type: "set_open_editing", roomId, enabled })
+    },
+    [roomId, send],
+  )
+
+  const resize = useCallback(
+    (width: number, height: number) => {
+      // Owner-only and validated server-side; the new size arrives back as a
+      // fresh snapshot, which is what actually resizes the local canvas.
+      send({ type: "resize", roomId, width, height })
     },
     [roomId, send],
   )
@@ -617,6 +659,8 @@ export default function useRoomConnection(
     claimOwnership,
     releaseOwnership,
     setOpenEditing,
+    resize,
+    canvasResetKey,
     editorRequests,
     requestEditor,
     respondEditor,

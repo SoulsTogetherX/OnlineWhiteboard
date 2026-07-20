@@ -133,15 +133,21 @@ export default function App() {
     requestPlayback,
     playback,
     clearPlayback,
+    canvasResetKey,
     cursorsRef,
     cursorIds,
   } = useRoomConnection(canvasRef, () => setIsRoomOpen(false), user?.id ?? null)
 
   // Undo/Redo
-  const { pushAction, undo, redo, canUndo, canRedo, notice } = useUndoRedo(
-    canvasRef,
-    sendDrawInstruction,
-  )
+  const { pushAction, undo, redo, canUndo, canRedo, notice, resetHistory } =
+    useUndoRedo(canvasRef, sendDrawInstruction)
+
+  // A resize replaces the canvas under the undo history, so every stored entry's
+  // byte index now points at the wrong pixel (or is out of range). canvasResetKey
+  // bumps on each such resize; drop the stacks when it does.
+  useEffect(() => {
+    resetHistory()
+  }, [canvasResetKey, resetHistory])
 
   // Eyedropper: sample a canvas pixel into the primary color, then revert to the
   // last drawing tool. Defined here because it needs the palette and recent-color

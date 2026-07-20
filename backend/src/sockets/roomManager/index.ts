@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
+import { isValidCanvasDims } from "@shared/constants/canvas"
 import type { CanvasDims } from "@shared/constants/canvas"
 import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
@@ -506,6 +507,13 @@ export default class RoomManager {
       void this.handleSetOpenEditing(socket, room, message.enabled)
       return
     }
+    if (message.type === "resize") {
+      void this.handleResize(socket, room, {
+        width: message.width,
+        height: message.height,
+      })
+      return
+    }
     if (message.type === "request_editor") {
       this.handleRequestEditor(socket, room)
       return
@@ -811,6 +819,63 @@ export default class RoomManager {
         type: "error",
         message: "Could not change that setting.",
       })
+    }
+  }
+
+  // Resizes the room's canvas, owner-only. The pixels are cropped/padded from
+  // the top-left to the new size, and the new snapshot IS the state — like a
+  // checkpoint restore, it is not logged as an instruction; recovery reads the
+  // latest snapshot.
+  private async handleResize(
+    socket: ClientSocket,
+    room: RoomState,
+    dims: CanvasDims,
+  ): Promise<void> {
+    if (!canManageRoom(socket.identity.role)) {
+      this.send(socket, {
+        type: "error",
+        message: "Only the room owner can resize the canvas.",
+      })
+      return
+    }
+
+    // Defence in depth: the envelope already validated the range, but the room
+    // that ends up in the database CHECK is worth guarding at the point of use
+    // too, not just at the edge.
+    if (!isValidCanvasDims(dims)) {
+      this.send(socket, { type: "error", message: "Invalid canvas size." })
+      return
+    }
+
+    // A no-op resize would still bump the revision and broadcast a snapshot for
+    // no reason — and worse, wipe every client's undo stack (they reset on any
+    // dimension change). Ignore it silently.
+    if (dims.width === room.width && dims.height === room.height) {
+      return
+    }
+
+    try {
+      // Flush pending events (recorded at the OLD dimensions) before the buffer
+      // changes shape, then crop/pad. The saveCanvas below prunes ALL events up
+      // to this revision — a resize is a hard history boundary, because an event
+      // in old-canvas coordinates cannot be replayed onto the new buffer.
+      await this.flushEvents(room.roomId)
+
+      const from = this.dimsOf(room)
+      room.pixels = resizePixels(room.pixels, from, dims)
+      room.width = dims.width
+      room.height = dims.height
+      room.revision += 1
+      room.isDirty = false
+
+      // retainEventsAfter = null prunes every event this snapshot supersedes,
+      // regardless of checkpoints — the new-dimensioned snapshot is a clean base
+      // that recovery replays nothing stale on top of.
+      await saveCanvas(room.roomId, room.pixels, room.revision, dims, null)
+      this.broadcastSnapshot(room)
+    } catch (error) {
+      console.error(`Failed to resize ${room.roomId}:`, error)
+      this.send(socket, { type: "error", message: "Could not resize." })
     }
   }
 

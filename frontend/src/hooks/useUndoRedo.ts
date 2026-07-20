@@ -41,6 +41,7 @@ export type UseUndoRedoResult = {
   canUndo: boolean
   canRedo: boolean
   notice: string | null
+  resetHistory: () => void
 }
 //#endregion
 
@@ -206,6 +207,18 @@ export default function useUndoRedo(
     setCanUndo(true)
   }, [applyLocally, showNotice])
 
-  return { pushAction, undo, redo, canUndo, canRedo, notice }
+  // Drops both stacks. Called when the canvas is REPLACED under the history —
+  // most importantly a resize, after which every stored entry's byte index
+  // refers to a pixel at the OLD stride and would undo onto the wrong place (or,
+  // on a shrink, be rejected). The recorded pixels no longer describe this
+  // canvas, so the honest thing is to forget them.
+  const resetHistory = useCallback(() => {
+    undoStack.current = []
+    redoStack.current = []
+    setCanUndo(false)
+    setCanRedo(false)
+  }, [])
+
+  return { pushAction, undo, redo, canUndo, canRedo, notice, resetHistory }
 }
 //#endregion
