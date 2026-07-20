@@ -330,10 +330,18 @@ Dev publishes 5173/3000/5432; prod publishes **only** `PROD_PORT` (8080).
 Quick prod checks:
 
 ```bash
-curl http://localhost:8080/api/health                                    # {"status":"ok",...}
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/any/route   # 200 (SPA fallback)
-node scripts/smoke-test.mjs http://localhost:8080                        # full protocol probe
+curl http://127.0.0.1:8080/api/health                                    # {"status":"ok",...}
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/any/route   # 200 (SPA fallback)
+node scripts/smoke-test.mjs http://127.0.0.1:8080                        # full protocol probe
+node scripts/security-probe.mjs http://127.0.0.1:8080                    # adversarial probe
 ```
+
+> **Use `127.0.0.1`, not `localhost`, when probing from a Windows host.** Docker publishes
+> the port on both `0.0.0.0` and `[::]`, but `localhost` can resolve to IPv6 `::1` where the
+> binding intermittently refuses connections — while `127.0.0.1` works. The symptom is
+> maximally misleading: every container reports **healthy**, nginx serves fine *inside* the
+> container, and yet the smoke test dies with a bare `fetch failed`, which reads exactly like
+> the app is broken. It isn't. CI runs on Linux and is unaffected.
 
 > **Windows/Git Bash:** prefix docker commands taking container paths with
 > `MSYS_NO_PATHCONV=1` and use a leading `//`, or paths get mangled to `C:/Program Files/Git/...`.

@@ -26,6 +26,11 @@ import {
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { isValidClientMessage } from "@shared/utils/validateSocketMessage"
 import { MAX_CHECKPOINT_NAME_LENGTH } from "@shared/constants/protocol"
+import {
+  INVALID_MESSAGE_COST,
+  SocketRateLimiter,
+  messageCost,
+} from "@/security/socketLimits"
 import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
 import type { ClientSocket } from "@/types/ClientSocket"
@@ -121,6 +126,9 @@ export default class RoomManager {
   private rooms = new Map<string, RoomState>()
   private heartbeatTimer?: NodeJS.Timeout
   private cleanupTimer?: NodeJS.Timeout
+  // Per-socket flood control. Keyed by the socket object, so state disappears
+  // with the connection.
+  private rateLimiter = new SocketRateLimiter()
 
   constructor(private readonly wss: WebSocketServer) {}
 
@@ -343,6 +351,24 @@ export default class RoomManager {
     raw: RawData,
   ): Promise<void> {
     const message = this.parseMessage(raw)
+
+    // Charge for the message BEFORE acting on it, and charge for invalid ones
+    // too. Validation bounds what a single message can do; only this bounds how
+    // many. Metering invalid messages matters just as much: each one sends an
+    // error back, so unmetered junk would be an amplification vector.
+    const decision = this.rateLimiter.consume(
+      socket,
+      message ? messageCost(message) : INVALID_MESSAGE_COST,
+    )
+    if (decision === "close") {
+      // Only reached after sustained abuse — a brief overshoot just drops.
+      socket.close(1008, "Rate limit exceeded")
+      return
+    }
+    if (decision === "drop") {
+      return
+    }
+
     if (!message) {
       this.send(socket, { type: "error", message: "Invalid socket message." })
       return
