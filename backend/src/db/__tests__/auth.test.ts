@@ -7,10 +7,17 @@ import { db } from "../pool"
 import { runMigrations } from "../migrate"
 import {
   createUser,
-  emailExists,
-  findUserByEmail,
+  emailIndexExists,
+  findEmailCiphertext,
+  findUserByEmailIndex,
   findUserById,
 } from "../userRepository"
+import {
+  decryptEmail,
+  emailBlindIndex,
+  encryptEmail,
+  newUserId,
+} from "@/auth/emailCrypto"
 import { deleteExpiredSessions } from "../sessionRepository"
 import { hashPassword } from "@/auth/password"
 import {
@@ -25,16 +32,19 @@ const DB_CONFIGURED = Boolean(process.env.POSTGRES_PASSWORD)
 //#endregion
 
 //#region Helpers
-const emails: string[] = []
-const freshEmail = (): string => {
-  const email = `u-${randomUUID()}@example.com`
-  emails.push(email)
-  return email
-}
+const createdIndexes: string[] = []
+const freshEmail = (): string => `u-${randomUUID()}@example.com`
 
+// Mirrors what the register route does: index the address, generate the id
+// FIRST (it is the AAD), then encrypt against it.
 async function makeUser(email = freshEmail()) {
+  const emailIndex = await emailBlindIndex(email)
+  createdIndexes.push(emailIndex)
+  const id = newUserId()
   return createUser({
-    email,
+    id,
+    emailIndex,
+    emailCiphertext: encryptEmail(email, id),
     username: "Tester",
     passwordHash: await hashPassword("a-good-password"),
     color: "#4363d8",
@@ -49,8 +59,8 @@ describe.skipIf(!DB_CONFIGURED)("auth persistence (integration)", () => {
   })
 
   afterAll(async () => {
-    for (const email of emails) {
-      await db.deleteFrom("users").where("email", "=", email).execute()
+    for (const emailIndex of createdIndexes) {
+      await db.deleteFrom("users").where("email_index", "=", emailIndex).execute()
     }
     await db.destroy()
   })
@@ -65,26 +75,71 @@ describe.skipIf(!DB_CONFIGURED)("auth persistence (integration)", () => {
     expect((user as Record<string, unknown>).password_hash).toBeUndefined()
 
     const byId = await findUserById(user.id)
-    expect(byId?.email).toBe(user.email)
+    expect(byId?.username).toBe("Tester")
     expect((byId as Record<string, unknown>)?.password_hash).toBeUndefined()
+    // The public shape must not carry an address in any form.
+    expect((byId as Record<string, unknown>)?.email).toBeUndefined()
+    expect((byId as Record<string, unknown>)?.email_ciphertext).toBeUndefined()
   })
 
-  it("exposes the hash ONLY through findUserByEmail, for login to verify", async () => {
-    const user = await makeUser()
-    const record = await findUserByEmail(user.email)
+  it("exposes the hash ONLY through the blind-index lookup, for login to verify", async () => {
+    const email = freshEmail()
+    await makeUser(email)
+    const record = await findUserByEmailIndex(await emailBlindIndex(email))
     expect(record?.passwordHash).toMatch(/^scrypt\$/)
   })
 
-  it("reports whether an email is taken", async () => {
-    const user = await makeUser()
-    expect(await emailExists(user.email)).toBe(true)
-    expect(await emailExists(freshEmail())).toBe(false)
+  it("reports whether an email is taken, by index", async () => {
+    const email = freshEmail()
+    await makeUser(email)
+    expect(await emailIndexExists(await emailBlindIndex(email))).toBe(true)
+    expect(await emailIndexExists(await emailBlindIndex(freshEmail()))).toBe(
+      false,
+    )
   })
 
-  it("rejects a duplicate email via the UNIQUE constraint", async () => {
+  it("rejects a duplicate email via the UNIQUE index on the blind index", async () => {
+    // Uniqueness must survive encryption: the index is deterministic, so the
+    // same address still collides even though no column holds it in plaintext.
     const email = freshEmail()
     await makeUser(email)
     await expect(makeUser(email)).rejects.toMatchObject({ code: "23505" })
+  })
+
+  it("stores NO plaintext address anywhere in the row", async () => {
+    // The whole point of the design: a database dump must not contain addresses.
+    const email = freshEmail()
+    const user = await makeUser(email)
+
+    const raw = await db
+      .selectFrom("users")
+      .selectAll()
+      .where("id", "=", user.id)
+      .executeTakeFirstOrThrow()
+
+    const dumped = JSON.stringify(raw)
+    expect(dumped).not.toContain(email)
+    // The local-part alone would be just as identifying.
+    expect(dumped).not.toContain(email.split("@")[0])
+  })
+
+  it("can still recover the address from the ciphertext (recovery path kept)", async () => {
+    const email = freshEmail()
+    const user = await makeUser(email)
+
+    const ciphertext = await findEmailCiphertext(user.id)
+    expect(ciphertext).toBeTruthy()
+    expect(decryptEmail(ciphertext as string, user.id)).toBe(email)
+  })
+
+  it("refuses to decrypt a ciphertext moved to a different row", async () => {
+    // AAD binding. Without it, an attacker with write access could swap two
+    // users' ciphertexts to learn which address belongs to which account.
+    const email = freshEmail()
+    const user = await makeUser(email)
+    const ciphertext = (await findEmailCiphertext(user.id)) as string
+
+    expect(() => decryptEmail(ciphertext, newUserId())).toThrow()
   })
 
   it("creates a session and resolves it back to its user", async () => {

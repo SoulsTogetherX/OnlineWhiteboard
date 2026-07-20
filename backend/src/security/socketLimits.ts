@@ -17,11 +17,10 @@
 //#endregion
 
 //#region Imports
-import { createHash } from "node:crypto"
-
 import type { IncomingMessage } from "node:http"
 
 import { SESSION_COOKIE, parseCookies } from "@/auth/cookies"
+import { hashSessionToken } from "@/auth/session"
 
 import type { ClientSocketMessage } from "@shared/types/socketProtocol"
 //#endregion
@@ -246,8 +245,7 @@ export function connectionKey(request: IncomingMessage): {
 } {
   const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
   if (token) {
-    const hash = createHash("sha256").update(token).digest("hex")
-    return { key: `s:${hash}`, isAuthenticated: true }
+    return { key: `s:${hashSessionToken(token)}`, isAuthenticated: true }
   }
 
   // Same trust reasoning as the HTTP limiter: in production the backend

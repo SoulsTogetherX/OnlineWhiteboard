@@ -26,10 +26,17 @@ const createdUsers: string[] = []
 const createdRooms: string[] = []
 
 async function makeUser(): Promise<string> {
+  // These tests only care about membership, not identity, so the email columns
+  // get unique placeholder values rather than real crypto — the blind index is
+  // exercised properly in auth.test.ts. `id` is supplied explicitly because the
+  // column no longer has a database default (it is the AAD for the ciphertext).
+  const id = randomUUID()
   const row = await db
     .insertInto("users")
     .values({
-      email: `member-${randomUUID()}@test.com`,
+      id,
+      email_index: `idx-${randomUUID()}`,
+      email_ciphertext: `v1.placeholder.${randomUUID()}`,
       username: `u-${randomUUID().slice(0, 8)}`,
       password_hash: "scrypt$1$00$00",
       color: "#123456",

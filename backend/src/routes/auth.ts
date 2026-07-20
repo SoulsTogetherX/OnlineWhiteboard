@@ -7,10 +7,12 @@ import {
   clearSessionCookie,
   createSessionForUser,
   destroySession,
+  hashSessionToken,
   readSessionToken,
   resolveSessionUser,
   setSessionCookie,
 } from "@/auth/session"
+import { closeSocketsForSession } from "@/sockets/sessionRegistry"
 import {
   validateEmail,
   validatePassword,
@@ -18,9 +20,15 @@ import {
 } from "@/auth/validation"
 import {
   createUser,
-  emailExists,
-  findUserByEmail,
+  emailIndexExists,
+  findUserByEmailIndex,
 } from "@/db/userRepository"
+import {
+  emailBlindIndex,
+  encryptEmail,
+  newUserId,
+} from "@/auth/emailCrypto"
+import { checkPasswordBreached } from "@/auth/breachedPassword"
 import { rateLimit } from "@/security/rateLimit"
 
 import type { User } from "@/db/userRepository"
@@ -42,10 +50,14 @@ const registerLimiter = rateLimit({
 // The user shape sent to the client — exactly the public columns, never the
 // hash. `isGuest: false` mirrors the guest identity shape the presence system
 // uses, so the frontend can treat both uniformly.
+//
+// No email. The client only ever SENDS an address (the login/register forms);
+// nothing displays it back. Not returning it means the address never travels
+// beyond the request that created the account, so it cannot leak through an API
+// response, a client-side cache, or a browser devtools session.
 function publicUser(user: User) {
   return {
     id: user.id,
-    email: user.email,
     username: user.username,
     color: user.color,
     isGuest: false as const,
@@ -70,15 +82,38 @@ export default function configureAuthRoutes(app: Express): void {
       return res.status(400).json({ error: password.error })
     }
 
-    // Check-then-insert races on the UNIQUE(email) constraint, so treat a
+    // Screen against known-breached credentials (NIST SP 800-63B). This is the
+    // control that stops credential stuffing — the attack that took ~14,000
+    // 23andMe accounts and cascaded to millions. A reused password can be
+    // perfectly strong and still already public.
+    const breach = await checkPasswordBreached(password.value)
+    if (breach.breached) {
+      return res.status(400).json({
+        error:
+          `That password has appeared in ${breach.count.toLocaleString()} known data ` +
+          `breaches. It is not weak — it is public. Please choose a different one.`,
+      })
+    }
+
+    // The address is turned into a blind index once and the plaintext is used
+    // only to build the ciphertext below — it is never stored, logged, or
+    // compared directly.
+    const emailIndex = await emailBlindIndex(email.value)
+
+    // Check-then-insert races on the UNIQUE(email_index) constraint, so treat a
     // unique-violation from the insert as the authoritative "taken" too.
-    if (await emailExists(email.value)) {
+    if (await emailIndexExists(emailIndex)) {
       return res.status(409).json({ error: "That email is already registered." })
     }
 
     try {
+      // The id is generated here, before the insert, because it is the AAD that
+      // binds this row's ciphertext to this row.
+      const id = newUserId()
       const user = await createUser({
-        email: email.value,
+        id,
+        emailIndex,
+        emailCiphertext: encryptEmail(email.value, id),
         username: username.value,
         passwordHash: await hashPassword(password.value),
         color: randomIdentityColor(),
@@ -119,7 +154,7 @@ export default function configureAuthRoutes(app: Express): void {
       return invalid()
     }
 
-    const record = await findUserByEmail(email.value)
+    const record = await findUserByEmailIndex(await emailBlindIndex(email.value))
     if (!record) {
       // Constant-work path: hash a throwaway so timing matches the found case.
       await hashPassword(password)
@@ -138,7 +173,21 @@ export default function configureAuthRoutes(app: Express): void {
 
   // --- Logout ----------------------------------------------------------------
   app.post("/api/auth/logout", async (req: Request, res: Response) => {
-    await destroySession(readSessionToken(req))
+    const token = readSessionToken(req)
+    await destroySession(token)
+
+    // Disconnect any WebSocket still authenticated by this session. Deleting
+    // the session row only makes future HTTP requests anonymous; an open socket
+    // was authenticated once at its upgrade and would otherwise keep acting as
+    // the logged-in user until the tab closed. On a shared computer that means
+    // "log out" did not actually end access.
+    if (token) {
+      const closed = closeSocketsForSession(hashSessionToken(token))
+      if (closed > 0) {
+        console.log(`logout: closed ${closed} socket(s) for the ended session`)
+      }
+    }
+
     clearSessionCookie(res)
     return res.status(204).end()
   })

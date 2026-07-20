@@ -20,11 +20,13 @@ export type RoomRole = (typeof ROLES)[number]
 // stored RoomRole so the two can't be confused.
 export type ConnectionRole = RoomRole | "guest"
 
-// A registered account, as exposed to the client. Deliberately has no password
-// field — the backend selects only these columns (see userRepository).
+// A registered account, as exposed to the client. Deliberately carries neither
+// a password field nor an EMAIL: the backend selects only these columns (see
+// userRepository), and the address is stored encrypted at rest and never sent
+// back. The client only ever submits an email on the login/register forms;
+// nothing renders it, so returning it would be pure exposure with no use.
 export type AuthUser = {
   id: string
-  email: string
   username: string
   color: string
   isGuest: false

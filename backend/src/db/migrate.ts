@@ -19,6 +19,7 @@ import { Migrator, type Migration, type MigrationProvider } from "kysely"
 import { db } from "./pool"
 
 import * as m001 from "./migrations/001_initial_schema"
+import * as m002 from "./migrations/002_email_at_rest"
 //#endregion
 
 //#region Provider
@@ -33,6 +34,7 @@ import * as m001 from "./migrations/001_initial_schema"
 // 002_*.ts here — not editing 001, which has now run.
 const migrations: Record<string, Migration> = {
   "001_initial_schema": m001,
+  "002_email_at_rest": m002,
 }
 
 class ExplicitMigrationProvider implements MigrationProvider {

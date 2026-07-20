@@ -80,9 +80,18 @@ export interface DrawEventsTable {
 
 // A registered account. `password_hash` is a self-describing scrypt string
 // (never the password); `color` is the identity colour shown in presence.
+// `id` is NOT Generated: it is produced by the application (newUserId), not by
+// the column default, because it is the AAD binding email_ciphertext to this
+// row and therefore has to exist before the row is built.
+//
+// There is deliberately no plaintext `email`. `email_index` is a slow-KDF blind
+// index (deterministic, so it can be looked up and kept UNIQUE) and
+// `email_ciphertext` is AES-256-GCM. Neither is readable without a secret that
+// lives outside the database. See auth/emailCrypto.ts.
 export interface UsersTable {
-  id: Generated<string>
-  email: string
+  id: string
+  email_index: string
+  email_ciphertext: string
   username: string
   password_hash: string
   color: string

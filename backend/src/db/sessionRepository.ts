@@ -34,7 +34,6 @@ export async function findUserBySessionHash(
     .innerJoin("users", "users.id", "sessions.user_id")
     .select([
       "users.id as id",
-      "users.email as email",
       "users.username as username",
       "users.color as color",
     ])

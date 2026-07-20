@@ -18,5 +18,10 @@ export interface ClientSocket extends WebSocket {
   // the broadcast Participant on purpose (see the note there). Used to resolve
   // this connection's room role and membership.
   userId: string | null
+  // The SHA-256 of this connection's session cookie, or null for a guest. Keyed
+  // on rather than the raw token so a heap dump is not a set of live
+  // credentials. Lets logout disconnect exactly this person's sockets, and lets
+  // the periodic sweep re-check the session that authorised them.
+  sessionHash: string | null
 }
 //#endregion
