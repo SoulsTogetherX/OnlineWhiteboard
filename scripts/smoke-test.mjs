@@ -30,15 +30,48 @@ const fail = (msg) => {
   console.error(`  ✗ ${msg}`)
 }
 
+// Decodes the binary frame envelope: version(1) + headerLength(2) + JSON header
+// + payload. Hand-rolled rather than imported because this probe is deliberately
+// dependency-free and cannot load TypeScript from shared/ — so if the format
+// ever changes without this being updated, the snapshot checks below fail loudly,
+// which is the drift alarm. Keep it in step with shared/utils/binaryFrame.ts.
+const BINARY_FRAME_VERSION = 1
+function decodeFrame(buffer) {
+  const bytes = new Uint8Array(buffer)
+  if (bytes.length < 3 || bytes[0] !== BINARY_FRAME_VERSION) {
+    return null
+  }
+  const headerLength = (bytes[1] << 8) | bytes[2]
+  const payloadStart = 3 + headerLength
+  if (payloadStart > bytes.length) {
+    return null
+  }
+  const header = JSON.parse(
+    Buffer.from(bytes.subarray(3, payloadStart)).toString("utf8"),
+  )
+  // `pixels` rides alongside the header so assertions can reach both.
+  return { ...header, pixels: Buffer.from(bytes.subarray(payloadStart)) }
+}
+
 function connect(room) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${WS_BASE}/ws?roomId=${encodeURIComponent(room)}`)
+    ws.binaryType = "arraybuffer"
     const seen = []
     ws.addEventListener("message", (event) => {
       try {
-        seen.push(JSON.parse(event.data))
+        const message =
+          event.data instanceof ArrayBuffer
+            ? decodeFrame(event.data)
+            : JSON.parse(event.data)
+        // A null means an undecodable frame. Never push it: every predicate
+        // below reads `.type`, so one bad frame would throw inside waitFor's
+        // find() rather than simply not matching.
+        if (message !== null) {
+          seen.push(message)
+        }
       } catch {
-        /* non-JSON frames are not part of this protocol */
+        /* malformed frames are not part of this protocol */
       }
     })
     ws.addEventListener("open", () => resolve({ ws, seen }))
@@ -128,9 +161,20 @@ async function main() {
     (m) => m.type === "canvas_snapshot",
     '"canvas_snapshot"',
   )
-  snapshot.width > 0 && snapshot.data.length > 0
-    ? pass(`canvas snapshot received (${snapshot.width}x${snapshot.height})`)
-    : fail("canvas snapshot was empty")
+  // The pixels now arrive as the binary frame's payload, so this asserts the
+  // EXACT byte count rather than "non-empty": 120 x 120 x 4 = 57,600. Under the
+  // old base64-in-JSON encoding the same canvas cost 76,800 characters.
+  const expectedBytes = snapshot.width * snapshot.height * 4
+  snapshot.width > 0 && snapshot.pixels?.length === expectedBytes
+    ? pass(
+        `canvas snapshot received as a binary frame (${snapshot.width}x${snapshot.height}, ${snapshot.pixels.length} bytes)`,
+      )
+    : fail(
+        `snapshot payload was ${snapshot.pixels?.length} bytes, expected ${expectedBytes}`,
+      )
+  snapshot.data === undefined
+    ? pass("snapshot header carries no base64 `data` field")
+    : fail("snapshot still carries a base64 `data` field — binary frames regressed")
 
   await waitFor(a.seen, (m) => m.type === "pong", '"pong" for the ping sent at open')
   pass("REGRESSION: ping sent at open is answered (room-load race)")
@@ -376,8 +420,8 @@ async function main() {
   const cSnap = await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's resync snapshot")
   const dSnap = await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's resync snapshot")
 
-  const cBytes = Buffer.from(cSnap.data, "base64")
-  const dBytes = Buffer.from(dSnap.data, "base64")
+  const cBytes = cSnap.pixels
+  const dBytes = dSnap.pixels
   cBytes.equals(dBytes)
     ? pass(`both clients' canvases are byte-identical (${cBytes.length} bytes)`)
     : fail("clients received DIFFERENT canvases — silent desync")

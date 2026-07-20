@@ -282,6 +282,11 @@ export default function useWebSocket(
     status.current = "CONNECTING"
 
     const socket = new WebSocket(fullUrl)
+    // Canvas snapshots arrive as binary frames. The browser default is "blob",
+    // which would force an async read before the pixels could be applied; an
+    // ArrayBuffer decodes synchronously in the message handler, so a snapshot
+    // still lands in a single turn like every other message.
+    socket.binaryType = "arraybuffer"
     ws.current = socket
 
     socket.addEventListener("open", () => {

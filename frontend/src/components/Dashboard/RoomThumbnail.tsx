@@ -33,7 +33,10 @@ export default function RoomThumbnail({ roomId }: RoomThumbnailProps) {
           return
         }
         // Reuses the same shared decoder the live canvas uses.
-        ctx.putImageData(createImageDataFromBase64(data.data), 0, 0)
+        const imageData = createImageDataFromBase64(data.data)
+        if (imageData) {
+          ctx.putImageData(imageData, 0, 0)
+        }
       })
       .catch(() => {
         /* a missing preview just renders blank — not worth surfacing */

@@ -162,12 +162,19 @@ export type ServerSocketMessage =
       revision: number
     }
   | {
+      // Sent as a BINARY frame, not text: this object is the frame's JSON
+      // header and the RGBA pixels are the frame's payload (see
+      // shared/utils/binaryFrame.ts). Base64 inside JSON inflated the canvas by
+      // a third — 57,600 B became 76,800 chars — and cost a per-byte decode
+      // loop on the client, for a transport that has always been binary-capable.
+      //
+      // There is deliberately no `data` field. The pixels are not part of the
+      // header, so nothing can accidentally serialise them back into JSON.
       type: "canvas_snapshot"
       roomId: string
       revision: number
       width: number
       height: number
-      data: string
     }
   | {
       // Tiny periodic heartbeat replacing the old full-canvas broadcast.
@@ -231,6 +238,13 @@ export type ServerSocketMessage =
   | {
       // The data to animate history, sent only to the requester: a base canvas
       // (base64 RGBA) at baseRevision, plus the ordered events to replay onto it.
+      //
+      // Still TEXT, unlike canvas_snapshot. The binary envelope carries one bulk
+      // payload behind a small header, and `steps` is neither small nor bulk —
+      // it is an unbounded list that would have to live in the header, where the
+      // u16 length field cannot hold it. Playback is also a rare, user-initiated
+      // request rather than something every client receives on join, so the
+      // bandwidth argument that motivated binary snapshots barely applies.
       type: "playback"
       roomId: string
       base: string

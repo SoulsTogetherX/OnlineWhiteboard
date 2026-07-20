@@ -1,5 +1,10 @@
 //#region Imports
-import { CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_COLOR } from "../constants/canvas"
+import {
+  CANVAS_BYTES,
+  CANVAS_HEIGHT,
+  CANVAS_WIDTH,
+  DEFAULT_COLOR,
+} from "../constants/canvas"
 
 import type { ToolType, PatchEntry } from "../types/drawProtocol"
 import type { ColorPalette, ColorType, Vec } from "../types/primitive"
@@ -35,7 +40,32 @@ export function getIdxFromVec(vec: Vec): number {
 // "helper" that silently returns the wrong pixel is a trap for whoever reaches
 // for it first. Re-add it with tests if a real caller appears.
 
-export function createImageDataFromBase64(data: string): ImageData {
+// Wraps raw RGBA bytes as ImageData, or returns null if there are not exactly
+// the right number of them.
+//
+// The length check is not defensive padding: `new ImageData` THROWS when the
+// buffer does not match the dimensions, and this runs inside the socket message
+// handler, so a short or oversized payload would take out the whole handler
+// rather than dropping one bad frame. Returning null lets the caller skip it the
+// same way it skips a malformed message.
+export function createImageDataFromBytes(
+  bytes: Uint8Array | Uint8ClampedArray,
+): ImageData | null {
+  if (bytes.length !== CANVAS_BYTES) {
+    return null
+  }
+
+  // ImageData needs a Uint8ClampedArray specifically, and copying also detaches
+  // us from the frame's backing buffer — which for a Node Buffer is pooled
+  // memory that gets reused underneath us.
+  return new ImageData(new Uint8ClampedArray(bytes), CANVAS_WIDTH, CANVAS_HEIGHT)
+}
+
+// Base64 remains the encoding for the two paths that are NOT socket snapshots:
+// the REST thumbnail endpoint (JSON) and playback's base canvas (text). Both are
+// one-shot and off the hot path, so the +33% does not justify a second binary
+// surface.
+export function createImageDataFromBase64(data: string): ImageData | null {
   const binary = atob(data)
   const bytes = new Uint8ClampedArray(binary.length)
 
@@ -43,7 +73,7 @@ export function createImageDataFromBase64(data: string): ImageData {
     bytes[i] = binary.charCodeAt(i)
   }
 
-  return new ImageData(bytes, CANVAS_WIDTH, CANVAS_HEIGHT)
+  return createImageDataFromBytes(bytes)
 }
 //#endregion
 

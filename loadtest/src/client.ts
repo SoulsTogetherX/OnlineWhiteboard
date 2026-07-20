@@ -2,6 +2,7 @@
 import WebSocket from "ws"
 
 import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
 
 import type {
   ClientSocketMessage,
@@ -133,14 +134,25 @@ export class SimulatedClient {
         const buf = raw as Buffer
         this.metrics.bytesReceived += buf.length
 
+        // Snapshots now arrive as binary frames (a small JSON header plus raw
+        // RGBA); everything else is still text. The header is all this harness
+        // needs — it only ever counts snapshot bytes, never applies them — but
+        // the payload length is passed along so the metric stays honest.
         let message: ServerSocketMessage
-        try {
-          message = JSON.parse(buf.toString("utf8"))
-        } catch {
-          return
+        let payloadBytes = 0
+        const frame = decodeBinaryFrame(buf)
+        if (frame !== null) {
+          message = frame.header as ServerSocketMessage
+          payloadBytes = frame.payload.length
+        } else {
+          try {
+            message = JSON.parse(buf.toString("utf8"))
+          } catch {
+            return
+          }
         }
 
-        this.handleMessage(message)
+        this.handleMessage(message, payloadBytes)
 
         if (message.type === "ready" && !settled) {
           settled = true
@@ -166,7 +178,10 @@ export class SimulatedClient {
     })
   }
 
-  private handleMessage(message: ServerSocketMessage): void {
+  private handleMessage(
+    message: ServerSocketMessage,
+    payloadBytes: number,
+  ): void {
     const now = Date.now()
 
     switch (message.type) {
@@ -174,7 +189,11 @@ export class SimulatedClient {
         this.metrics.pingLatencies.push(now - message.sentAt)
         break
       case "canvas_snapshot":
-        this.metrics.snapshotBytesReceived += message.data.length
+        // Now the payload's REAL byte count. This used to add the base64 string
+        // length, which overstated the true cost by ~4/3 — so expect this
+        // number to drop by about a quarter versus older runs for the same
+        // traffic, on top of the genuine bandwidth saving.
+        this.metrics.snapshotBytesReceived += payloadBytes
         break
       case "draw": {
         const key = instructionKey(message.instruction)

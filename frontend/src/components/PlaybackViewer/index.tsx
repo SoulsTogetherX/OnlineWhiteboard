@@ -56,6 +56,10 @@ export default function PlaybackViewer({
       return
     }
     const base = createImageDataFromBase64(playback.base)
+    if (base === null) {
+      // Wrong number of bytes for this canvas — nothing sensible to animate.
+      return
+    }
     baseRef.current = base
     workingRef.current = new ImageData(
       new Uint8ClampedArray(base.data),

@@ -128,7 +128,7 @@ Browser                                   Server
   |                                        |  getOrCreateRoom: cache hit, else
   |                                        |    latest snapshot + replay newer events
   |<-- {ready, revision, self, participants}
-  |<-- {canvas_snapshot, data: base64 57600B -> 76800 chars}
+  |<-- [BINARY frame: {canvas_snapshot} header + 57600B raw RGBA]
   |<-- {checkpoints, ...}
   |<-- {presence, participants}   (broadcast to the room)
 ```
@@ -702,7 +702,6 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
 - The loadtest only exercises `ping` + a `pencil` draw — it doesn't touch presence, cursors,
   votes, checkpoints, playback, spray or brush size, and never sends `resync`, so it does
   not exercise the snapshot path.
-- Binary frames for snapshots — base64 costs +33% (57600 B → 76800 chars).
 - Modal semantics are inconsistent: `PopupBase` centralises dialog role, Escape and `inert`,
   but `Dashboard` hand-rolls Escape and `PlaybackViewer` has neither.
 - `.env` lacks `PROD_PORT` (documented in `.env.example`; compose defaults it to 8080).

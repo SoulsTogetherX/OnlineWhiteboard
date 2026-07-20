@@ -1,6 +1,6 @@
 //#region Imports
 import {
-  createImageDataFromBase64,
+  createImageDataFromBytes,
   getCanvasState,
 } from "./helperProtocolMethods"
 import { handleDrawLineInstruction } from "./handleLineProtocol"
@@ -90,16 +90,25 @@ export function applyDrawInstructionToCanvas(
   }
 }
 
+// Replaces the canvas wholesale from a snapshot's raw RGBA bytes. A payload of
+// the wrong size is dropped rather than applied, leaving the previous canvas up:
+// stale pixels that the next revision_check will correct are strictly better
+// than a blank or corrupted board.
 export function applySnapshotToCanvas(
   canvas: HTMLCanvasElement,
-  data: string,
+  pixels: Uint8Array,
 ): void {
   const canvasState = getCanvasState(canvas)
   if (!canvasState) {
     return
   }
 
-  canvasState.imageData = createImageDataFromBase64(data)
+  const imageData = createImageDataFromBytes(pixels)
+  if (imageData === null) {
+    return
+  }
+
+  canvasState.imageData = imageData
   canvasState.ctx.putImageData(canvasState.imageData, 0, 0)
 }
 //#endregion

@@ -15,6 +15,7 @@ import {
   applyDrawInstructionToCanvas,
   applySnapshotToCanvas,
 } from "@shared/utils/handleCanvasProtocol"
+import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 import type {
@@ -132,15 +133,28 @@ export default function useRoomConnection(
 
   const handleSocketMessage = useCallback(
     (_socket: WebSocket, event: MessageEvent) => {
-      if (typeof event.data !== "string") {
-        return
-      }
-
       let message: ServerSocketMessage
+      // Bulk bytes riding along with the message, for the binary frames that
+      // carry them (today: canvas_snapshot's pixels). Null for text messages.
+      let payload: Uint8Array | null = null
 
-      try {
-        message = JSON.parse(event.data) as ServerSocketMessage
-      } catch {
+      if (event.data instanceof ArrayBuffer) {
+        // A binary frame is a JSON header plus a payload — so it dispatches
+        // through the SAME switch below, with the pixels handed over on the
+        // side. See shared/utils/binaryFrame.ts.
+        const frame = decodeBinaryFrame(event.data)
+        if (frame === null) {
+          return
+        }
+        message = frame.header as ServerSocketMessage
+        payload = frame.payload
+      } else if (typeof event.data === "string") {
+        try {
+          message = JSON.parse(event.data) as ServerSocketMessage
+        } catch {
+          return
+        }
+      } else {
         return
       }
 
@@ -233,8 +247,11 @@ export default function useRoomConnection(
           break
 
         case "canvas_snapshot":
-          if (message.roomId === roomId && canvasRef.current) {
-            applySnapshotToCanvas(canvasRef.current, message.data)
+          // `payload` is null if this arrived as text, which the server never
+          // sends — dropping it is right either way, since a snapshot header
+          // with no pixels describes a canvas we do not have.
+          if (message.roomId === roomId && canvasRef.current && payload) {
+            applySnapshotToCanvas(canvasRef.current, payload)
             lastRevision.current = message.revision
           }
           break

@@ -35,6 +35,7 @@ import {
   oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { encodeBinaryFrame } from "@shared/utils/binaryFrame"
 import { isValidClientMessage } from "@shared/utils/validateSocketMessage"
 import { MAX_CHECKPOINT_NAME_LENGTH } from "@shared/constants/protocol"
 import {
@@ -1023,7 +1024,7 @@ export default class RoomManager {
       // Persist immediately so the restore is durable and becomes the new base,
       // then push it to everyone as a snapshot.
       await this.saveRoom(room.roomId)
-      this.broadcast(room, this.makeSnapshotMessage(room))
+      this.broadcastSnapshot(room)
     } catch (error) {
       console.error(`Failed to restore checkpoint in ${room.roomId}:`, error)
       this.send(socket, { type: "error", message: "Could not restore." })
@@ -1271,19 +1272,32 @@ export default class RoomManager {
     })
   }
 
+  // Snapshots go out as a BINARY frame: a small JSON header plus the raw RGBA
+  // bytes. The pixels are captured with Buffer.from, which COPIES — room.pixels
+  // keeps being mutated by live draws while this frame is queued, and sending a
+  // view over it would put whatever the canvas looked like at flush time on the
+  // wire instead of at capture time, disagreeing with the `revision` in the
+  // header.
   private sendSnapshot(socket: ClientSocket, room: RoomState): void {
-    this.send(socket, this.makeSnapshotMessage(room))
+    this.sendBinary(socket, this.makeSnapshotFrame(room))
   }
 
-  private makeSnapshotMessage(room: RoomState): ServerSocketMessage {
-    return {
+  // Encoded ONCE and sent to every client, mirroring how broadcast() stringifies
+  // once. Re-encoding per client would copy the whole canvas per recipient.
+  private broadcastSnapshot(room: RoomState): void {
+    const frame = this.makeSnapshotFrame(room)
+    room.clients.forEach((client) => this.sendBinary(client, frame))
+  }
+
+  private makeSnapshotFrame(room: RoomState): Uint8Array {
+    const header: ServerSocketMessage = {
       type: "canvas_snapshot",
       roomId: room.roomId,
       revision: room.revision,
       width: CANVAS_WIDTH,
       height: CANVAS_HEIGHT,
-      data: Buffer.from(room.pixels).toString("base64"),
     }
+    return encodeBinaryFrame(header, Buffer.from(room.pixels))
   }
 
   private broadcast(room: RoomState, message: ServerSocketMessage): void {
@@ -1300,6 +1314,17 @@ export default class RoomManager {
       return
     }
     socket.send(payload)
+  }
+
+  // `binary: true` is explicit rather than inferred. `ws` does pick binary for a
+  // Uint8Array on its own, but the distinction decides whether the client's
+  // `event.data` arrives as an ArrayBuffer or a string, and that is too load
+  // bearing to leave to a default.
+  private sendBinary(socket: ClientSocket, frame: Uint8Array): void {
+    if (socket.readyState !== socket.OPEN) {
+      return
+    }
+    socket.send(frame, { binary: true })
   }
 }
 //#endregion
