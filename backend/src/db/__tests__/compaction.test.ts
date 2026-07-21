@@ -7,6 +7,7 @@ import { db } from "../pool"
 import { loadBaseCanvas, loadCanvas, saveCanvas } from "../canvasRepository"
 import {
   appendDrawEvents,
+  decimateRoomHistory,
   ensureRoom,
   loadEventsSince,
   type DrawEvent,
@@ -127,6 +128,39 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
     expect((await loadEventsSince(roomId, 0)).map((e) => e.revision)).toEqual([
       1, 2, 3,
     ])
+  })
+
+  it("uniformly decimates the retained log past the cap, sparing recovery", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 0, DEFAULT_CANVAS_DIMS)
+
+    // 100 events, then a head snapshot that bakes them all in.
+    const canvas = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
+    const batch: DrawEvent[] = []
+    for (let r = 1; r <= 100; r += 1) {
+      applyDrawInstructionToCanvas(canvas, pencilAt(r), DEFAULT_CANVAS_DIMS)
+      batch.push(evAt(r))
+    }
+    await appendDrawEvents(roomId, batch)
+    await saveCanvas(roomId, canvas, 100, DEFAULT_CANVAS_DIMS)
+    expect(await eventCount(roomId)).toBe(100) // fully retained before decimation
+
+    // Thin to 10.
+    await decimateRoomHistory(roomId, 100, 10)
+
+    const survivors = (await loadEventsSince(roomId, 0)).map((e) => e.revision)
+    expect(survivors.length).toBeLessThanOrEqual(10)
+    expect(survivors[0]).toBe(1) // first event kept (scrub start)
+    expect(survivors[survivors.length - 1]).toBe(100) // last event kept (scrub end)
+    const gaps = survivors.slice(1).map((r, i) => r - survivors[i])
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1) // even
+
+    // Recovery is untouched — decimation only deleted events baked into the head
+    // snapshot, so the head still holds the exact canvas.
+    const stored = await loadCanvas(roomId)
+    expect(stored.revision).toBe(100)
+    expect(Array.from(stored.pixels)).toEqual(Array.from(canvas))
   })
 
   it("still recovers the exact canvas after compaction (snapshot + surviving events)", async () => {

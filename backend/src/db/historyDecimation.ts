@@ -12,6 +12,17 @@
 // agree on — it is backend-only, not shared/.
 //#endregion
 
+//#region Cap
+// The retained event log is uniformly thinned to this many entries once it grows
+// past it. WHY 20k: ~20,000 instruction rows is a few MB of JSONB and a similar
+// playback payload (playback is a TEXT message), and a full-timeline incremental
+// replay of that stays well under a couple of seconds even with heavier
+// bucket/spray ops. It sits ~100x above MAX_EVENT_BUFFER (the 200-event flush
+// batch) and comfortably above a normal drawing session, so decimation only ever
+// engages for very long-lived rooms — for everyone else the timeline is exact.
+export const MAX_HISTORY_EVENTS = 20_000
+//#endregion
+
 //#region Selector
 // Given the ascending list of retained event revisions and the cap, return the
 // revisions to KEEP: identity when already within the cap, otherwise `cap`

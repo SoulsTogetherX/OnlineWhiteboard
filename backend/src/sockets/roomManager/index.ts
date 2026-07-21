@@ -8,10 +8,12 @@ import type { CanvasDims } from "@shared/constants/canvas"
 import { loadBaseCanvas, loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
   appendDrawEvents,
+  decimateRoomHistory,
   ensureRoom,
   loadEventsSince,
   type DrawEvent,
 } from "@/db/eventRepository"
+import { MAX_HISTORY_EVENTS } from "@/db/historyDecimation"
 import {
   getOpenEditing,
   pruneStaleRooms,
@@ -1391,9 +1393,12 @@ export default class RoomManager {
     try {
       // Retain the whole event log after the genesis base so the timeline replays
       // start-to-end; saveCanvas keeps the base + head snapshots and prunes only
-      // what the base already bakes in. (Stage 3 will bound the retained span with
-      // uniform decimation here.)
+      // what the base already bakes in.
       await saveCanvas(room.roomId, room.pixels, room.revision, this.dimsOf(room))
+      // Bound that retained span: once it grows past MAX_HISTORY_EVENTS, thin it
+      // uniformly. Separate from the snapshot write because it only ever deletes
+      // events already baked into the head snapshot, so it cannot affect recovery.
+      await decimateRoomHistory(room.roomId, room.revision, MAX_HISTORY_EVENTS)
       room.isDirty = false
     } catch (error) {
       console.error(`Failed to save room ${room.roomId}:`, error)
