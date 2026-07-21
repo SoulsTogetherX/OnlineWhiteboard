@@ -60,8 +60,13 @@ function reversed(entries: PatchEntry[]): PatchEntry[] {
 
 function enforceCap(stack: Action[]): void {
   let totalBytes = stack.reduce((sum, a) => sum + estimateBytes(a.entries), 0)
+  // Keep at least the MOST RECENT action (`stack.length > 1`): you must always be
+  // able to undo your last gesture, even a big-brush stroke that alone exceeds
+  // MAX_BYTES. Without this, a single large stroke was evicted the instant it was
+  // pushed — while pushAction still lit `canUndo` — so undo looked available but
+  // did nothing (a ~19px brush stroke is enough to blow past 64 KB / 4096 entries).
   while (
-    stack.length > 0 &&
+    stack.length > 1 &&
     (stack.length > MAX_ACTIONS || totalBytes > MAX_BYTES)
   ) {
     const removed = stack.shift()
@@ -106,7 +111,7 @@ export default function useUndoRedo(
       undoStack.current.push({ instructionId, entries: [...entries] })
       redoStack.current = [] // a new action invalidates the redo branch
       enforceCap(undoStack.current)
-      setCanUndo(true)
+      setCanUndo(undoStack.current.length > 0)
       setCanRedo(false)
     },
     [],
