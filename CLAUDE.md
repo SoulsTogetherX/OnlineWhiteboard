@@ -501,8 +501,19 @@ The rules that follow from this:
 
 ### 12.2 Commit after each verified feature
 
-One concern per commit, on a feature branch, **after** it is verified. Commit messages
-explain *why*, not just what — this repo's history is part of its documentation.
+One concern per commit, on the **`dev`** branch, **after** it is verified. `dev` is the
+integration branch — all work lands here directly (not on scattered feature branches), and
+`dev` is **squash-merged to `main` via a PR as a versioned release** (`V1.x.0`). So `main`
+carries one clean commit per release while `dev` keeps the granular, per-concern history
+this repo treats as documentation. Commit messages explain *why*, not just what.
+
+> **Squash-divergence gotcha when opening the dev→main PR.** Because each release
+> squash-merges `dev` into `main`, `main` becomes an older *subset snapshot* of `dev`'s
+> work whose commits are **not ancestors** of `dev` — a naive merge then conflicts and
+> duplicates code. Before opening the PR, record `main` as an ancestor without changing
+> `dev`'s tree: `git merge -s ours origin/main` on `dev` (verify the tree sha is unchanged),
+> then push. Confirm clean with `git rev-list origin/main ^origin/dev` (empty = main is an
+> ancestor). This is why `dev`'s history carries periodic "Merge main into dev" commits.
 
 **Never push, open a PR, or merge without explicit approval.** Committing locally is
 pre-authorised; publishing is not.
