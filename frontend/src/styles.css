@@ -104,8 +104,12 @@
 }
 
 body {
-  width: 100vw;
+  /* 100% not 100vw: vw INCLUDES the vertical scrollbar, so 100vw is wider
+     than the content box wherever a scrollbar exists and forces a spurious
+     horizontal scrollbar. Same reason height is dvh-aware below. */
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
 
   margin: 0;
   padding: 0;

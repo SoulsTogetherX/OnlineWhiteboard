@@ -2,7 +2,7 @@
   display: grid;
   gap: 18px;
 
-  width: min(420px, calc(100vw - 64px));
+  width: min(420px, 100%);
 }
 
 .color-picker-header {
@@ -202,6 +202,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
+
+  /* Pinned to the foot of the dialog's scroll area. On a short screen the
+     picker is taller than the window, and Cancel/Apply are the last things in
+     it — so without this you had to scroll past every swatch to commit a colour
+     you had already chosen. The negative margin + padding let the sticky bar
+     span the dialog's padding, so content scrolls under it rather than beside
+     it. */
+  position: sticky;
+  bottom: -20px;
+  z-index: 1;
+
+  margin: 0 -20px -20px;
+  padding: 10px 20px 20px;
+
+  background: var(--surface-background);
 }
 
 .color-popup-spacer {
@@ -248,4 +263,28 @@
   background: var(--accent-color);
 
   color: var(--surface-background);
+}
+
+/* Short viewports — a laptop with the browser chrome open, or a phone in
+   landscape. The dialog already scrolls rather than overflowing; this keeps it
+   from NEEDING to scroll by tightening the parts that are pure breathing room. */
+@media (max-height: 720px) {
+  .color-picker-module {
+    gap: 10px;
+  }
+
+  .rgba-grid,
+  .hex-picker-row,
+  .rgba-control {
+    gap: 8px;
+  }
+
+  .color-preview {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hex-picker-row input[type="color"] {
+    height: 32px;
+  }
 }

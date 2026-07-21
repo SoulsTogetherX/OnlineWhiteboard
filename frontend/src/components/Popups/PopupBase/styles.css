@@ -10,6 +10,10 @@
   position: fixed;
   inset: 0;
 
+  /* Keeps a dialog off the screen edges at every size, and gives the max-height
+     below something to subtract from. */
+  padding: 1rem;
+
   opacity: 0;
   pointer-events: none;
 
@@ -39,7 +43,23 @@
   width: fit-content;
   height: fit-content;
   min-width: 10vw;
-  min-height: 10vh;
+
+  /* A dialog must never be taller than the screen it opens on. Nothing bounded
+     this before, so the colour picker — header, hex row, four RGBA sliders,
+     recent and saved swatches, then the buttons — ran off the bottom of a short
+     window with no way to reach Apply.
+
+     dvh, not vh: on mobile browsers vh measures the viewport with the URL bar
+     RETRACTED, so a vh-sized dialog is taller than what you can actually see.
+     dvh tracks the visible viewport. The vh line above is the fallback for
+     browsers without dvh — they land on the old bound rather than on none. */
+  max-width: 100%;
+  max-height: calc(100vh - 2rem);
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  /* Reaching the end of a dialog's scroll must not start scrolling the board
+     behind it. */
+  overscroll-behavior: contain;
 
   padding: 20px;
   margin: auto;

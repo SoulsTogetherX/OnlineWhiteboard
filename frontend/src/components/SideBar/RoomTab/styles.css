@@ -153,7 +153,14 @@
 }
 
 .room-request-editor {
-  align-self: flex-start;
+  /* Full width and centred, like the other stacked buttons in this tab. It was
+     align-self:flex-start, which left it hugging the left edge at whatever width
+     its label happened to need. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
 
   padding: 0.4rem 0.75rem;
 

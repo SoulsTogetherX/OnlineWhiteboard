@@ -2,7 +2,7 @@
   display: grid;
   gap: 16px;
 
-  width: min(360px, calc(100vw - 64px));
+  width: min(360px, 100%);
 }
 
 .auth-header h2 {
