@@ -2,6 +2,11 @@
 
 > Context document for working on this repo, human or AI. Lives at the repo root so
 > Claude Code auto-loads it. Rewritten 2026-07-17 to describe the system as it is now.
+> **Corrected 2026-07-20:** §1, §5.1, §5.3, §5.6, §5.7, §7, §8, §11, §14, §16, §17 brought
+> back in line with Phases 2–5 — the vote/consensus system (removed in Phase 2) was still
+> documented, the canvas was still described as 120×120 (now per-room 256²), the email blind
+> index was described as HMAC (it is a slow scrypt KDF), and the test counts and Phase 5
+> status were stale.
 >
 > **Read §12 (Working agreements) before changing anything.**
 >
@@ -15,15 +20,16 @@
 ## 1. What this is
 
 A real-time collaborative **pixel** whiteboard. Users join a **room** by id, draw on a
-shared **120×120 RGBA** canvas, and every stroke propagates live to everyone in that room.
-Canvas state survives disconnects, restarts and hard crashes.
+shared **256×256 RGBA** canvas (per-room, resizable within `[16, 512]` — see Phase 4), and
+every stroke propagates live to everyone in that room. Canvas state survives disconnects,
+restarts and hard crashes.
 
 The defining architectural decision: **the server owns an authoritative pixel buffer**,
 not a list of shapes. Everything else follows from that.
 
 Feature surface today: freehand pencil/eraser, flood-fill bucket, spray can, adjustable
 brush size, concurrency-safe undo/redo, live presence + cursors, optional accounts,
-per-room roles, consensus-gated board clearing, named checkpoints with restore, history
+per-room roles, owner-only board clearing, named checkpoints with restore, history
 playback, a "My Rooms" dashboard with thumbnails, and a saved colour palette.
 
 ---
@@ -40,7 +46,7 @@ playback, a "My Rooms" dashboard with thumbnails, and a saved colour palette.
 | Runtime       | Node 22 (all images, CI, `@types/node`) | Kept aligned on purpose — see §11        |
 | Dev runner    | `tsx watch` (BE), `vite` (FE)      | Backend is never compiled in dev              |
 | Prod          | Multi-stage Docker → nginx + esbuild bundle | `docker-compose.prod.yaml`           |
-| Tests         | Vitest (3 suites)                  | See §11                                       |
+| Tests         | Vitest — shared + backend + frontend (frontend runs node + jsdom projects) | See §11         |
 | CI            | GitHub Actions                     | Verify job + full prod-stack e2e              |
 
 ---
@@ -128,7 +134,7 @@ Browser                                   Server
   |                                        |  getOrCreateRoom: cache hit, else
   |                                        |    latest snapshot + replay newer events
   |<-- {ready, revision, self, participants}
-  |<-- [BINARY frame: {canvas_snapshot} header + 57600B raw RGBA]
+  |<-- [BINARY frame: {canvas_snapshot} header + deflated RGBA (256² = 262144B raw)]
   |<-- {checkpoints, ...}
   |<-- {presence, participants}   (broadcast to the room)
 ```
@@ -160,10 +166,11 @@ rather than stroke-length × brush-area.
 
 Every 10s the server broadcasts `{revision_check, revision}` — a few dozen bytes. Each
 client compares it to its own last-applied revision; only a client that has **fallen
-behind** sends `{resync}`, and only that client receives a fresh ~75KB snapshot.
+behind** sends `{resync}`, and only that client receives a fresh snapshot (the whole
+canvas — 256²×4 = 262144B raw at the default size, deflated on the wire).
 
 This replaced an older design that broadcast the whole canvas to everyone every 10s:
-O(clients × 75KB) → O(clients × ~40B), and the cost no longer grows with canvas size.
+O(clients × snapshot) → O(clients × ~40B), and the cost no longer grows with canvas size.
 
 ### 5.4 Undo/redo — compare-and-swap patches
 
@@ -207,29 +214,31 @@ The rules live once, in `shared/types/identity.ts`, and **both sides call them**
 
 | Helper             | Allows                                    | Who              |
 | ------------------ | ----------------------------------------- | ---------------- |
-| `canDraw`          | drawing, initiating/voting on actions     | everyone but `viewer` |
+| `canDraw`          | drawing                                   | `owner`/`editor` always; `viewer`/`guest` only while `open_editing` is on |
 | `hasEditAuthority` | create/restore/delete checkpoints         | `owner`, `editor` |
-| `canManageRoom`    | change roles, remove members              | `owner` only     |
+| `canManageRoom`    | clear, resize, toggle open editing, change roles, remove members | `owner` only |
+| `canRequestEditor` | ask the owner for editor access           | `viewer` only    |
 
 The server is the authority; client checks are cosmetic (greying out controls). A crafted
 client cannot bypass them — `RoomManager` re-checks on every message.
 
-Membership: first registered user into a fresh room claims **owner**, everyone after is
-**editor**; guests are never members. A room has **exactly one owner**, enforced
-structurally (§13.4).
+Membership: everyone — including the first visitor — joins as a **viewer**. Ownership is
+never automatic: it is **claimed** on an unowned room and **released** explicitly, and it
+persists across sessions. Guests are never members. A room has **at most one owner**,
+enforced structurally (§13.4).
 
-### 5.7 Destructive actions need consensus
+### 5.7 Destructive actions are owner-only
 
 Clearing the board is not a draw instruction a client may send — the server **rejects** a
-client-originated `clear`. The only path is `request_action`:
+client-originated `clear`. The only path is a `room_action` message, which the server
+applies on the owner's behalf **after checking `canManageRoom` (owner only)**. It then flows
+through the normal event-log + broadcast path like any other instruction.
 
-- Voters = currently-connected **recent editors** (drew within `RECENT_EDITOR_WINDOW_MS`
-  = 15 min), plus the requester.
-- Only one vote per room at a time. Requires **unanimous** approval; any rejection kills it.
-- Auto-fails after `VOTE_TIMEOUT_MS` = 30s so one AFK voter can't freeze the board.
-- If the requester is the only recent editor, it applies immediately.
-- On resolution the server applies a `ClearInstruction` itself, which then flows through
-  the normal event-log + broadcast path like any other instruction.
+An earlier design gated clears behind a consensus **vote** among recent editors (unanimous
+approval, timeouts, a voter set). Phase 2 removed it entirely (§16, §17): one accountable
+owner is simpler to reason about and deletes a whole class of stuck-vote edge cases rather
+than handling them. There is no `request_action` message, no voter set, and no vote timers
+in the protocol any more.
 
 ### 5.8 Checkpoints and playback (time travel)
 
@@ -287,6 +296,12 @@ Optional accounts — the app is fully usable as a guest.
 - **Login** uses a generic error + constant-work path so it cannot leak which emails exist.
 - Logging in/out **reconnects the socket** (via `reconnectKey`) so the server re-resolves
   identity without a page reload.
+- **Logout also force-closes every live socket for that session** server-side — a session
+  registry keyed by the token *hash* closes them with code `1008`. A socket is authenticated
+  once at upgrade and then lives for the tab's lifetime, so deleting the session row alone
+  would leave it acting as the logged-in user; the registry is what makes logout end access
+  immediately on a shared machine. A periodic sweep (30 min) likewise drops sockets whose
+  session has expired or been revoked.
 
 ---
 
@@ -297,9 +312,10 @@ Optional accounts — the app is fully usable as a guest.
 | CSWSH (cross-site WebSocket hijacking) | Origin allowlist checked at the upgrade, before it becomes a socket. `SameSite` does **not** reliably cover WS upgrades — this is the primary defence. |
 | CSRF | `csrfOriginGuard` on state-changing API requests, on top of `SameSite=Lax`. |
 | Credential stuffing | Per-IP rate limits: login **10 / 15 min**, register **5 / 60 min** (keyed off nginx's `X-Real-IP`). In-memory, so per-process — multi-instance needs Redis. |
-| Weak passwords | Common-password blocklist in `auth/validation.ts`. |
+| Weak / breached passwords | Common-password blocklist (`auth/validation.ts`) **plus** live **HIBP k-anonymity** breach screening (`auth/breachedPassword.ts`, fail-open). The blocklist is the floor; HIBP is what actually stops reused-from-a-leak passwords. |
+| Socket flooding / DoS | **Weighted-cost token bucket** (cost = server *work*, not message count) + **per-identity connection caps** enforced at the WS upgrade *before* any DB query — `backend/src/security/socketLimits.ts`. In-memory / per-process. |
 | Deanonymisation | `Participant` carries no account id (§5.5). |
-| Malicious instructions | `shared/utils/validateInstruction.ts` at the single fan-in point (§13.2). |
+| Malicious instructions | Two-layer runtime validation: `shared/utils/validateSocketMessage.ts` guards the **envelope** (message type + all non-pixel fields), `validateInstruction.ts` guards the **pixel payload** at the single fan-in point (§13.2). |
 | Clickjacking / sniffing / TLS downgrade | `security-headers.conf`: CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy. |
 
 **Origin allowlist fails OPEN in development, CLOSED in production.** If `ALLOWED_ORIGINS`
@@ -394,13 +410,19 @@ Three suites, each matched to what it is good at:
 
 | Suite | Command | Count | Needs |
 | --- | --- | --- | --- |
-| Shared protocol (unit) | `npm test` (root) | **89** in 9 files | nothing |
-| Frontend (unit) | `cd frontend && npm test` | **7** | nothing |
-| Backend | `cd backend && npm test` | **63** (20 pure, 43 DB-gated) | Postgres for the 43 |
+| Shared protocol (unit) | `npm test` (root) | **162** in 15 files | nothing |
+| Frontend | `cd frontend && npm test` | **54** in 11 files (two projects) | nothing |
+| Backend | `cd backend && npm test` | **128** in 15 files (DB tests gated on `POSTGRES_PASSWORD`) | Postgres for the DB-gated ones |
 
 The shared suite is the highest-value code in the repo to test: pure, deterministic, no DOM
 / network / database, and **both sides execute it** — a bug there desynchronises every
 client from the server's canvas.
+
+The **frontend** suite splits into two Vitest projects by file extension
+(`frontend/vitest.config.ts`): a `node` project for pure DOM-free logic (`*.test.ts`:
+colour maths, `localHold`, `reanchor`) and a `jsdom` project for React component tests
+(`*.test.tsx`, via Testing Library + `vitest.setup.ts` — added in Phase 5). Name the file
+for the environment you need.
 
 The backend's DB suites gate themselves on `POSTGRES_PASSWORD` so `npm test` stays green
 with no database. The pure ones (password hashing, input validation, origin allowlist) run
@@ -717,7 +739,8 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
   is unrelated to the resize/undo work it surfaced under; Phase 5 reworks the room UI and is
   the natural place to fix it. Verify with two clients + a presence assertion after a reload.
 - `rooms.title` is provisioned but never written (deliberate — see §12.4).
-- Email verification, password reset, and a breached-password (HIBP) check.
+- Email verification and password reset. (The breached-password **HIBP** check is **done** —
+  it shipped in Phase 1; see §7/§8/§17. Only verification and reset remain.)
 - The loadtest only exercises `ping` + a `pencil` draw — it doesn't touch presence, cursors,
   votes, checkpoints, playback, spray or brush size, and never sends `resync`, so it does
   not exercise the snapshot path.
@@ -750,7 +773,8 @@ exactly why it is written down. Do not "fix" one of these without revisiting the
 
 | Decision | Rejected alternative | Why |
 | --- | --- | --- |
-| **Email: blind index + encrypted at rest.** Store `HMAC-SHA256(email, pepper)` for lookup and the address encrypted with a key held outside the database. | Plaintext email column. | A database-only leak then reveals no addresses. Plaintext is the single most commonly breached PII field. |
+| **Email: blind index + encrypted at rest.** Store a **slow-KDF (scrypt) blind index** of the email for lookup, and the address encrypted (AES-256-GCM, AAD = user id) with a key held outside the database. | Plaintext email column. | A database-only leak then reveals no addresses. Plaintext is the single most commonly breached PII field. |
+| | **HMAC-SHA256** blind index (the usual choice for a blind index). | Email is low-entropy and enumerable, so a *fast* keyed hash lets anyone holding the DB + pepper brute-force the whole address space offline. A deliberately slow KDF makes each guess cost real time. (The code explicitly rejects HMAC here.) |
 | | Hash-only, unrecoverable. | Loses the address forever: no password reset, no verification, no way to contact a user. |
 | **Passwords: scrypt**, salted and memory-hard. | Anything faster (SHA-256, bcrypt-with-low-cost). | A fast hash is exactly what makes a leaked table brute-forceable. Memory-hardness is the point. |
 | **100 ms responsiveness is PERCEPTUAL.** Your own action renders instantly and is held ≥100 ms against a colliding remote instruction; final pixels still converge byte-identically. | "First writer actually wins." | Real conflict resolution would change the authoritative-server model and risk divergence. The goal is that input never *feels* eaten — not that collaborators can't paint over each other. |
@@ -834,8 +858,17 @@ Retractable **right** sidebar, desktop and mobile, with three tabs:
 
 Also: keyboard shortcuts active while open, a full ARIA pass, merge the two `relativeTime`
 formatters, and route every dialog through `PopupBase`. The canvas stays pan/zoomable.
-Needs a jsdom + Testing Library stack that **does not exist yet** (§12.6: ask before adding
-dependencies).
+
+**In progress.** Landed so far: the jsdom + Testing Library test stack (§11); the retractable
+sidebar shell with accessible tab switching (roving-tabindex tablist, `inert` when
+collapsed); and the **Room** tab — a thin composition of small components (`MemberList`,
+`OwnershipButton`, `OpenEditingToggle`, `ResizeControl`, `EditorRequests` + an `IconButton`
+primitive) wiring the previously-dark plumbing: ownership claim/release, open-editing toggle,
+owner-only resize (which also completed Phase 4's resize UI), editor-request accept/deny, and
+clear + download. The old floating UI still renders alongside and is retired tab by tab into
+`components/Old`. Still to do: the **Drawing** and **Timeline** tabs, and the a11y + central
+keymap + `relativeTime` merge + `PopupBase` unification pass. (The Testing Library + jsdom
+choice was already recorded in §16.)
 
 ### Phase 6 — Timeline scrubbing + uniform decimation
 
