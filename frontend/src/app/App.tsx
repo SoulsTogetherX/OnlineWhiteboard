@@ -216,30 +216,35 @@ export default function App() {
         socketLabel={socketLabel}
         onOpenRoomPicker={roomPicker.open}
       />
-      {user && (
-        <>
-          <button
-            type="button"
-            className="members-button"
-            onClick={members.open}
-          >
-            Members
-          </button>
-          <button
-            type="button"
-            className="my-rooms-button"
-            onClick={dashboard.open}
-          >
-            My Rooms
-          </button>
-        </>
-      )}
-      <AuthControl
-        user={user}
-        isLoading={authLoading}
-        onOpenAuth={authPopup.open}
-        onLogout={logout}
-      />
+      {/* Top-right cluster: the logged-in user's room actions plus the auth
+          control, laid out as one flex row instead of three independently
+          fixed-positioned elements with magic right offsets. */}
+      <div className="app-actions">
+        {user && (
+          <>
+            <button
+              type="button"
+              className="app-action-button"
+              onClick={dashboard.open}
+            >
+              My Rooms
+            </button>
+            <button
+              type="button"
+              className="app-action-button"
+              onClick={members.open}
+            >
+              Members
+            </button>
+          </>
+        )}
+        <AuthControl
+          user={user}
+          isLoading={authLoading}
+          onOpenAuth={authPopup.open}
+          onLogout={logout}
+        />
+      </div>
       <CanvasBoard canvasRef={canvasRef} />
       <CursorOverlay
         canvasRef={canvasRef}

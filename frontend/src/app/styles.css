@@ -30,30 +30,36 @@
   pointer-events: none;
 }
 
-/* "Members" button — opens the room membership panel (logged-in users). */
-.members-button {
+/* Top-right cluster: the account control plus (when logged in) the "My Rooms"
+   and "Members" buttons. One fixed flex row so the buttons lay out with a gap
+   instead of each being independently fixed-positioned with a magic right
+   offset that collided with the auth control as the username widened. */
+.app-actions {
   position: fixed;
-  top: 0.5rem;
-  right: 9rem;
+  top: 12px;
+  right: 12px;
   z-index: 20;
+
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* "My Rooms" opens the dashboard; "Members" opens the membership panel. */
+.app-action-button {
   padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
+
+  border: 1px solid var(--border-color);
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
-  background: var(--popup-bg, #fff);
+
+  background: var(--popup-background);
+  color: var(--text-color);
+
+  font-size: 0.8rem;
   cursor: pointer;
 }
 
-/* "My Rooms" button — opens the dashboard (logged-in users). */
-.my-rooms-button {
-  position: fixed;
-  top: 0.5rem;
-  right: 12rem;
-  z-index: 20;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
-  background: var(--popup-bg, #fff);
-  cursor: pointer;
+.app-action-button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
 }

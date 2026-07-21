@@ -1,9 +1,6 @@
+/* Positioned by its parent (.app-actions) now, not self-fixed — it sits in the
+   top-right cluster alongside the "My Rooms"/"Members" buttons. */
 .auth-control {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  z-index: 5;
-
   display: flex;
   align-items: center;
   gap: 10px;
