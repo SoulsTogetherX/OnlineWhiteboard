@@ -1198,8 +1198,8 @@ export default class RoomManager {
 
   // Sends the requester the data to animate history: a base canvas plus the
   // events after it. Read-only, so anyone in the room (including viewers) may
-  // watch. From a checkpoint, the base is that checkpoint; otherwise the latest
-  // rolling snapshot (i.e. "replay what happened since the last save").
+  // watch. From a checkpoint, the base is that checkpoint; otherwise the GENESIS
+  // base (earliest snapshot), so the scrub covers the room start-to-end.
   private async handlePlayback(
     socket: ClientSocket,
     room: RoomState,
@@ -1225,7 +1225,12 @@ export default class RoomManager {
         baseRevision = checkpoint.revision
         baseDims = { width: checkpoint.width, height: checkpoint.height }
       } else {
-        const stored = await loadCanvas(room.roomId)
+        // Genesis base = the earliest snapshot (seeded blank @ rev 0, or the
+        // resize image after a resize). Fall back to the head snapshot if a base
+        // is somehow missing, so playback still works rather than erroring.
+        const stored =
+          (await loadBaseCanvas(room.roomId)) ??
+          (await loadCanvas(room.roomId))
         base = stored.pixels
         baseRevision = stored.revision
         baseDims = { width: stored.width, height: stored.height }

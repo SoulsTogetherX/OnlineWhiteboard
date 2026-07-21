@@ -279,7 +279,7 @@ async function main() {
     }),
   )
 
-  await waitFor(
+  const good = await waitFor(
     b.seen,
     (m) => m.type === "draw" && m.instruction.sessionId === "smoke-good",
     "a legitimate stroke sent right after a hostile one",
@@ -296,6 +296,30 @@ async function main() {
   presenceCount === 2
     ? pass("presence roster lists both clients in the room")
     : fail(`presence roster had ${presenceCount} participants, expected 2`)
+
+  // --- History playback (start-to-end, Phase 6) ---------------------------
+  // Playback with no checkpoint now replays from the GENESIS base — the blank
+  // canvas seeded at revision 0 when the room was created — so the scrub covers
+  // the whole room history, not just "since the last save". Ask A for it.
+  a.ws.send(JSON.stringify({ type: "request_playback", roomId: ROOM }))
+  const playback = await waitFor(a.seen, (m) => m.type === "playback", '"playback"')
+
+  playback.baseRevision === 0
+    ? pass("playback replays from the genesis base (revision 0), start-to-end")
+    : fail(`playback baseRevision was ${playback.baseRevision}, expected 0`)
+
+  // The two valid strokes (the hostile one was rejected) are the first and last
+  // events, so the steps must run from revision 1 to the head — proving the log
+  // was retained from the start, not compacted to the latest snapshot.
+  const stepRevisions = (playback.steps ?? []).map((s) => s.revision)
+  stepRevisions[0] === 1 &&
+  stepRevisions[stepRevisions.length - 1] === good.revision
+    ? pass(
+        `playback steps span the whole session (revisions ${stepRevisions[0]}..${stepRevisions[stepRevisions.length - 1]})`,
+      )
+    : fail(
+        `playback steps did not span 1..${good.revision}: ${JSON.stringify(stepRevisions)}`,
+      )
 
   // --- Live cursors -------------------------------------------------------
   // A's cursor should relay to B (ephemeral, never touches the canvas), tagged
