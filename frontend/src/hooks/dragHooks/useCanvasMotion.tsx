@@ -94,6 +94,14 @@ export default function useCanvasMotion(
 
   const onScrollWheel = useCallback(
     (ev: WheelEvent) => {
+      // Zoom only on SHIFT+wheel. A plain wheel is left alone so it scrolls the
+      // page or, crucially, a focused/hovered control (the stroke-size slider and
+      // number input) — instead of the canvas silently eating every scroll.
+      if (!ev.shiftKey) {
+        return
+      }
+      ev.preventDefault()
+
       const element = dragElementRef.current
       if (!element) {
         return
@@ -110,7 +118,7 @@ export default function useCanvasMotion(
     [dragElementRef, checkResetPos],
   )
 
-  useScrollWheel(dragFrameRef, onScrollWheel, true)
+  useScrollWheel(dragFrameRef, onScrollWheel)
   useDrag(
     dragFrameRef,
     optionalCheck,
