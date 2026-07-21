@@ -279,7 +279,11 @@ export default function App() {
           dashboard.close()
         }}
       />
-      <PlaybackViewer playback={playback} onClose={clearPlayback} />
+      <PlaybackViewer
+        playback={playback}
+        checkpoints={checkpoints}
+        onClose={clearPlayback}
+      />
       <AuthPopup
         isOpen={authPopup.isOpen}
         onClose={authPopup.close}
