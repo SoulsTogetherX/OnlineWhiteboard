@@ -7,6 +7,7 @@ import {
   getLookAtMethod,
   getPosCorrected,
   updateCanvas,
+  withChangeCount,
   withRecording,
 } from "./helperProtocolMethods"
 import { mulberry32, randomSeed } from "./random"
@@ -150,12 +151,21 @@ export function handleDrawSprayFinish(
 ): SprayInstruction | null {
   return null
 }
+// Returns how many pixels the puff actually CHANGED. A spray whose scatter lands
+// entirely on pixels that are already that colour did nothing. See
+// withChangeCount.
 export function handleDrawSprayInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: SprayInstruction,
   dims: CanvasDims,
-): void {
-  const drawer = getDrawerMethod("spray", pixels)
+): number {
+  const counter = { changed: 0 }
+  const drawer = withChangeCount(
+    getLookAtMethod("spray", pixels),
+    getDrawerMethod("spray", pixels),
+    counter,
+  )
   setPixelSpray(inst, inst.color ?? DEFAULT_COLOR, drawer, dims)
+  return counter.changed
 }
 //#endregion

@@ -65,17 +65,25 @@ export function applyDrawInstructionToCanvas(
     return null
   }
 
+  // An instruction that changed no pixels is reported as null, exactly like a
+  // patch whose every entry lost its compare-and-swap. On the server that is
+  // what keeps it out of the timeline: no revision bump, no logged event, no
+  // broadcast. Drawing black over black, spraying onto a region already that
+  // colour, or bucket-filling a shape with the colour it already has all used to
+  // produce history steps that render no visible change, so scrubbing the
+  // timeline sat still for stretches of "work" that never happened.
+  //
+  // The pixels are still WRITTEN either way — this only reports whether any of
+  // them ended up different, so a replaying caller (which ignores the return
+  // value) is unaffected.
   switch (inst.type) {
     case "pencil":
     case "eraser":
-      handleDrawLineInstruction(pixels, inst, dims)
-      return inst
+      return handleDrawLineInstruction(pixels, inst, dims) > 0 ? inst : null
     case "bucket":
-      handleDrawFillInstruction(pixels, inst, dims)
-      return inst
+      return handleDrawFillInstruction(pixels, inst, dims) > 0 ? inst : null
     case "spray":
-      handleDrawSprayInstruction(pixels, inst, dims)
-      return inst
+      return handleDrawSprayInstruction(pixels, inst, dims) > 0 ? inst : null
     case "clear": {
       // Blank every byte — R, G, B and A all to 0 (fully transparent).
       const buffer = pixels instanceof Uint8ClampedArray ? pixels : pixels.data

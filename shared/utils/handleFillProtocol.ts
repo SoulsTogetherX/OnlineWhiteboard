@@ -29,9 +29,14 @@ function setPixelFill(
   imageData: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   dims: CanvasDims,
   record?: PatchEntry[],
-): void {
+): number {
   // Get Data
   const startPos = action.pos ?? [0, 0]
+  // Every write below is a genuine change: the fill only ever touches pixels
+  // holding targetColor, and it bails out entirely when that already equals
+  // newColor. So counting writes counts changed pixels, and the caller can tell
+  // "filled a region" from "clicked a region that was already this colour".
+  let changed = 0
 
   // Setup Methods
   const getColor = getLookAtMethod(action.type, imageData)
@@ -46,9 +51,10 @@ function setPixelFill(
 
   if (colorsEqual(targetColor, newColor)) {
     // If the color here is already the newColor, return
-    return
+    return changed
   }
   setColor(startIdx, newColor)
+  changed += 1
 
   // Set up Flood Fill
   const queue = [startPos]
@@ -76,10 +82,12 @@ function setPixelFill(
         colorsEqual(targetColor, getColor(idx))
       ) {
         setColor(idx, newColor)
+        changed += 1
         queue.push([nx, ny])
       }
     }
   }
+  return changed
 }
 
 function createInstruction(
@@ -148,11 +156,13 @@ export function handleDrawFillLeave(
 ): FillInstruction | null {
   return null
 }
+// Returns how many pixels the fill actually CHANGED — zero when the clicked
+// region already holds the fill colour.
 export function handleDrawFillInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: FillInstruction,
   dims: CanvasDims,
-): void {
-  setPixelFill(inst, inst.color ?? DEFAULT_COLOR, pixels, dims)
+): number {
+  return setPixelFill(inst, inst.color ?? DEFAULT_COLOR, pixels, dims)
 }
 //#endregion

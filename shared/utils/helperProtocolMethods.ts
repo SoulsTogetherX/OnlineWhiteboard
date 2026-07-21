@@ -313,6 +313,27 @@ export function withRecording(
   }
 }
 
+// Wraps a setColor callback so it also counts how many writes actually CHANGED
+// a pixel. The counter is an object because the wrapper has to mutate something
+// its caller can read afterwards.
+//
+// This is what lets an instruction say "I did nothing". Drawing black over black
+// writes pixels and changes none of them, and without this the server had no way
+// to tell that apart from real work: it bumped the revision, logged the event and
+// broadcast it, so the timeline filled with steps that render no visible change.
+export function withChangeCount(
+  getColor: PixelColorMethod,
+  setColor: PixelInteractionMethod,
+  counter: { changed: number },
+): PixelInteractionMethod {
+  return (idx: number, color: ColorType): void => {
+    if (!colorsEqual(getColor(idx), color)) {
+      counter.changed += 1
+    }
+    setColor(idx, color)
+  }
+}
+
 // Collapses a gesture's raw recording into the patch that undoes it: one entry
 // per pixel, holding the colour it had before the gesture started and the colour
 // it ended on, with untouched-in-net pixels dropped entirely.
