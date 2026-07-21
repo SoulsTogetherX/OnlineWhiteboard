@@ -8,7 +8,6 @@ import MembersPopup from "@/components/Popups/MembersPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
 import RoomStatus from "@/components/RoomStatus"
 import Dashboard from "@/components/Dashboard"
-import CheckpointsPopup from "@/components/Popups/CheckpointsPopup"
 import PlaybackViewer from "@/components/PlaybackViewer"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
@@ -16,6 +15,7 @@ import SideBar from "@/components/SideBar"
 import type { TabId } from "@/components/SideBar"
 import RoomTab from "@/components/SideBar/RoomTab"
 import DrawingTab from "@/components/SideBar/DrawingTab"
+import TimelineTab from "@/components/SideBar/TimelineTab"
 import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
@@ -128,7 +128,6 @@ export default function App() {
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
   const [isMembersOpen, setIsMembersOpen] = useState<boolean>(false)
   const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false)
-  const [isCheckpointsOpen, setIsCheckpointsOpen] = useState<boolean>(false)
   const {
     roomId,
     participants,
@@ -255,14 +254,6 @@ export default function App() {
         socketLabel={socketLabel}
         onOpenRoomPicker={() => setIsRoomOpen(true)}
       />
-      {/* History is available to everyone — replay is read-only. */}
-      <button
-        type="button"
-        className="history-button"
-        onClick={() => setIsCheckpointsOpen(true)}
-      >
-        History
-      </button>
       {user && (
         <>
           <button
@@ -333,19 +324,6 @@ export default function App() {
           setIsDashboardOpen(false)
         }}
       />
-      <CheckpointsPopup
-        isOpen={isCheckpointsOpen}
-        checkpoints={checkpoints}
-        canEdit={hasEditAuthority(self?.role ?? "guest")}
-        onClose={() => setIsCheckpointsOpen(false)}
-        onCreate={createCheckpoint}
-        onRestore={restoreCheckpoint}
-        onDelete={deleteCheckpoint}
-        onReplay={(id) => {
-          requestPlayback(id)
-          setIsCheckpointsOpen(false)
-        }}
-      />
       <PlaybackViewer playback={playback} onClose={clearPlayback} />
       <AuthPopup
         isOpen={isAuthOpen}
@@ -398,9 +376,14 @@ export default function App() {
             onShowCursorNamesChange={setShowCursorNames}
           />
         ) : (
-          <p className="sidebar-placeholder">
-            The {sidebarTab} controls will live here.
-          </p>
+          <TimelineTab
+            checkpoints={checkpoints}
+            canEdit={hasEditAuthority(self?.role ?? "guest")}
+            onCreate={createCheckpoint}
+            onRestore={restoreCheckpoint}
+            onDelete={deleteCheckpoint}
+            onReplay={requestPlayback}
+          />
         )}
       </SideBar>
     </div>

@@ -1,0 +1,12 @@
+.timeline-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.timeline-hint {
+  margin: 0;
+  color: var(--sub-text-color);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}

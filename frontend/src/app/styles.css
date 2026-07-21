@@ -8,15 +8,6 @@
   background-color: var(--room-background);
 }
 
-/* Transitional: the sidebar tabs render this until the Room/Drawing/Timeline
-   commits fill them in, at which point it is removed. Muted so it reads as a
-   deliberate placeholder rather than broken content. */
-.sidebar-placeholder {
-  margin: 0;
-  color: var(--sub-text-color);
-  font-style: italic;
-}
-
 .undo-notice {
   position: fixed;
   left: 50%;
@@ -58,20 +49,6 @@
   position: fixed;
   top: 0.5rem;
   right: 12rem;
-  z-index: 20;
-  padding: 0.3rem 0.7rem;
-  font-size: 0.8rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
-  background: var(--popup-bg, #fff);
-  cursor: pointer;
-}
-
-/* "History" button — opens the checkpoints/playback panel (everyone). */
-.history-button {
-  position: fixed;
-  top: 0.5rem;
-  right: 15rem;
   z-index: 20;
   padding: 0.3rem 0.7rem;
   font-size: 0.8rem;

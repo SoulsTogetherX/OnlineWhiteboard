@@ -1,0 +1,125 @@
+.checkpoint-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.checkpoint-create {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.checkpoint-create input {
+  flex: 1 1 auto;
+  min-width: 0;
+
+  padding: 0.35rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.3rem;
+
+  font-size: 0.85rem;
+}
+
+.checkpoint-create button,
+.checkpoint-replay-recent {
+  padding: 0.35rem 0.6rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.3rem;
+
+  background-color: var(--popup-background);
+  color: var(--text-color);
+  font-size: 0.85rem;
+
+  cursor: pointer;
+}
+
+.checkpoint-create button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.checkpoint-replay-recent {
+  align-self: flex-start;
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+}
+
+.checkpoint-empty {
+  margin: 0;
+  color: var(--sub-text-color);
+  font-size: 0.8rem;
+}
+
+.checkpoint-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkpoint-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+
+  padding: 0.4rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.3rem;
+}
+
+.checkpoint-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.checkpoint-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 0.85rem;
+}
+
+.checkpoint-meta {
+  color: var(--sub-text-color);
+  font-size: 0.72rem;
+}
+
+.checkpoint-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.25rem;
+}
+
+.checkpoint-actions button {
+  padding: 0.2rem 0.4rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+
+  background-color: var(--popup-background);
+  color: var(--text-color);
+  font-size: 0.72rem;
+
+  cursor: pointer;
+}
+
+.checkpoint-delete {
+  color: #b42318 !important;
+}
+
+.checkpoint-actions button:focus-visible,
+.checkpoint-create button:focus-visible,
+.checkpoint-create input:focus-visible,
+.checkpoint-replay-recent:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
