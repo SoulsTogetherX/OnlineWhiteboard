@@ -1,17 +1,25 @@
 //#region What this migration does
 // Creates the ENTIRE schema in one step.
 //
-// This replaces what were seven incremental migrations (001_baseline through
-// 007_checkpoints). They were squashed because the project has no deployed
-// database whose data needed carrying forward, so their step-by-step history —
-// adopting an old `canvases` table, splitting it into rooms + snapshots, then
-// adding events, auth, palettes, membership and checkpoints — described a
-// journey no live database will ever take again. The end state is identical.
+// This is a re-squash. The previous history was 001_initial_schema (itself a
+// squash of seven incremental migrations) plus three follow-ups —
+// 002_email_at_rest, 003_room_open_editing, 004_canvas_dimension_bounds. They
+// have now been folded back into this single baseline, so the end state is
+// identical but there is one migration again instead of four. The project has no
+// deployed database whose data needed carrying forward, which is what makes a
+// re-squash safe.
 //
-// IMPORTANT if you ever deploy this: squashing is only safe while no database
-// has the old migration names recorded in `kysely_migration`. Kysely refuses to
-// run when a previously-applied migration has vanished, so a database created
-// before this squash must be recreated, not upgraded.
+// One concrete benefit of folding 002 in: this baseline no longer imports live
+// application crypto. Email-at-rest was originally a follow-up that had to READ
+// each existing plaintext address, index and encrypt it, then drop the column —
+// so it imported auth/emailCrypto to backfill. A fresh database has no rows to
+// backfill, so email_index/email_ciphertext are just columns here: pure DDL, no
+// coupling to live code, no "a migration that changes when the app changes" wart.
+//
+// IMPORTANT if you ever deploy this: squashing is only safe while no database has
+// the old migration names recorded in `kysely_migration`. Kysely refuses to run
+// when a previously-applied migration has vanished, so a database created before
+// this squash must be recreated (`docker compose ... down -v`), not upgraded.
 //
 // From here on the normal rule applies again: NEVER edit this file once it has
 // run somewhere. Add a new 002_*.ts instead.
@@ -36,22 +44,44 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // step with the in-memory RoomState. `title` is provisioned but not yet
   // written by any code path (the read path already selects it), so adding a
   // "name your room" feature is a UI change rather than a migration.
+  //
+  // `open_editing` (folded in from the old 003) is the room-level switch for
+  // whether people WITHOUT edit authority may draw — anonymous guests AND
+  // logged-in viewers alike, which is why it is "open_editing" not
+  // "guest_editing". DEFAULT TRUE deliberately: the whole premise is that you can
+  // open a link and immediately draw with people, so locking is the deliberate
+  // act, not the default.
+  //
+  // The `rooms_dimension_bounds` CHECK (folded in from the old 004) bounds the
+  // stored size to [16, 512], the MIN/MAX a room may be resized within (Phase 4).
+  // Per-room resize makes width/height attacker-influenced (the resize request
+  // carries them), so the database itself refuses an out-of-range value rather
+  // than trusting the app. The literals are hardcoded on purpose — a migration is
+  // a frozen fact — and MUST stay in step with MIN_CANVAS_DIMENSION (16) and
+  // MAX_CANVAS_DIMENSION (512) in shared/constants/canvas. Changing the range
+  // means a NEW migration that ALTERs the constraint, never editing this one.
   await sql`
     CREATE TABLE rooms (
-      id         TEXT PRIMARY KEY,
-      title      TEXT,
-      width      INTEGER NOT NULL,
-      height     INTEGER NOT NULL,
-      revision   INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id           TEXT PRIMARY KEY,
+      title        TEXT,
+      width        INTEGER NOT NULL,
+      height       INTEGER NOT NULL,
+      revision     INTEGER NOT NULL DEFAULT 0,
+      open_editing BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT rooms_dimension_bounds CHECK (
+        width  >= 16 AND width  <= 512 AND
+        height >= 16 AND height <= 512
+      )
     );
   `.execute(db)
 
   // --- Canvas snapshots ------------------------------------------------------
   // The rolling pixel checkpoint, kept purely as a recovery shortcut so replay
   // doesn't have to start from revision 0. ON DELETE CASCADE ties a snapshot's
-  // lifetime to its room — integrity a single-table design cannot express.
+  // lifetime to its room — integrity a single-table design cannot express. The
+  // dimension CHECK matches rooms: a stored snapshot can't be off-range either.
   await sql`
     CREATE TABLE canvas_snapshots (
       room_id    TEXT NOT NULL REFERENCES rooms(id) ON DELETE CASCADE,
@@ -60,7 +90,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       height     INTEGER NOT NULL,
       rgba       BYTEA NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      PRIMARY KEY (room_id, revision)
+      PRIMARY KEY (room_id, revision),
+      CONSTRAINT canvas_snapshots_dimension_bounds CHECK (
+        width  >= 16 AND width  <= 512 AND
+        height >= 16 AND height <= 512
+      )
     );
   `.execute(db)
 
@@ -90,19 +124,36 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   `.execute(db)
 
   // --- Users -----------------------------------------------------------------
-  // gen_random_uuid() is built into Postgres 13+ core, so no pgcrypto extension
-  // is needed. `email` is UNIQUE and stored lower-cased by the app, so
-  // "A@x.com" and "a@x.com" cannot become two accounts. `password_hash` is a
-  // self-describing scrypt string — never the password.
+  // Email is stored at rest, never in plaintext (folded in from the old 002):
+  //
+  //   email_index      — a slow-KDF (scrypt) blind index, UNIQUE, used for login
+  //                      lookup. Deterministic, so "same address" still means
+  //                      "same row" and uniqueness survives the encryption.
+  //   email_ciphertext — AES-256-GCM, bound to the row via AAD = user id.
+  //
+  // A read-only dump therefore contains no readable addresses; recovering one
+  // needs a secret deliberately kept out of the database (see auth/emailCrypto).
+  // The id must exist before the ciphertext is built (it is the AAD), so the app
+  // supplies it (newUserId) rather than relying on the column default — the
+  // default is a harmless fallback. gen_random_uuid() is core in Postgres 13+, so
+  // no pgcrypto extension is needed. `password_hash` is a self-describing scrypt
+  // string — never the password.
   await sql`
     CREATE TABLE users (
-      id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email         TEXT NOT NULL UNIQUE,
-      username      TEXT NOT NULL,
-      password_hash TEXT NOT NULL,
-      color         TEXT NOT NULL,
-      created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email_index      TEXT NOT NULL,
+      email_ciphertext TEXT NOT NULL,
+      username         TEXT NOT NULL,
+      password_hash    TEXT NOT NULL,
+      color            TEXT NOT NULL,
+      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
+  `.execute(db)
+
+  // The uniqueness the old plaintext `email UNIQUE` column used to enforce, now
+  // carried by the deterministic blind index.
+  await sql`
+    CREATE UNIQUE INDEX users_email_index_key ON users (email_index);
   `.execute(db)
 
   // --- Sessions --------------------------------------------------------------
@@ -168,11 +219,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // application logic. The WHERE clause makes it a PARTIAL index, so it
   // constrains only owner rows and lets any number of editors/viewers coexist.
   //
-  // This is what makes "the first registered user claims ownership" race-safe:
-  // two users joining a brand-new room simultaneously cannot both become owner —
-  // the loser's INSERT violates this index and the app catches 23505 and falls
-  // back to editor. It is also why setRole transfers ownership inside one
-  // transaction (demote, then promote) rather than promoting first.
+  // This is what makes claiming ownership race-safe: two users claiming a
+  // brand-new room simultaneously cannot both become owner — the loser's INSERT
+  // violates this index and the app catches 23505 and falls back to viewer. It is
+  // also why setRole transfers ownership inside one transaction (demote, then
+  // promote) rather than promoting first.
   await sql`
     CREATE UNIQUE INDEX room_one_owner ON room_members (room_id)
     WHERE role = 'owner';
@@ -189,7 +240,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   //
   // created_by is ON DELETE SET NULL, NOT cascade: deleting a user must not
   // delete the checkpoints they made in a shared room — the version history
-  // belongs to the room, not to the person who happened to press save.
+  // belongs to the room, not to the person who happened to press save. The
+  // dimension CHECK matches rooms/snapshots.
   await sql`
     CREATE TABLE checkpoints (
       id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -200,7 +252,11 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       height     INTEGER NOT NULL,
       rgba       BYTEA NOT NULL,
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT checkpoints_dimension_bounds CHECK (
+        width  >= 16 AND width  <= 512 AND
+        height >= 16 AND height <= 512
+      )
     );
   `.execute(db)
 
@@ -218,7 +274,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 }
 
 // Reverse dependency order: anything holding a foreign key goes before the
-// table it points at.
+// table it points at. Pure DDL — dropping the tables drops their indexes and
+// constraints with them, and there is no plaintext-email column to reconstruct
+// (email-at-rest is part of the baseline now, not a reversible follow-up).
 export async function down(db: Kysely<unknown>): Promise<void> {
   await sql`DROP TABLE IF EXISTS checkpoints;`.execute(db)
   await sql`DROP TABLE IF EXISTS room_members;`.execute(db)

@@ -19,9 +19,6 @@ import { Migrator, type Migration, type MigrationProvider } from "kysely"
 import { db } from "./pool"
 
 import * as m001 from "./migrations/001_initial_schema"
-import * as m002 from "./migrations/002_email_at_rest"
-import * as m003 from "./migrations/003_room_open_editing"
-import * as m004 from "./migrations/004_canvas_dimension_bounds"
 //#endregion
 
 //#region Provider
@@ -30,15 +27,13 @@ import * as m004 from "./migrations/004_canvas_dimension_bounds"
 // a key once it has run anywhere: Kysely would see the old name as a migration
 // that has vanished and refuse to proceed.
 //
-// There is one entry because the original seven incremental migrations were
-// squashed into a single baseline (no deployed database needed their
-// step-by-step history). Adding the NEXT schema change means adding
+// There is one entry because the whole schema — including the email-at-rest,
+// open-editing and canvas-dimension-bounds changes that were briefly separate
+// migrations — is squashed into a single baseline (no deployed database needed
+// their step-by-step history). Adding the NEXT schema change means adding
 // 002_*.ts here — not editing 001, which has now run.
 const migrations: Record<string, Migration> = {
   "001_initial_schema": m001,
-  "002_email_at_rest": m002,
-  "003_room_open_editing": m003,
-  "004_canvas_dimension_bounds": m004,
 }
 
 class ExplicitMigrationProvider implements MigrationProvider {
