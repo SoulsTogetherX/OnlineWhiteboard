@@ -27,7 +27,18 @@ export interface UseDrawingToolsResult {
   strokeSizeRef: React.RefObject<number>
   strokeSize: number
   setStrokeSize: (size: number) => void
+  // Spray density (pixels per puff), same ref+state split. Read at gesture start
+  // for the spray tool.
+  sprayDensityRef: React.RefObject<number>
+  sprayDensity: number
+  setSprayDensity: (density: number) => void
 }
+//#endregion
+
+//#region Constants
+// A middle-of-the-road default puff density (the slider spans 1..MAX_SPRAY_DENSITY
+// = 64). Before this the spray had no density control at all.
+const DEFAULT_SPRAY_DENSITY = 16
 //#endregion
 
 //#region Hook Def
@@ -77,6 +88,15 @@ export default function useDrawingTools(): UseDrawingToolsResult {
     setStrokeSizeState(size)
   }, [])
 
+  // Spray density — same ref+state split as stroke size.
+  const sprayDensityRef = useRef<number>(DEFAULT_SPRAY_DENSITY)
+  const [sprayDensity, setSprayDensityState] =
+    useState<number>(DEFAULT_SPRAY_DENSITY)
+  const setSprayDensity = useCallback((density: number) => {
+    sprayDensityRef.current = density
+    setSprayDensityState(density)
+  }, [])
+
   return {
     drawAction,
     selectedTool,
@@ -86,6 +106,9 @@ export default function useDrawingTools(): UseDrawingToolsResult {
     strokeSizeRef,
     strokeSize,
     setStrokeSize,
+    sprayDensityRef,
+    sprayDensity,
+    setSprayDensity,
   }
 }
 //#endregion

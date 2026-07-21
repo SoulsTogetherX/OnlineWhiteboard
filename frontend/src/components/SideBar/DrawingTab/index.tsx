@@ -4,6 +4,7 @@ import IconButton from "@/components/IconButton"
 import ToolPicker from "./ToolPicker"
 import ColorControls from "./ColorControls"
 import StrokePanel from "./StrokePanel"
+import SprayPanel from "./SprayPanel"
 import { toolById } from "./tools"
 import type { AppTool } from "./tools"
 
@@ -44,6 +45,8 @@ export interface DrawingTabProps {
   onSelectTool: (tool: AppTool) => void
   strokeSize: number
   onStrokeSizeChange: (size: number) => void
+  sprayDensity: number
+  onSprayDensityChange: (density: number) => void
   colorPalette: React.RefObject<ColorPalette>
   onSwap: () => void
   openColorPopup: (primary: boolean) => void
@@ -61,6 +64,8 @@ export default function DrawingTab({
   onSelectTool,
   strokeSize,
   onStrokeSizeChange,
+  sprayDensity,
+  onSprayDensityChange,
   colorPalette,
   onSwap,
   openColorPopup,
@@ -101,11 +106,20 @@ export default function DrawingTab({
         openColorPopup={openColorPopup}
       />
 
-      {/* Contextual: only the stroke-based tools show the brush-size panel. */}
+      {/* Contextual panels per tool: stroke width for pencil/eraser, size +
+          density for the spray. */}
       {activeTool.usesStroke && (
         <StrokePanel
           strokeSize={strokeSize}
           onStrokeSizeChange={onStrokeSizeChange}
+        />
+      )}
+      {activeTool.id === "spray" && (
+        <SprayPanel
+          strokeSize={strokeSize}
+          onStrokeSizeChange={onStrokeSizeChange}
+          sprayDensity={sprayDensity}
+          onSprayDensityChange={onSprayDensityChange}
         />
       )}
     </div>

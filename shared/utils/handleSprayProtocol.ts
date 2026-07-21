@@ -85,7 +85,12 @@ function handlePuff(
   // edge should still stipple the nearby border, not draw nothing.
   const [pos] = getPosCorrected(ev, canvas)
   const radius = sprayRadiusFor(base.size ?? DEFAULT_STROKE_SIZE)
-  const density = sprayDensityFor(radius)
+  // A client-set density (the Spray panel's slider) overrides the radius-derived
+  // default, clamped to the same abuse cap the server validates against.
+  const density =
+    base.density !== undefined
+      ? clamp(Math.round(base.density), 1, MAX_SPRAY_DENSITY)
+      : sprayDensityFor(radius)
   const seed = randomSeed()
 
   const canvasState = getCanvasState(canvas, dims)

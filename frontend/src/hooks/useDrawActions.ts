@@ -83,6 +83,8 @@ export default function useDrawActions(
   // slider mid-session doesn't rebuild the handlers, matching how the tool and
   // palette are threaded.
   strokeSizeRef?: React.RefObject<number>,
+  // Spray density, same ref-at-gesture-start treatment. Only used for spray.
+  sprayDensityRef?: React.RefObject<number>,
 ): UseDrawActionsReturn {
   const sessionId = useSessionID()
   const baseInstruction = useRef<BaseInstruction>({
@@ -110,6 +112,10 @@ export default function useDrawActions(
     // Captured once per gesture; motion/leave reuse the same baseInstruction, so
     // the whole stroke draws at one width.
     baseInstruction.current.size = strokeSizeRef?.current ?? DEFAULT_STROKE_SIZE
+    // Density is spray-only; leave it off other instructions so it doesn't ride
+    // the wire for pencil/eraser/bucket.
+    baseInstruction.current.density =
+      da.type === "spray" ? sprayDensityRef?.current : undefined
     record.current = []
 
     switch (da.type) {

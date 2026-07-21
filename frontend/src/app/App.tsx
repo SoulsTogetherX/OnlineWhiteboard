@@ -64,6 +64,9 @@ export default function App() {
     strokeSizeRef,
     strokeSize,
     setStrokeSize,
+    sprayDensityRef,
+    sprayDensity,
+    setSprayDensity,
   } = useDrawingTools()
 
   // The right sidebar (Phase 5) is the only tool surface now — the old floating
@@ -187,6 +190,7 @@ export default function App() {
     pushAction,
     eyedropperActive,
     strokeSizeRef,
+    sprayDensityRef,
     viewOnlyRef,
   )
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
@@ -305,6 +309,8 @@ export default function App() {
             onSelectTool={selectTool}
             strokeSize={strokeSize}
             onStrokeSizeChange={setStrokeSize}
+            sprayDensity={sprayDensity}
+            onSprayDensityChange={setSprayDensity}
             colorPalette={colorPalette}
             onSwap={swapColors}
             openColorPopup={colorPopup.open}

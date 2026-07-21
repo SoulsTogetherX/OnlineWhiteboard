@@ -18,6 +18,8 @@ function renderTab(overrides: Partial<Parameters<typeof DrawingTab>[0]> = {}) {
     onSelectTool: vi.fn(),
     strokeSize: 4,
     onStrokeSizeChange: vi.fn(),
+    sprayDensity: 16,
+    onSprayDensityChange: vi.fn(),
     colorPalette,
     onSwap: vi.fn(),
     openColorPopup: vi.fn(),

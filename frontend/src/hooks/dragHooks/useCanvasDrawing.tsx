@@ -25,6 +25,8 @@ export default function useCanvasDrawing(
   disabledRef?: React.RefObject<boolean>,
   // Brush diameter, forwarded to the draw actions (read at gesture start).
   strokeSizeRef?: React.RefObject<number>,
+  // Spray density, forwarded to the draw actions (read at gesture start).
+  sprayDensityRef?: React.RefObject<number>,
   // When true, this client is a viewer — block drawing entirely. The server
   // also rejects a viewer's draws, but blocking locally avoids strokes flashing
   // on the viewer's own canvas and then being reverted on the next resync.
@@ -34,6 +36,7 @@ export default function useCanvasDrawing(
     canvasRef,
     onCommitAction,
     strokeSizeRef,
+    sprayDensityRef,
   )
 
   const isDisabled = () =>

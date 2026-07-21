@@ -32,6 +32,10 @@ export type BaseInstruction = {
   // original single-pixel behaviour), and only the line tools and the spray can
   // read it — bucket and patch ignore it.
   size?: number
+  // Spray-only: pixels scattered per puff, set from the Spray panel's density
+  // slider. Optional on the wire; when absent the spray derives density from the
+  // radius (sprayDensityFor). Only the spray reads it.
+  density?: number
   instructionId: number
   sessionId: string
 }
