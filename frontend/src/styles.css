@@ -2,18 +2,18 @@
    room + toolbar and pure-black text/borders read as "brown" and harsh. */
 :root {
   --normal-color: #1f2933;
-  --focus-color: #1677ff;
-  --accent-color: #1677ff;
+  --focus-color: #dfbe00;
+  --accent-color: #f28900;
 
   --text-color: #1a1d21;
   --sub-text-color: #5b6570;
 
-  --popup-background: #ffffff;
+  --popup-background: #ededed;
 
-  --room-background: #e9edf2;
-  --toolbar-background: #f4f6f9;
+  --room-background: #fff2c1;
+  --toolbar-background: #aaaaaa;
 
-  --border-color: #cdd4dc;
+  --border-color: #9a9ea3;
   --shadow-color: rgba(15, 23, 32, 0.18);
 }
 
@@ -35,7 +35,7 @@
   --room-background: #14171c;
   --toolbar-background: #1d222a;
 
-  --border-color: #3a414b;
+  --border-color: #506179;
   --shadow-color: rgba(0, 0, 0, 0.55);
 }
 

@@ -14,7 +14,7 @@ import {
   canManageRoom,
   canRequestEditor,
 } from "@shared/types/identity"
-import type { Participant } from "@shared/types/identity"
+import type { AuthUser, Participant } from "@shared/types/identity"
 import type { EditorRequest } from "@shared/types/socketProtocol"
 
 import "./styles.css"
@@ -48,9 +48,15 @@ export interface RoomTabProps {
   roomId: string
   socketLabel: string
   onLoadRoom: (roomId: string) => void
-  // Opens the auth popup. Shown as a "Log in" affordance while this connection is
-  // a guest, since the top-right login control can be hidden behind the sidebar.
+  // Back to the lobby. This is the only way out of a room now that the top-right
+  // account control is gone.
+  onLeaveRoom: () => void
+  // The account block at the foot of this tab. It is the whole sign-in surface
+  // while a room is open, so it has to cover both directions — a guest logging
+  // in, and a signed-in user logging out.
+  user: AuthUser | null
   onOpenAuth: () => void
+  onLogout: () => void
   participants: Participant[]
   self: Participant | null
   openEditing: boolean
@@ -81,7 +87,10 @@ export default function RoomTab({
   roomId,
   socketLabel,
   onLoadRoom,
+  onLeaveRoom,
+  user,
   onOpenAuth,
+  onLogout,
   participants,
   self,
   openEditing,
@@ -126,35 +135,7 @@ export default function RoomTab({
             {socketLabel}
           </span>
         </div>
-        <form
-          className="room-change"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onLoadRoom(draftRoomId)
-          }}
-        >
-          <label className="room-change-label" htmlFor="room-change-input">
-            Change room
-          </label>
-          <div className="room-change-row">
-            <input
-              id="room-change-input"
-              type="text"
-              value={draftRoomId}
-              onChange={(event) => setDraftRoomId(event.target.value)}
-              maxLength={22}
-              autoComplete="off"
-            />
-            <button type="submit">Go</button>
-          </div>
-        </form>
       </section>
-
-      {isGuest && (
-        <button type="button" className="room-login" onClick={onOpenAuth}>
-          Log in
-        </button>
-      )}
 
       <MemberList
         participants={participants}
@@ -221,6 +202,70 @@ export default function RoomTab({
           <DownloadIcon />
         </IconButton>
       </div>
+
+      {/* Account and room entry live at the FOOT of the tab: they are the two
+          things you touch when arriving or leaving, not while drawing, so they
+          sit below the controls you actually use in a session. The active-user
+          list stays at the top for the opposite reason. */}
+      <section className="room-account" aria-label="Account">
+        {user ? (
+          <>
+            <span className="room-account-identity">
+              <span
+                className="room-account-dot"
+                style={{ backgroundColor: user.color }}
+                aria-hidden="true"
+              />
+              <span className="room-account-name">{user.username}</span>
+            </span>
+            <button
+              type="button"
+              className="room-account-button"
+              onClick={onLogout}
+            >
+              Log out
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            className="room-account-button"
+            onClick={onOpenAuth}
+          >
+            Log in
+          </button>
+        )}
+      </section>
+
+      <form
+        className="room-change"
+        onSubmit={(event) => {
+          event.preventDefault()
+          const next = draftRoomId.trim()
+          if (next.length > 0) {
+            onLoadRoom(next)
+          }
+        }}
+      >
+        <label className="room-change-label" htmlFor="room-change-input">
+          Change room
+        </label>
+        <div className="room-change-row">
+          <input
+            id="room-change-input"
+            type="text"
+            value={draftRoomId}
+            onChange={(event) => setDraftRoomId(event.target.value)}
+            maxLength={22}
+            autoComplete="off"
+          />
+          <button type="submit">Go</button>
+        </div>
+      </form>
+
+      <button type="button" className="room-leave" onClick={onLeaveRoom}>
+        Leave room
+      </button>
     </div>
   )
 }

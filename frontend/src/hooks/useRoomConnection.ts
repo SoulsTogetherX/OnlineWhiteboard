@@ -9,7 +9,6 @@ import {
 } from "react"
 
 import useWebSocket from "@/hooks/useWebSocket"
-import { useSessionStorage } from "@/hooks/useSessionStorage"
 
 import {
   applyDrawInstructionToCanvas,
@@ -40,8 +39,10 @@ import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 //#endregion
 
 //#region Constants
-const ROOM_ID_STORAGE_KEY = "online-whiteboard-room-id"
-const DEFAULT_ROOM_ID = "testRoom"
+// Where the shell remembers the last room you were in, so the lobby can offer it
+// back. Exported because the lobby, not this hook, is now what persists it.
+export const ROOM_ID_STORAGE_KEY = "online-whiteboard-room-id"
+export const DEFAULT_ROOM_ID = "testRoom"
 //#endregion
 
 //#region Type Def
@@ -124,11 +125,14 @@ export default function useRoomConnection(
   // reconnect so the server re-resolves this connection's identity from the new
   // session cookie (see reconnectKey in useWebSocket).
   identityKey: string | null,
+  // The room to open on mount. The hook no longer persists this itself: the app
+  // shell decides which room (if any) is being entered, because there is now a
+  // lobby in front of the board and "which room am I in" is the thing that tells
+  // those two views apart. Switching rooms from the Room tab still happens in
+  // here, via loadRoom.
+  initialRoomId: string,
 ): UseRoomConnectionResult {
-  const [roomId, setRoomId] = useSessionStorage<string>(
-    ROOM_ID_STORAGE_KEY,
-    DEFAULT_ROOM_ID,
-  )
+  const [roomId, setRoomId] = useState<string>(initialRoomId)
 
   const [participants, setParticipants] = useState<Participant[]>([])
   const [self, setSelf] = useState<Participant | null>(null)

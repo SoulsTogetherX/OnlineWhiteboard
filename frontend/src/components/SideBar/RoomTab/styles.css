@@ -64,8 +64,13 @@
   color: var(--text-color);
 }
 
-.room-change-row button,
-.room-login {
+.room-change-row button {
+  display: inline-flex;
+  /* Centre the label on both axes. Without this the text sits against the left
+     edge as soon as anything stretches the button. */
+  align-items: center;
+  justify-content: center;
+
   padding: 0.35rem 0.75rem;
 
   border: 1px solid var(--accent-color);
@@ -79,13 +84,72 @@
 
 .room-change-row input:focus-visible,
 .room-change-row button:focus-visible,
-.room-login:focus-visible {
+.room-account-button:focus-visible,
+.room-leave:focus-visible {
   outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
-.room-login {
-  align-self: flex-start;
+/* The account row at the foot of the tab: who you are, and the one control that
+   changes it. */
+.room-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.room-account-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  min-width: 0;
+}
+
+.room-account-dot {
+  flex: none;
+
+  width: 0.65rem;
+  height: 0.65rem;
+
+  border-radius: 50%;
+}
+
+.room-account-name {
+  overflow: hidden;
+
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-account-button,
+.room-leave {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0.35rem 0.75rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--popup-background);
+  color: var(--text-color);
+
+  text-align: center;
+  cursor: pointer;
+}
+
+/* Full width so "Leave room" reads as the way out of the tab rather than one
+   more small control floating at the left edge. */
+.room-leave {
+  width: 100%;
 }
 
 .room-request-editor {

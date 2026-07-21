@@ -1,0 +1,159 @@
+/* The landing screen. Deliberately plain: one centred card over the same room
+   background (and grid) the board uses, so entering a room feels like stepping
+   into the same space rather than a different app. */
+.lobby {
+  position: fixed;
+  inset: 0;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 1.5rem;
+  overflow-y: auto;
+}
+
+.lobby-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+
+  /* Caps the width on a desktop but shrinks on a phone rather than overflowing. */
+  width: min(26rem, 100%);
+  padding: 1.75rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+
+  background: var(--toolbar-background);
+  box-shadow: 0 8px 30px var(--shadow-color);
+}
+
+.lobby-title {
+  margin: 0;
+
+  color: var(--text-color);
+  font-size: 1.4rem;
+  font-weight: 600;
+  text-align: center;
+}
+
+.lobby-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+/* Holds the row's height steady while /api/auth/me is in flight, so the card
+   does not jump once auth resolves. */
+.lobby-account-placeholder {
+  display: block;
+  height: 1.9rem;
+}
+
+.lobby-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+
+  min-width: 0;
+}
+
+.lobby-color-dot {
+  flex: none;
+
+  width: 0.7rem;
+  height: 0.7rem;
+
+  border-radius: 50%;
+}
+
+.lobby-username {
+  overflow: hidden;
+
+  color: var(--text-color);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lobby-guest {
+  color: var(--sub-text-color);
+  font-size: 0.85rem;
+}
+
+.lobby-room {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.lobby-label {
+  color: var(--sub-text-color);
+  font-size: 0.8rem;
+}
+
+.lobby-input {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background: var(--popup-background);
+  color: var(--text-color);
+  font: inherit;
+  font-size: 0.95rem;
+}
+
+.lobby-input:focus-visible {
+  border-color: var(--accent-color);
+  outline: 2px solid var(--focus-color);
+  outline-offset: 1px;
+}
+
+.lobby-button {
+  display: inline-flex;
+  /* Centre BOTH axes. A stretched button whose label hugs the left edge is the
+     default when the flex parent stretches it and nothing centres the text. */
+  align-items: center;
+  justify-content: center;
+
+  padding: 0.5rem 0.9rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  color: var(--text-color);
+  font: inherit;
+  font-size: 0.9rem;
+  text-align: center;
+
+  cursor: pointer;
+}
+
+.lobby-button-primary {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--popup-background);
+  font-weight: 600;
+}
+
+.lobby-button-quiet {
+  background: var(--popup-background);
+}
+
+.lobby-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.lobby-button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}

@@ -20,7 +20,10 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     roomId: "testRoom",
     socketLabel: "Connected",
     onLoadRoom: vi.fn(),
+    onLeaveRoom: vi.fn(),
+    user: null,
     onOpenAuth: vi.fn(),
+    onLogout: vi.fn(),
     participants: [participant("owner")],
     self: participant("owner"),
     openEditing: true,
@@ -101,5 +104,34 @@ describe("RoomTab permission gating", () => {
   it("download is available to everyone, including guests", () => {
     renderTab({ self: participant("guest", true), hasOwner: false })
     expect(screen.getByRole("button", { name: "Download image" })).toBeEnabled()
+  })
+})
+
+// The foot of this tab is the ONLY sign-in surface once a room is open — the
+// top-right account control is gone — so it has to work in both directions.
+describe("RoomTab account section", () => {
+  it("offers log in while signed out", () => {
+    renderTab({ user: null })
+    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Log out" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("shows the account and offers log out while signed in", () => {
+    renderTab({
+      user: { id: "u1", username: "Ada", color: "#ff8800", isGuest: false },
+    })
+    expect(screen.getByText("Ada")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Log in" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("offers a way back to the lobby", () => {
+    const { props } = renderTab()
+    screen.getByRole("button", { name: "Leave room" }).click()
+    expect(props.onLeaveRoom).toHaveBeenCalled()
   })
 })
