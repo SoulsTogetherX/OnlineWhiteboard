@@ -47,6 +47,9 @@
 .resize-field {
   display: flex;
   flex: 1 1 0;
+  /* Let the inputs shrink below their intrinsic width instead of forcing the
+     row wider than the panel (flex items default to min-width:auto). */
+  min-width: 0;
   flex-direction: column;
   gap: 0.2rem;
 }
