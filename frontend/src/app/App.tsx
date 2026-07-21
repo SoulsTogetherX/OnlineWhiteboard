@@ -31,6 +31,7 @@ import useDrawingTools from "@/hooks/useDrawingTools"
 import useSidebar from "@/hooks/useSidebar"
 import useColorPopup from "@/hooks/useColorPopup"
 import useDisclosure from "@/hooks/useDisclosure"
+import useKeymap from "@/hooks/useKeymap"
 
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
@@ -188,25 +189,14 @@ export default function App() {
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   useCursorBroadcast(canvasRef, sendCursor)
 
-  // Undo/redo keyboard shortcuts. (A central keymap for all shortcuts arrives in
-  // the Phase 5 a11y commit; this is the pre-existing Ctrl/Cmd+Z pair.)
-  useEffect(() => {
-    const onKeyDown = (ev: KeyboardEvent) => {
-      const isModified = ev.ctrlKey || ev.metaKey
-      if (!isModified || ev.key.toLowerCase() !== "z") {
-        return
-      }
-      ev.preventDefault()
-      if (ev.shiftKey) {
-        redo()
-      } else {
-        undo()
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [undo, redo])
+  // The app's keyboard map: undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) always, and
+  // the single-key tool shortcuts (P/E/F/S/I) while the sidebar is open.
+  useKeymap({
+    sidebarOpen: sidebar.isOpen,
+    onSelectTool: selectTool,
+    onUndo: undo,
+    onRedo: redo,
+  })
 
   // Frontend
   return (
