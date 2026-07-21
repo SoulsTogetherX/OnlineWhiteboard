@@ -411,7 +411,7 @@ Three suites, each matched to what it is good at:
 | Suite | Command | Count | Needs |
 | --- | --- | --- | --- |
 | Shared protocol (unit) | `npm test` (root) | **162** in 15 files | nothing |
-| Frontend | `cd frontend && npm test` | **54** in 11 files (two projects) | nothing |
+| Frontend | `cd frontend && npm test` | **90** in 20 files (two projects) | nothing |
 | Backend | `cd backend && npm test` | **128** in 15 files (DB tests gated on `POSTGRES_PASSWORD`) | Postgres for the DB-gated ones |
 
 The shared suite is the highest-value code in the repo to test: pure, deterministic, no DOM
@@ -744,8 +744,16 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
 - The loadtest only exercises `ping` + a `pencil` draw — it doesn't touch presence, cursors,
   votes, checkpoints, playback, spray or brush size, and never sends `resync`, so it does
   not exercise the snapshot path.
-- Modal semantics are inconsistent: `PopupBase` centralises dialog role, Escape and `inert`,
-  but `Dashboard` hand-rolls Escape and `PlaybackViewer` has neither.
+- **Modal semantics — done (Phase 5).** Every dialog now routes through `PopupBase`, so the
+  dialog role, `aria-modal`, Escape-to-close and `inert`-when-closed are handled once. The
+  `Dashboard`'s hand-rolled Escape and the `PlaybackViewer`'s missing Escape/`inert` are gone.
+- **Stale CSS var names in two dialog stylesheets.** `Dashboard/styles.css` and
+  `PlaybackViewer/styles.css` still reference `var(--border,#ccc)` / `var(--card-bg,…)` /
+  `var(--popup-fg,…)` on their inner controls (buttons, cards) — names that don't exist, so
+  they fall through to the hardcoded fallbacks and ignore the theme, the same bug fixed on
+  the top-right buttons in Phase 5. Left out of the `PopupBase`-routing commit deliberately
+  (§12.4): fixing them means choosing real theme colours for those surfaces and re-driving
+  the appearance, which is a separate concern from the modal-semantics change.
 - `.env` lacks `PROD_PORT` (documented in `.env.example`; compose defaults it to 8080).
 
 ---
@@ -844,7 +852,7 @@ fit the largest full-canvas undo. The client adopts a live resize from the snaps
 and resets its undo stacks (stale byte indices) via `canvasResetKey`. Landed in three
 commits: the mechanical parameterisation, the per-room wiring, and the resize operation.
 
-### Phase 5 — UI redesign (**large**)
+### ✅ Phase 5 — UI redesign (**large**)
 
 Retractable **right** sidebar, desktop and mobile, with three tabs:
 
@@ -859,16 +867,33 @@ Retractable **right** sidebar, desktop and mobile, with three tabs:
 Also: keyboard shortcuts active while open, a full ARIA pass, merge the two `relativeTime`
 formatters, and route every dialog through `PopupBase`. The canvas stays pan/zoomable.
 
-**In progress.** Landed so far: the jsdom + Testing Library test stack (§11); the retractable
-sidebar shell with accessible tab switching (roving-tabindex tablist, `inert` when
-collapsed); and the **Room** tab — a thin composition of small components (`MemberList`,
-`OwnershipButton`, `OpenEditingToggle`, `ResizeControl`, `EditorRequests` + an `IconButton`
-primitive) wiring the previously-dark plumbing: ownership claim/release, open-editing toggle,
-owner-only resize (which also completed Phase 4's resize UI), editor-request accept/deny, and
-clear + download. The old floating UI still renders alongside and is retired tab by tab into
-`components/Old`. Still to do: the **Drawing** and **Timeline** tabs, and the a11y + central
-keymap + `relativeTime` merge + `PopupBase` unification pass. (The Testing Library + jsdom
-choice was already recorded in §16.)
+**Done.** The jsdom + Testing Library stack (§11) and the retractable sidebar shell
+(roving-tabindex tablist, `inert` when collapsed) landed first, then all three tabs as
+thin compositions:
+
+- **Drawing** — a `ToolPicker` listbox (icon dropdown), undo/redo, `ColorControls`
+  (primary/secondary swatches + swap), and a contextual `StrokePanel` shown only for
+  stroke tools.
+- **Room** — `MemberList`, `OwnershipButton`, the open-editing `Toggle`, `EditorRequests`,
+  `CursorControls`, `ResizeControl` (which also finished Phase 4's resize UI), and
+  clear + download. Reads permissions through the shared predicates the server enforces.
+- **Timeline** — `CheckpointList` + the `PlaybackViewer` overlay.
+
+The superseded floating components were deleted (`ToolMenu`, `ColorSelector`,
+`HamburgerButton`, `PresenceRoster`, `CheckpointsPopup`); reusable primitives (`Toggle`,
+`IconButton`, `LabelledSlider`) live once.
+
+The closing refactor + a11y/cleanup pass: `App.tsx` became a thin composition root — the
+tool/stroke/eyedropper, sidebar and colour-popup state clusters moved into
+`useDrawingTools` / `useSidebar` / `useColorPopup` (plus a `useDisclosure` primitive),
+preserving the §13.5 ref-vs-state splits. A central `useKeymap` binds the tool shortcuts
+(P/E/F/S/I) while the sidebar is open plus Ctrl/Cmd+Z and Ctrl+Shift+Z; the `ToolPicker`
+listbox was made genuinely keyboard-operable (arrow/Home/End/Enter/Escape + focus
+management); the two `relativeTime` formatters merged into `utils/relativeTime.ts`; the
+Dashboard and `PlaybackViewer` were routed through `PopupBase` so every dialog shares the
+role / aria-modal / Escape / inert contract; and the floating top-right account/room
+buttons became a real flex layout. The canvas stays pan/zoomable. (The Testing Library +
+jsdom choice is recorded in §16.)
 
 ### Phase 6 — Timeline scrubbing + uniform decimation
 
