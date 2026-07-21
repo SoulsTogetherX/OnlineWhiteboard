@@ -3,10 +3,8 @@ import { useCallback, useEffect, useRef } from "react"
 
 import CanvasBoard from "@/components/CanvasBoard"
 import CursorOverlay from "@/components/CursorOverlay"
-import RoomPopup from "@/components/Popups/RoomPopup"
 import MembersPopup from "@/components/Popups/MembersPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
-import RoomStatus from "@/components/RoomStatus"
 import Dashboard from "@/components/Dashboard"
 import PlaybackViewer from "@/components/PlaybackViewer"
 import AuthControl from "@/components/AuthControl"
@@ -94,8 +92,9 @@ export default function App() {
     setShowNames: setShowCursorNames,
   } = useCursorPreferences()
 
-  // Room — the floating popups App still owns, plus the live connection.
-  const roomPicker = useDisclosure()
+  // Room — the floating popups App still owns, plus the live connection. The
+  // change-room field now lives in the Room tab (no picker popup), so nothing
+  // needs closing when a room loads.
   const members = useDisclosure()
   const dashboard = useDisclosure()
   const {
@@ -126,7 +125,7 @@ export default function App() {
     canvasResize,
     cursorsRef,
     cursorIds,
-  } = useRoomConnection(canvasRef, roomPicker.close, user?.id ?? null)
+  } = useRoomConnection(canvasRef, () => {}, user?.id ?? null)
 
   // Undo/Redo
   const { pushAction, undo, redo, canUndo, canRedo, notice, reanchorHistory } =
@@ -201,11 +200,6 @@ export default function App() {
   // Frontend
   return (
     <div ref={frameRef} className="app-wrapper">
-      <RoomStatus
-        roomId={roomId}
-        socketLabel={socketLabel}
-        onOpenRoomPicker={roomPicker.open}
-      />
       {/* Top-right cluster: the logged-in user's room actions plus the auth
           control, laid out as one flex row instead of three independently
           fixed-positioned elements with magic right offsets. */}
@@ -259,12 +253,6 @@ export default function App() {
         onSaveColor={addSaved}
         onRemoveSavedColor={removeSaved}
       />
-      <RoomPopup
-        isOpen={roomPicker.isOpen}
-        roomId={roomId}
-        onClose={roomPicker.close}
-        onLoad={loadRoom}
-      />
       <MembersPopup
         isOpen={members.isOpen}
         roomId={roomId}
@@ -313,6 +301,10 @@ export default function App() {
           />
         ) : sidebar.activeTab === "room" ? (
           <RoomTab
+            roomId={roomId}
+            socketLabel={socketLabel}
+            onLoadRoom={loadRoom}
+            onOpenAuth={authPopup.open}
             participants={participants}
             self={self}
             openEditing={settings.openEditing}

@@ -1,4 +1,6 @@
 //#region Imports
+import { useState } from "react"
+
 import IconButton from "@/components/IconButton"
 import Toggle from "@/components/Toggle"
 
@@ -41,6 +43,14 @@ function DownloadIcon() {
 
 //#region Component Def
 export interface RoomTabProps {
+  // The room's id + live connection status, shown here now instead of a floating
+  // top bar; the change-room field lives here too (was a separate popup).
+  roomId: string
+  socketLabel: string
+  onLoadRoom: (roomId: string) => void
+  // Opens the auth popup. Shown as a "Log in" affordance while this connection is
+  // a guest, since the top-right login control can be hidden behind the sidebar.
+  onOpenAuth: () => void
   participants: Participant[]
   self: Participant | null
   openEditing: boolean
@@ -68,6 +78,10 @@ export interface RoomTabProps {
 // with (canManageRoom / canRequestEditor), so every greyed control matches what
 // the server would actually allow — never the two disagreeing (§12.9).
 export default function RoomTab({
+  roomId,
+  socketLabel,
+  onLoadRoom,
+  onOpenAuth,
   participants,
   self,
   openEditing,
@@ -93,8 +107,55 @@ export default function RoomTab({
   const isGuest = self?.isGuest ?? true
   const mayRequestEditor = canRequestEditor(role)
 
+  // The change-room field, re-seeded to the live room whenever it changes (the
+  // during-render reset pattern, as RoomPopup used) so it always defaults to the
+  // current room and discards a half-typed draft after a switch.
+  const [draftRoomId, setDraftRoomId] = useState(roomId)
+  const [seenRoomId, setSeenRoomId] = useState(roomId)
+  if (roomId !== seenRoomId) {
+    setSeenRoomId(roomId)
+    setDraftRoomId(roomId)
+  }
+
   return (
     <div className="room-tab">
+      <section className="room-header" aria-label="Room">
+        <div className="room-header-line">
+          <span className="room-header-id">Room: {roomId}</span>
+          <span className="room-header-conn" aria-live="polite">
+            {socketLabel}
+          </span>
+        </div>
+        <form
+          className="room-change"
+          onSubmit={(event) => {
+            event.preventDefault()
+            onLoadRoom(draftRoomId)
+          }}
+        >
+          <label className="room-change-label" htmlFor="room-change-input">
+            Change room
+          </label>
+          <div className="room-change-row">
+            <input
+              id="room-change-input"
+              type="text"
+              value={draftRoomId}
+              onChange={(event) => setDraftRoomId(event.target.value)}
+              maxLength={22}
+              autoComplete="off"
+            />
+            <button type="submit">Go</button>
+          </div>
+        </form>
+      </section>
+
+      {isGuest && (
+        <button type="button" className="room-login" onClick={onOpenAuth}>
+          Log in
+        </button>
+      )}
+
       <MemberList
         participants={participants}
         selfConnectionId={self?.connectionId ?? null}

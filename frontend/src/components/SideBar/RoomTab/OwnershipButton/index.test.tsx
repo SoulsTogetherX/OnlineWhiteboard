@@ -51,7 +51,30 @@ describe("OwnershipButton", () => {
       />,
     )
     expect(screen.getByRole("button", { name: "Claim ownership" })).toBeDisabled()
-    expect(screen.getByText("Log in to claim this room.")).toBeInTheDocument()
+    expect(
+      screen.getByText("Log in to claim or manage this room."),
+    ).toBeInTheDocument()
+  })
+
+  it("shows the log-in hint for a guest even when the room is owned", () => {
+    // Guest takes priority over has-owner: a guest can't manage regardless, and
+    // "Owned by another user" was misleading (the owner may be this same person
+    // logged in on another tab).
+    render(
+      <OwnershipButton
+        isOwner={false}
+        hasOwner
+        isGuest
+        onClaim={() => {}}
+        onRelease={() => {}}
+      />,
+    )
+    expect(
+      screen.getByText("Log in to claim or manage this room."),
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Owned by another user" }),
+    ).not.toBeInTheDocument()
   })
 
   it("shows a disabled informational state when someone else owns the room", () => {

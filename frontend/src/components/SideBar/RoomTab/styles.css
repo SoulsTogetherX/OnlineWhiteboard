@@ -8,6 +8,86 @@
   min-height: 100%;
 }
 
+/* Room id + connection status + change-room field — moved here from the floating
+   top bar / popup. */
+.room-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.room-header-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.room-header-id {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-header-conn {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--sub-text-color, var(--text-color));
+  opacity: 0.75;
+}
+
+.room-change-label {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-bottom: 0.2rem;
+}
+
+.room-change-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.room-change-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--popup-background);
+  color: var(--text-color);
+}
+
+.room-change-row button,
+.room-login {
+  padding: 0.35rem 0.75rem;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 0.35rem;
+
+  background: var(--accent-color);
+  color: var(--popup-background);
+
+  cursor: pointer;
+}
+
+.room-change-row input:focus-visible,
+.room-change-row button:focus-visible,
+.room-login:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
+.room-login {
+  align-self: flex-start;
+}
+
 .room-request-editor {
   align-self: flex-start;
 
@@ -44,4 +124,23 @@
 .room-clear:not(:disabled) {
   border-color: #b42318;
   color: #b42318;
+}
+
+/* The footer sits at the bottom-right of the sidebar, so its buttons' tooltips
+   must open UPWARD (not off the bottom of the viewport) and grow away from the
+   nearest edge: clear (left) grows right, download (right) grows left — instead
+   of the default centered-below tooltip that ran off the bottom and right. */
+.room-tab-footer .icon-button-tooltip {
+  top: auto;
+  bottom: calc(100% + 0.35rem);
+}
+.room-tab-footer .room-clear .icon-button-tooltip {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+.room-tab-footer .icon-button:not(.room-clear) .icon-button-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
 }

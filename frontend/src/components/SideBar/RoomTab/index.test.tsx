@@ -17,6 +17,10 @@ function participant(role: ConnectionRole, isGuest = false): Participant {
 
 function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
   const props = {
+    roomId: "testRoom",
+    socketLabel: "Connected",
+    onLoadRoom: vi.fn(),
+    onOpenAuth: vi.fn(),
     participants: [participant("owner")],
     self: participant("owner"),
     openEditing: true,

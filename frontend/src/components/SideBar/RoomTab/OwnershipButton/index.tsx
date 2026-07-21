@@ -40,6 +40,21 @@ export default function OwnershipButton({
     )
   }
 
+  // Guest FIRST, before the has-owner check: a guest can neither claim nor
+  // manage regardless of whether the room is owned, so "Owned by another user"
+  // was misleading (and showed even when the guest is really this same person
+  // logged in on another tab). The honest state for a guest is "log in".
+  if (isGuest) {
+    return (
+      <div className="ownership-claim-wrap">
+        <button type="button" className="ownership-button ownership-claim" disabled>
+          Claim ownership
+        </button>
+        <p className="ownership-hint">Log in to claim or manage this room.</p>
+      </div>
+    )
+  }
+
   if (hasOwner) {
     return (
       <button type="button" className="ownership-button" disabled>
@@ -49,19 +64,13 @@ export default function OwnershipButton({
   }
 
   return (
-    <div className="ownership-claim-wrap">
-      <button
-        type="button"
-        className="ownership-button ownership-claim"
-        onClick={onClaim}
-        disabled={isGuest}
-      >
-        Claim ownership
-      </button>
-      {isGuest && (
-        <p className="ownership-hint">Log in to claim this room.</p>
-      )}
-    </div>
+    <button
+      type="button"
+      className="ownership-button ownership-claim"
+      onClick={onClaim}
+    >
+      Claim ownership
+    </button>
   )
 }
 //#endregion
