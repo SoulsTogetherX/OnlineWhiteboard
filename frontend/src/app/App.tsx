@@ -229,7 +229,7 @@ export default function App() {
           onLogout={logout}
         />
       </div>
-      <CanvasBoard canvasRef={canvasRef} />
+      <CanvasBoard canvasRef={canvasRef} dims={canvasDims} />
       <CursorOverlay
         canvasRef={canvasRef}
         cursorsRef={cursorsRef}
