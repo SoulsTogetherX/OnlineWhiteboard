@@ -21,6 +21,8 @@ import {
 
 import { SESSION_COOKIE } from "@/auth/cookies"
 
+import { MAX_PATCH_ENTRIES } from "@shared/constants/canvas"
+
 import type { ClientSocketMessage } from "@shared/types/socketProtocol"
 
 const pencil: ClientSocketMessage = {
@@ -44,6 +46,26 @@ const bucket: ClientSocketMessage = {
     instructionId: 1,
     sessionId: "s",
   },
+}
+
+// The biggest message a client may legitimately send: an undo patch covering
+// every pixel of the largest allowed canvas. Validation caps entries at the
+// room's pixel count, so nothing legal is ever larger than this.
+function fullCanvasPatch(): ClientSocketMessage {
+  return {
+    type: "draw",
+    roomId: "r",
+    instruction: {
+      type: "patch",
+      entries: Array.from({ length: MAX_PATCH_ENTRIES }, () => ({
+        idx: 0,
+        from: { r: 0, g: 0, b: 0, a: 0 },
+        to: { r: 1, g: 1, b: 1, a: 1 },
+      })),
+      instructionId: 1,
+      sessionId: "s",
+    },
+  }
 }
 
 const cursor: ClientSocketMessage = { type: "cursor", roomId: "r", pos: [1, 1] }
@@ -233,6 +255,33 @@ describe("cost reflects server work, not message size", () => {
     })
     expect(messageCost(makePatch(10000))).toBeGreaterThan(
       messageCost(makePatch(10)),
+    )
+  })
+
+  // The bug this guards: a patch was charged 1 + entries/500, so a full-canvas
+  // undo cost 132 units on a 256 canvas and 525 on a 512 one. The bucket holds
+  // 600 and the stroke being undone had just spent most of it, so the server
+  // silently DROPPED the undo — the client had already applied it locally, and
+  // the next revision check dragged the canvas back. "Undo does nothing when I
+  // draw over the whole canvas" was rate limiting, not the undo stack.
+  //
+  // The invariant that keeps it fixed: no message a client is ALLOWED to send
+  // may cost a large slice of the burst budget, because the budget is never full
+  // in practice — the gesture that produced the big message just drained it.
+  it("keeps the largest legitimate message far below the burst budget", () => {
+    expect(messageCost(fullCanvasPatch())).toBeLessThan(BURST_CAPACITY / 8)
+  })
+
+  it("admits a full-canvas undo from a bucket the stroke just drained", () => {
+    const limiter = new SocketRateLimiter()
+    const socket = {}
+    // A one-second stroke at the fastest rate a real client emits (§ tuning
+    // notes: ~150 pointermove-driven draws a second) with no refill credited.
+    for (let i = 0; i < 150; i += 1) {
+      limiter.consume(socket, messageCost(pencil), 0)
+    }
+    expect(limiter.consume(socket, messageCost(fullCanvasPatch()), 0)).toBe(
+      "allow",
     )
   })
 

@@ -78,9 +78,25 @@ export function messageCost(message: ClientSocketMessage): number {
         case "spray":
           return 3
         // A patch is proportional to its entry count, which validation has
-        // already bounded to the pixel count.
+        // already bounded to the pixel count. The DIVISOR is the load-bearing
+        // part, and it was originally 500 — which priced a full-canvas undo at
+        // 132 units (256 canvas) or 525 (512 canvas) against a 600 burst
+        // budget. That is backwards twice over:
+        //
+        //   - It is not what the work costs. Each entry is one compare-and-set;
+        //     a flood fill costs 10 for a queue-driven traversal that can repaint
+        //     just as many pixels. A patch is CHEAPER per pixel than a bucket,
+        //     so it must not be priced two orders of magnitude above one.
+        //   - The budget is never full when the message arrives. The gesture
+        //     that produced a full-canvas patch is the stroke that just spent
+        //     the bucket drawing it, so the undo was charged a near-full budget
+        //     at the exact moment the least was left, and got dropped.
+        //
+        // At /10_000 the worst legal patch costs 27 — the same order as a
+        // resync, comfortably inside a drained bucket, and still metered enough
+        // that a sustained flood of them is bounded (~7/sec).
         case "patch":
-          return 1 + Math.floor(message.instruction.entries.length / 500)
+          return 1 + Math.floor(message.instruction.entries.length / 10_000)
         // clear is rejected from clients anyway, but cost it as expensive so a
         // flood of rejected clears still burns budget.
         case "clear":

@@ -25,8 +25,20 @@ import type {
 // (few entries, many actions), a single big bucket fill is expensive (few
 // actions, many entries). Neither cap alone protects against both shapes.
 const MAX_ACTIONS = 50
-const MAX_BYTES = 64 * 1024
-const BYTES_PER_ENTRY = 16 // idx + two RGBA colors, rounded up for overhead
+// The byte cap only ever bites on big fills — a typical stroke is a few thousand
+// entries — so it is really "how many whole-canvas gestures stay undoable".
+//
+// It was 64 KB, which at the estimate below is ~550 entries: less than ONE
+// large-brush stroke. Every big gesture evicted the one before it, so filling the
+// canvas and pressing undo twice did nothing the second time. 48 MB holds several
+// full 256-canvas repaints (or one of the largest 512 canvas), which is a
+// rounding error against what a canvas app already keeps in the page.
+const MAX_BYTES = 48 * 1024 * 1024
+// An entry is {idx, from:{r,g,b,a}, to:{r,g,b,a}} — three JS objects, not 16
+// packed bytes. The old figure was the WIRE size (patchCodec packs 12 bytes an
+// entry); in the heap, per-object headers and boxed numbers dominate. Estimating
+// low here is what made the cap ~30x tighter than it read.
+const BYTES_PER_ENTRY = 120
 const NOTICE_DURATION_MS = 3_000
 //#endregion
 
