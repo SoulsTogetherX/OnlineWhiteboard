@@ -31,14 +31,20 @@ const BASE = process.argv[2] ?? "http://localhost:8080"
 const WS_BASE = BASE.replace(/^http/, "ws")
 const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
 
-// Mirrors the canvas pixel count — the largest patch that can ever be legitimate.
-const MAX_PATCH_ENTRIES = 120 * 120
+// The server's global patch-entry ceiling: one entry per pixel of the LARGEST
+// allowed canvas. Must mirror MAX_PATCH_ENTRIES in shared/constants/canvas
+// (= MAX_CANVAS_DIMENSION^2). It grew from 120^2 when Phase 4 made the canvas
+// per-room (default 256, max 512), so a patch of MAX_PATCH_ENTRIES+1 entries is
+// now what the count bound must reject — 14,401 entries is a perfectly legal
+// patch on a 512^2 board and is correctly broadcast.
+const MAX_PATCH_ENTRIES = 512 * 512
 
 // Packs a patch draw as the binary frame real clients send. Mirrors
 // shared/utils/patchCodec.ts. The oversized-patch check below MUST use this: as
-// JSON, MAX_PATCH_ENTRIES+1 entries is ~1.37 MB, which now trips maxPayload
-// (256 KiB) and closes the socket — testing the wrong bound. Packed it is
-// ~173 KB, under maxPayload, so it reaches the COUNT check this test is about.
+// JSON, MAX_PATCH_ENTRIES+1 entries is ~25 MB, which trips maxPayload (4 MiB)
+// and closes the socket — testing the wrong bound. Packed at 12 bytes an entry
+// it is ~3.0 MB, under maxPayload, so it reaches the COUNT check this test is
+// about.
 const BINARY_FRAME_VERSION = 1
 function encodePatchFrame(roomId, instruction) {
   const { entries, ...instructionHeader } = instruction
