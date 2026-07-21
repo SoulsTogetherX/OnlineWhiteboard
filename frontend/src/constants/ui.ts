@@ -4,13 +4,11 @@ import type { DrawAction } from "@shared/types/drawProtocol"
 //#endregion
 
 //#region Layout
-// The desktop breakpoint. The toolbar is permanently visible at or above this
-// width, and the hamburger is hidden.
-//
-// MUST stay in sync with the `min-width` media queries in
-// components/ToolMenu/styles.css and components/HamburgerButton/styles.css.
-// CSS can't read a TS constant, so this pairing is by convention — if you change
-// one, change all three.
+// The desktop breakpoint. App reads it (via useMediaQuery) to choose the
+// sidebar's initial open state — open on desktop, collapsed on a phone so the
+// canvas isn't covered on load. The sidebar itself sizes with min(20rem, 85vw)
+// rather than this query, so there is no CSS media query that must be kept in
+// sync with this value any more.
 export const DESKTOP_MEDIA_QUERY = "(min-width: 1024px)"
 //#endregion
 

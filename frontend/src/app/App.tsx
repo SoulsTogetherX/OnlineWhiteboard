@@ -1,25 +1,22 @@
 //#region Imports
 import { useCallback, useEffect, useRef, useState } from "react"
 
-import ToolMenu from "@/components/ToolMenu"
-import type { AppTool } from "@/components/ToolMenu"
 import CanvasBoard from "@/components/CanvasBoard"
 import CursorOverlay from "@/components/CursorOverlay"
 import RoomPopup from "@/components/Popups/RoomPopup"
 import MembersPopup from "@/components/Popups/MembersPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
-import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
-import PresenceRoster from "@/components/PresenceRoster"
 import Dashboard from "@/components/Dashboard"
 import CheckpointsPopup from "@/components/Popups/CheckpointsPopup"
 import PlaybackViewer from "@/components/PlaybackViewer"
-import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
 import SideBar from "@/components/SideBar"
 import type { TabId } from "@/components/SideBar"
 import RoomTab from "@/components/SideBar/RoomTab"
+import DrawingTab from "@/components/SideBar/DrawingTab"
+import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
@@ -58,28 +55,23 @@ export default function App() {
   ) as React.RefObject<HTMLCanvasElement>
   const drawAction = useRef<DrawAction>(DEFAULT_DRAW_ACTION)
 
-  // Tool Bar
-  // On desktop the toolbar is permanently visible, so `isToolbarOpen` only
-  // governs the mobile slide-out. Deriving one `isToolbarVisible` boolean keeps
-  // React and the CSS from disagreeing (see useMediaQuery for why that mattered).
+  // The right sidebar (Phase 5) is the only tool surface now — the old floating
+  // toolbar is gone. `isDesktop` is still read (synchronously, so it's correct
+  // on first render) to choose the sidebar's initial open state.
   const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY)
-  const [isToolbarOpen, setIsToolbarOpen] = useState<boolean>(false)
-  const isToolbarVisible = isDesktop || isToolbarOpen
 
-  // The new right sidebar (Phase 5). Retractable on both desktop and mobile, so
-  // unlike the toolbar its open state is a single flag the handle toggles rather
-  // than being forced open on desktop. It starts open on desktop and collapsed
-  // on mobile so a phone-sized canvas isn't covered on load; `isDesktop` is read
-  // synchronously on first render, so this initial value is already correct.
+  // The right sidebar. Retractable on both desktop and mobile via a single flag
+  // the handle toggles. It starts open on desktop and collapsed on mobile so a
+  // phone-sized canvas isn't covered on load.
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(isDesktop)
   const [sidebarTab, setSidebarTab] = useState<TabId>("drawing")
 
   // The selected tool is kept in BOTH a ref and state, deliberately:
   //   - the ref is what the pointer handlers read on every event, so changing
   //     tools never re-subscribes the drag listeners;
-  //   - the state is what lets the toolbar render which tool is active.
-  // Keeping the pair here, in one place, is what lets ToolMenu stay a plain
-  // presentational component instead of writing to a ref it was handed.
+  //   - the state is what lets the Drawing tab render which tool is active.
+  // Keeping the pair here, in one place, is what lets the Drawing tab's tool
+  // picker stay presentational instead of writing to a ref it was handed.
   const [selectedTool, setSelectedTool] = useState<AppTool>(
     DEFAULT_DRAW_ACTION.type,
   )
@@ -193,9 +185,15 @@ export default function App() {
     [setColor, addRecent, selectTool],
   )
 
-  // Downloading the current canvas as a PNG. Shared by the old toolbar and the
-  // new Room tab (§12.9: the second caller is where duplicated logic becomes a
-  // helper).
+  // Opens the colour picker for the primary or secondary swatch. Used by the
+  // Drawing tab's colour controls.
+  const openColorPopup = useCallback((primary: boolean) => {
+    setSelectedColor(primary ? "primary" : "secondary")
+    setIsColorOpen(true)
+  }, [])
+
+  // Downloading the current canvas as a PNG. Used by the Room tab's download
+  // button (§12.9: shared as soon as a second caller appears).
   const handleDownload = useCallback(() => {
     if (canvasRef.current) {
       downloadCanvasImage(canvasRef.current, roomId)
@@ -229,7 +227,8 @@ export default function App() {
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   useCursorBroadcast(canvasRef, sendCursor)
 
-  // Keyboard shortcuts (desktop only — mobile uses the toolbar buttons)
+  // Undo/redo keyboard shortcuts. (A central keymap for all shortcuts arrives in
+  // the Phase 5 a11y commit; this is the pre-existing Ctrl/Cmd+Z pair.)
   useEffect(() => {
     const onKeyDown = (ev: KeyboardEvent) => {
       const isModified = ev.ctrlKey || ev.metaKey
@@ -250,15 +249,11 @@ export default function App() {
 
   // Frontend
   return (
-    <div
-      ref={frameRef}
-      className="app-wrapper"
-      onClick={() => setIsToolbarOpen(false)}
-    >
-      <RoomStatus roomId={roomId} socketLabel={socketLabel} />
-      <PresenceRoster
-        participants={participants}
-        selfConnectionId={self?.connectionId ?? null}
+    <div ref={frameRef} className="app-wrapper">
+      <RoomStatus
+        roomId={roomId}
+        socketLabel={socketLabel}
+        onOpenRoomPicker={() => setIsRoomOpen(true)}
       />
       {/* History is available to everyone — replay is read-only. */}
       <button
@@ -292,24 +287,6 @@ export default function App() {
         onOpenAuth={() => setIsAuthOpen(true)}
         onLogout={logout}
       />
-      <HamburgerButton
-        isOpen={isToolbarOpen}
-        onClick={() => setIsToolbarOpen((open) => !open)}
-      />
-      <ToolMenu
-        isOpen={isToolbarVisible}
-        selectedTool={selectedTool}
-        onSelectTool={selectTool}
-        strokeSize={strokeSize}
-        onStrokeSizeChange={setStrokeSize}
-        openRoomPicker={() => setIsRoomOpen(true)}
-        onClear={clearCanvas}
-        onDownload={handleDownload}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-      />
       <CanvasBoard canvasRef={canvasRef} />
       <CursorOverlay
         canvasRef={canvasRef}
@@ -320,14 +297,6 @@ export default function App() {
         showNames={showCursorNames}
       />
       {notice && <div className="undo-notice">{notice}</div>}
-      <ColorSelector
-        colorPalette={colorPalette}
-        onSwap={swapColors}
-        openColorPopup={(primary: boolean) => {
-          setSelectedColor(primary ? "primary" : "secondary")
-          setIsColorOpen(true)
-        }}
-      />
       <ColorPopup
         isOpen={isColorOpen}
         onClose={() => setIsColorOpen(false)}
@@ -384,16 +353,29 @@ export default function App() {
         onLogin={login}
         onRegister={register}
       />
-      {/* Phase 5 sidebar. The Room tab is wired; Drawing and Timeline are still
-          placeholders, filled in by later commits. As each tab lands, the
-          superseded floating controls above move into components/Old. */}
+      {/* Phase 5 sidebar. Drawing and Room are wired; Timeline is still a
+          placeholder, filled in by the next commit. */}
       <SideBar
         isOpen={isSidebarOpen}
         onToggle={() => setIsSidebarOpen((open) => !open)}
         activeTab={sidebarTab}
         onTabChange={setSidebarTab}
       >
-        {sidebarTab === "room" ? (
+        {sidebarTab === "drawing" ? (
+          <DrawingTab
+            selectedTool={selectedTool}
+            onSelectTool={selectTool}
+            strokeSize={strokeSize}
+            onStrokeSizeChange={setStrokeSize}
+            colorPalette={colorPalette}
+            onSwap={swapColors}
+            openColorPopup={openColorPopup}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+          />
+        ) : sidebarTab === "room" ? (
           <RoomTab
             participants={participants}
             self={self}

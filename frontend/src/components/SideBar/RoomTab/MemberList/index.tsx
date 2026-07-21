@@ -6,8 +6,8 @@ import "./styles.css"
 
 //#region Role badge
 // Owner and viewer are the roles worth flagging; a plain editor and a guest tag
-// carry their own labels below. Mirrors PresenceRoster's badge set so the two
-// read the same until PresenceRoster is retired into Old.
+// carry their own labels below. (This carries the badge set of the old floating
+// PresenceRoster, which this list replaced.)
 const ROLE_BADGE: Partial<Record<ConnectionRole, string>> = {
   owner: "owner",
   viewer: "view only",
