@@ -24,6 +24,7 @@ import {
 } from "@shared/utils/handleSprayProtocol"
 import {
   canvasDimsOf,
+  coalesceRecording,
   getDirectColor,
   getToolColor,
 } from "@shared/utils/helperProtocolMethods"
@@ -183,14 +184,21 @@ export default function useDrawActions(
         break
     }
 
-    if (record.current.length > 0) {
+    // One entry per PIXEL, not one per write. A brush repaints the same pixels
+    // on every pointermove, so the raw recording of a large stroke runs to
+    // several times the canvas's pixel count — past the ceiling patch validation
+    // enforces, which is what made undo of a big stroke fail outright while
+    // still lighting up the button. See coalesceRecording.
+    const undoEntries = coalesceRecording(record.current)
+    record.current = []
+
+    if (undoEntries.length > 0) {
       // Hold the pixels this stroke just painted so a colliding remote
       // instruction cannot visibly wipe them for the next 100 ms (see
       // @/utils/localHold). Display-only — the recorded writes are already in the
       // authoritative buffer; this just keeps them SHOWN briefly.
-      holdLocalPixels(record.current, Date.now())
-      onCommitAction?.(baseInstruction.current.instructionId, record.current)
-      record.current = []
+      holdLocalPixels(undoEntries, Date.now())
+      onCommitAction?.(baseInstruction.current.instructionId, undoEntries)
     }
     return instruction
   }
