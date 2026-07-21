@@ -9,11 +9,38 @@ import { runMigrations } from "./db/migrate"
 import pool from "./db/pool"
 //#endregion
 
-//#region Settup App & Sever
+//#region Setup App & Sever
 const app = express()
 const server = createServer(app)
+// Largest client->server frame we will even buffer. `ws` defaults to 100 MiB,
+// which means a single message could ask the server to allocate and parse 100 MB
+// before any of our validation ran — validation cannot protect you from a
+// payload it never gets to see.
+//
+// The bound is derived, not guessed. The biggest LEGITIMATE message is an undo
+// patch covering every pixel of the LARGEST allowed canvas: MAX_PATCH_ENTRIES
+// (= MAX_CANVAS_DIMENSION^2 = 512^2 = 262,144) entries. Patches travel as a
+// packed binary frame (shared/utils/patchCodec.ts) at 12 bytes an entry, so that
+// worst case is 262,144 * 12 ≈ 3.0 MB. 4 MiB gives that ~1.3x headroom for the
+// frame header, and every other client->server message is far smaller.
+//
+// This rose from 256 KiB when the max canvas grew to 512 in Phase 4: a bigger
+// canvas means a bigger legitimate full-canvas undo, and the ceiling has to fit
+// it. Still ~25x below the `ws` 100 MiB default, and the binary patch encoding
+// is what keeps even this in the low megabytes rather than the ~25 MB the old
+// JSON encoding would have needed for the same canvas.
+const MAX_SOCKET_PAYLOAD_BYTES = 4 * 1024 * 1024
+
 const wss = new WebSocketServer({
   noServer: true,
+  maxPayload: MAX_SOCKET_PAYLOAD_BYTES,
+  // Explicitly off. `ws` does not enable permessage-deflate by default, but
+  // saying so here is deliberate: OWASP advises against transport-level
+  // compression because sharing a compression context between attacker-supplied
+  // data and secrets leaks content through compressed SIZE (the CRIME/BREACH
+  // class). Phase 3 compresses the snapshot PAYLOAD explicitly instead, so the
+  // compressed buffer holds only pixel bytes and no oracle exists.
+  perMessageDeflate: false,
 })
 
 const port = process.env.BACKEND_PORT || 3000

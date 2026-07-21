@@ -152,3 +152,6 @@ backend/src/**/*.js
 shared/**/*.js
 
 .env
+# Private working notes — deliberately NOT committed (see PHASE_NOTES.txt).
+# Kept out of git so candid per-phase commentary never reaches the public repo.
+PHASE_NOTES.txt

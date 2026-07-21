@@ -1,0 +1,69 @@
+#!/bin/sh
+#
+# Pre-commit verification gate.
+#
+# Enforces this repo's working agreement: nothing gets committed that does not
+# typecheck, lint, and pass its unit tests. Versioned with the repo (rather than
+# living untracked in .git/hooks) by pointing git at this directory:
+#
+#     git config core.hooksPath .githooks
+#
+# THE KEY REPO FACT THIS ENCODES: `shared/` has NO build boundary. It is joined
+# to frontend/, backend/ and loadtest/ by path aliases only (Vite resolve.alias +
+# tsconfig paths + esbuild), not as an npm package. So a change under shared/
+# must re-verify EVERY consumer, not just the package you happened to be editing.
+# That is exactly what the RUN_FRONTEND/RUN_BACKEND logic below does.
+#
+# NOT run here (deliberately): the backend integration tests, which need a live
+# PostgreSQL. Those are CI's job (.github/workflows/ci.yml) — a pre-commit hook
+# that needs a database is a hook people disable.
+#
+# Escape hatch: `git commit --no-verify` is a git built-in. Use it only for a
+# throwaway WIP commit on a scratch branch, never on anything you intend to merge.
+
+set -e
+
+ROOT="$(git rev-parse --show-toplevel)"
+cd "$ROOT"
+
+STAGED="$(git diff --cached --name-only --diff-filter=ACMR)"
+if [ -z "$STAGED" ]; then
+  exit 0
+fi
+
+changed() {
+  echo "$STAGED" | grep -q "^$1"
+}
+
+fail() {
+  echo ""
+  echo "  pre-commit FAILED: $1"
+  echo "  Fix it before committing (or --no-verify for a throwaway WIP commit)."
+  echo ""
+  exit 1
+}
+
+RUN_FRONTEND=0
+RUN_BACKEND=0
+if changed "frontend/"; then RUN_FRONTEND=1; fi
+if changed "backend/"; then RUN_BACKEND=1; fi
+# shared/ has no build boundary -> re-verify every consumer.
+if changed "shared/"; then RUN_FRONTEND=1; RUN_BACKEND=1; fi
+
+echo "pre-commit: shared protocol tests + typecheck"
+npm test --silent >/dev/null 2>&1 || fail "shared unit tests"
+npm run typecheck:shared --silent >/dev/null 2>&1 || fail "shared typecheck"
+
+if [ "$RUN_BACKEND" -eq 1 ]; then
+  echo "pre-commit: backend typecheck"
+  (cd backend && npm run typecheck --silent >/dev/null 2>&1) || fail "backend typecheck"
+fi
+
+if [ "$RUN_FRONTEND" -eq 1 ]; then
+  echo "pre-commit: frontend typecheck + lint + unit tests"
+  (cd frontend && npx tsc -b >/dev/null 2>&1) || fail "frontend typecheck"
+  (cd frontend && npm run lint --silent >/dev/null 2>&1) || fail "frontend lint"
+  (cd frontend && npm test --silent >/dev/null 2>&1) || fail "frontend unit tests"
+fi
+
+echo "pre-commit: OK"

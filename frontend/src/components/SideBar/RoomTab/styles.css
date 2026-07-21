@@ -1,0 +1,47 @@
+.room-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+
+  /* Fill the panel so the footer's margin-top:auto can pin download to the
+     bottom-right. */
+  min-height: 100%;
+}
+
+.room-request-editor {
+  align-self: flex-start;
+
+  padding: 0.4rem 0.75rem;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 0.4rem;
+
+  background-color: var(--popup-background);
+  color: var(--accent-color);
+  font-size: 0.85rem;
+
+  cursor: pointer;
+}
+
+.room-request-editor:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
+/* Clear sits at the left, download at the far right (bottom-right of the tab). */
+.room-tab-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  margin-top: auto;
+  padding-top: 0.5rem;
+
+  border-top: 1px solid var(--border-color);
+}
+
+/* The destructive action reads red so it isn't fired absent-mindedly. */
+.room-clear:not(:disabled) {
+  border-color: #b42318;
+  color: #b42318;
+}

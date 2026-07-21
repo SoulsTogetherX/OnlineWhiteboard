@@ -1,0 +1,93 @@
+.member-list {
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background-color: var(--popup-background);
+}
+
+.member-list-summary {
+  padding: 0.5rem 0.75rem;
+
+  font-size: 0.9rem;
+  font-weight: 600;
+
+  cursor: pointer;
+  user-select: none;
+}
+
+.member-list-summary:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+}
+
+.member-list-empty {
+  margin: 0;
+  padding: 0 0.75rem 0.6rem;
+
+  color: var(--sub-text-color);
+  font-size: 0.8rem;
+}
+
+.member-list-items {
+  margin: 0;
+  padding: 0 0.5rem 0.5rem;
+
+  list-style: none;
+}
+
+.member-list-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  padding: 0.3rem 0.25rem;
+}
+
+.member-dot {
+  flex-shrink: 0;
+
+  width: 0.7rem;
+  height: 0.7rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 50%;
+}
+
+.member-name {
+  flex: 1 1 auto;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+
+  font-size: 0.85rem;
+}
+
+.member-you {
+  color: var(--sub-text-color);
+}
+
+.member-tag {
+  flex-shrink: 0;
+
+  padding: 0.05rem 0.4rem;
+
+  border-radius: 0.7rem;
+
+  font-size: 0.7rem;
+}
+
+.member-guest {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: var(--sub-text-color);
+}
+
+.member-tag.role-owner {
+  background-color: var(--accent-color);
+  color: white;
+}
+
+.member-tag.role-viewer {
+  background-color: rgba(0, 0, 0, 0.08);
+  color: var(--sub-text-color);
+}

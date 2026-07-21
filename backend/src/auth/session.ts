@@ -24,9 +24,15 @@ const IS_PROD = process.env.NODE_ENV === "production"
 // is 256 bits of randomness, so there is nothing to brute-force and no need to
 // slow the lookup down. Hashing it just means a stolen database dump can't be
 // replayed as live sessions.
-function hashToken(token: string): string {
+// Exported because the socket layer needs the SAME hash to key live connections
+// by session (see sockets/sessionRegistry.ts). Two implementations of "how a
+// token maps to its stored id" would be a silent way for logout to stop
+// disconnecting the right sockets.
+export function hashSessionToken(token: string): string {
   return createHash("sha256").update(token).digest("hex")
 }
+
+const hashToken = hashSessionToken
 //#endregion
 
 //#region Session lifecycle

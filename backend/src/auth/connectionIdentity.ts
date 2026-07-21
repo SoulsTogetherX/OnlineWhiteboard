@@ -14,7 +14,8 @@ import type { Participant } from "@shared/types/identity"
 // The identity is what's broadcast (no account id); userId is kept server-side
 // on the socket to resolve room membership/role. Splitting them here is what
 // keeps the account id off the wire (see the note on Participant).
-export type ResolvedConnection = {
+// Not exported: callers destructure the resolved value, they never name it.
+type ResolvedConnection = {
   identity: Participant
   userId: string | null
 }

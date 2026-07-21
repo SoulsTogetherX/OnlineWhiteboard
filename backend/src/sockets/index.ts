@@ -5,6 +5,15 @@ import WebSocket, { WebSocketServer } from "ws"
 import RoomManager from "./roomManager"
 import { resolveConnectionIdentity } from "@/auth/connectionIdentity"
 import { isAllowedOrigin } from "@/security/origin"
+import { ConnectionCounter, connectionKey } from "@/security/socketLimits"
+import { MAX_ROOM_ID_LENGTH } from "@shared/constants/protocol"
+import { SESSION_COOKIE, parseCookies } from "@/auth/cookies"
+import { hashSessionToken } from "@/auth/session"
+import {
+  registerSocket,
+  startSessionRevalidation,
+  unregisterSocket,
+} from "./sessionRegistry"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
@@ -18,6 +27,15 @@ export default function configure(
 ): RoomManager {
   const roomManager = new RoomManager(wss)
   roomManager.start()
+
+  // Caps concurrent sockets per identity, so the per-socket rate limiter can't
+  // be sidestepped by simply opening more sockets.
+  const connections = new ConnectionCounter()
+
+  // Periodically re-checks that every live socket's session still resolves, so
+  // an expired or revoked session does not stay authorised for the lifetime of
+  // the tab.
+  startSessionRevalidation()
 
   server.on("upgrade", (request, socket, head) => {
     const url = new URL(request.url ?? "", "http://localhost")
@@ -39,12 +57,43 @@ export default function configure(
     }
 
     const roomId = url.searchParams.get("roomId")?.trim()
-    if (!roomId) {
+    // Bound the room id here as well as in the message envelope. This is the
+    // path that CREATES a room row, so an unbounded id here is an unbounded
+    // database write, not just an unbounded string.
+    if (!roomId || roomId.length > MAX_ROOM_ID_LENGTH) {
+      socket.destroy()
+      return
+    }
+
+    // Enforce the connection cap BEFORE handing off to the connection handler,
+    // which resolves identity against Postgres. A cap that only applies after a
+    // database query is a cap an attacker can use to generate database queries.
+    const { key, isAuthenticated } = connectionKey(request)
+    if (!connections.tryAcquire(key, isAuthenticated)) {
+      console.warn(`Connection cap reached for ${key}`)
       socket.destroy()
       return
     }
 
     wss.handleUpgrade(request, socket, head, (ws) => {
+      // Release on close, whatever the reason — a slot leaked here would
+      // permanently shrink that client's allowance until the process restarts.
+      ws.once("close", () => connections.release(key))
+
+      // Record which session authorised this socket, so logout can disconnect
+      // it immediately and the periodic sweep can re-check it. A socket is
+      // authenticated once at the upgrade and then lives for hours; without
+      // this, logging out left the already-open tab acting as the logged-in
+      // user indefinitely.
+      const client = ws as ClientSocket
+      const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
+      client.sessionHash = token ? hashSessionToken(token) : null
+      if (client.sessionHash) {
+        const sessionHash = client.sessionHash
+        registerSocket(sessionHash, client)
+        ws.once("close", () => unregisterSocket(sessionHash, client))
+      }
+
       wss.emit("connection", ws, request)
     })
   })

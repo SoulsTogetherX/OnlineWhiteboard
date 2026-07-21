@@ -94,6 +94,7 @@ HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
 # `node dist/server.js` directly — NOT `npm start`. npm would sit in the middle
 # as PID 1 and not forward SIGTERM, so `docker stop` would hang for the full
 # 10s kill timeout and Node would never see the signal. Running node as PID 1
-# is what makes a future graceful-shutdown handler (flush dirty rooms on
-# SIGTERM — not yet implemented) possible at all.
+# is what lets the graceful-shutdown handler in src/server.ts actually receive
+# SIGTERM and flush every dirty room's buffered events plus a final snapshot
+# before exit — so a normal deploy loses nothing.
 CMD ["node", "dist/server.js"]

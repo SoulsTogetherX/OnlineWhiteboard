@@ -2,19 +2,20 @@
 import { useRef } from "react"
 
 import useSessionID from "./useSessionID"
+import { holdLocalPixels } from "@/utils/localHold"
 
 import {
   handleDrawLineFinish,
   handleDrawLineLeave,
   handleDrawLineMotion,
   handleDrawLineStart,
-} from "@shared/utils/handleLineProtocall"
+} from "@shared/utils/handleLineProtocol"
 import {
   handleDrawFillFinish,
   handleDrawFillLeave,
   handleDrawFillMotion,
   handleDrawFillStart,
-} from "@shared/utils/handleFillProtocall"
+} from "@shared/utils/handleFillProtocol"
 import {
   handleDrawSprayFinish,
   handleDrawSprayLeave,
@@ -22,9 +23,10 @@ import {
   handleDrawSprayStart,
 } from "@shared/utils/handleSprayProtocol"
 import {
+  canvasDimsOf,
   getDirectColor,
   getToolColor,
-} from "@shared/utils/helperProtocallMethods"
+} from "@shared/utils/helperProtocolMethods"
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
 import type {
@@ -33,13 +35,13 @@ import type {
   DrawInstruction,
   PatchEntry,
 } from "@shared/types/drawProtocol"
-import type { ColorPallet } from "@shared/types/primitive"
+import type { ColorPalette } from "@shared/types/primitive"
 //#endregion
 
 //#region Type Def
 export type DrawHandlerMethodStart = (
   da: DrawAction,
-  cp: ColorPallet,
+  cp: ColorPalette,
   ev: PointerEvent,
 ) => DrawInstruction | null
 export type DrawHandlerMethod = (
@@ -61,7 +63,7 @@ export type UseDrawActionsReturn = [
 export type OnCommitAction = (instructionId: number, entries: PatchEntry[]) => void
 //#endregion
 
-//#region Settup Method
+//#region Setup Method
 // Takes the ref itself, NOT `canvasRef.current`.
 //
 // It used to take the element, read out of the ref during render by
@@ -91,13 +93,14 @@ export default function useDrawActions(
 
   const handleDrawActionStart = (
     da: DrawAction,
-    cp: ColorPallet,
+    cp: ColorPalette,
     ev: PointerEvent,
   ): DrawInstruction | null => {
     const canvas = canvasRef.current
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     baseInstruction.current.instructionId += 1
     baseInstruction.current.color = getToolColor(
@@ -117,6 +120,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -127,6 +131,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }
@@ -139,6 +144,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     let instruction: DrawInstruction | null = null
     switch (da.type) {
@@ -157,6 +163,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
         break
@@ -171,6 +178,11 @@ export default function useDrawActions(
     }
 
     if (record.current.length > 0) {
+      // Hold the pixels this stroke just painted so a colliding remote
+      // instruction cannot visibly wipe them for the next 100 ms (see
+      // @/utils/localHold). Display-only — the recorded writes are already in the
+      // authoritative buffer; this just keeps them SHOWN briefly.
+      holdLocalPixels(record.current, Date.now())
       onCommitAction?.(baseInstruction.current.instructionId, record.current)
       record.current = []
     }
@@ -184,6 +196,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     switch (da.type) {
       case "pencil":
@@ -193,6 +206,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -203,6 +217,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }
@@ -215,6 +230,7 @@ export default function useDrawActions(
     if (!canvas) {
       return null
     }
+    const dims = canvasDimsOf(canvas)
 
     switch (da.type) {
       case "pencil":
@@ -224,6 +240,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
       case "bucket":
@@ -234,6 +251,7 @@ export default function useDrawActions(
           baseInstruction.current,
           da,
           ev,
+          dims,
           record.current,
         )
     }

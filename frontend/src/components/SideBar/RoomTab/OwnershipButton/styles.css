@@ -1,0 +1,51 @@
+.ownership-claim-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ownership-button {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background-color: var(--popup-background);
+  color: var(--text-color);
+  font-size: 0.9rem;
+  text-align: center;
+
+  cursor: pointer;
+}
+
+.ownership-button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.ownership-button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
+.ownership-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Claim is the inviting action, release the cautionary one. */
+.ownership-claim {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.ownership-release {
+  border-color: var(--accent-color);
+}
+
+.ownership-hint {
+  margin: 0;
+  color: var(--sub-text-color);
+  font-size: 0.75rem;
+}

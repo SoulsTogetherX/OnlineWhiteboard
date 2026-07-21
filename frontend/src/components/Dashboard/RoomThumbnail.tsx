@@ -1,8 +1,8 @@
 //#region Imports
 import { useEffect, useRef } from "react"
 
-import { createImageDataFromBase64 } from "@shared/utils/helperProtocallMethods"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
+import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 
 import "./thumbnail.css"
 //#endregion
@@ -23,18 +23,29 @@ export default function RoomThumbnail({ roomId }: RoomThumbnailProps) {
     let cancelled = false
     fetch(`/api/rooms/${encodeURIComponent(roomId)}/snapshot`)
       .then((res) => (res.ok ? res.json() : null))
-      .then((data: { data: string } | null) => {
-        const canvas = canvasRef.current
-        if (cancelled || !data || !canvas) {
-          return
-        }
-        const ctx = canvas.getContext("2d")
-        if (!ctx) {
-          return
-        }
-        // Reuses the same shared decoder the live canvas uses.
-        ctx.putImageData(createImageDataFromBase64(data.data), 0, 0)
-      })
+      .then(
+        (data: { data: string; width: number; height: number } | null) => {
+          const canvas = canvasRef.current
+          if (cancelled || !data || !canvas) {
+            return
+          }
+          const ctx = canvas.getContext("2d")
+          if (!ctx) {
+            return
+          }
+          // Size the element to the room's actual dimensions before painting, so
+          // a resized room's thumbnail is not cropped or stretched. CSS scales
+          // the result down for display.
+          const dims = { width: data.width, height: data.height }
+          canvas.width = dims.width
+          canvas.height = dims.height
+          // Reuses the same shared decoder the live canvas uses.
+          const imageData = createImageDataFromBase64(data.data, dims)
+          if (imageData) {
+            ctx.putImageData(imageData, 0, 0)
+          }
+        },
+      )
       .catch(() => {
         /* a missing preview just renders blank — not worth surfacing */
       })
@@ -48,8 +59,8 @@ export default function RoomThumbnail({ roomId }: RoomThumbnailProps) {
       <canvas
         ref={canvasRef}
         className="room-thumb"
-        width={CANVAS_WIDTH}
-        height={CANVAS_HEIGHT}
+        width={DEFAULT_CANVAS_DIMS.width}
+        height={DEFAULT_CANVAS_DIMS.height}
         aria-hidden="true"
       />
     </div>

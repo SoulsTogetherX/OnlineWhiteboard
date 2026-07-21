@@ -1,0 +1,80 @@
+.icon-button {
+  position: relative;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 2.25rem;
+  height: 2.25rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background-color: var(--popup-background);
+  color: var(--text-color);
+  cursor: pointer;
+}
+
+.icon-button:hover:not(:disabled) {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.icon-button:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
+/* Greyed and inert-looking for a control the current role can't use (e.g. a
+   non-owner's clear/resize) — the server would reject it anyway, so the disabled
+   state keeps the UI honest about what will work. */
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.icon-button > svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: currentColor;
+}
+
+/* Tooltip: hidden until hover/focus, then shown below the button. Kept CSS-only
+   (no JS timers) and aria-hidden, since the accessible name is the aria-label. */
+.icon-button-tooltip {
+  position: absolute;
+  top: calc(100% + 0.35rem);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1;
+
+  display: none;
+  gap: 0.4rem;
+  align-items: center;
+  white-space: nowrap;
+
+  padding: 0.25rem 0.5rem;
+
+  border-radius: 0.3rem;
+
+  background-color: var(--normal-color);
+  color: white;
+  font-size: 0.75rem;
+
+  pointer-events: none;
+}
+
+.icon-button:hover .icon-button-tooltip,
+.icon-button:focus-visible .icon-button-tooltip {
+  display: inline-flex;
+}
+
+.icon-button-shortcut {
+  padding: 0 0.3rem;
+
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0.2rem;
+
+  font-size: 0.7rem;
+  font-family: monospace;
+}

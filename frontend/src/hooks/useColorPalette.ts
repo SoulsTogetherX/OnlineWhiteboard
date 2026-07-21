@@ -1,78 +1,84 @@
 //#region Imports
 import { useCallback, type RefObject } from "react"
 
-import { DEFAULT_COLOR_PALLET } from "@/constants/ui"
+import { DEFAULT_COLOR_PALETTE } from "@/constants/ui"
 import { useSessionStorageRef } from "@/hooks/useSessionStorage"
 
 import type {
   ColorType,
-  ColorPallet,
-  ColorPalletKeys,
+  ColorPalette,
+  ColorPaletteKeys,
 } from "@shared/types/primitive"
 //#endregion
 
 //#region Type Def
 export interface UseColorPaletteResult {
-  colorPallet: RefObject<ColorPallet>
-  setColor: (type: ColorPalletKeys, color: ColorType) => void
+  colorPalette: RefObject<ColorPalette>
+  setColor: (type: ColorPaletteKeys, color: ColorType) => void
   swapColors: () => void
 }
 //#endregion
 
 //#region Constants
-const COLOR_PALLET_STORAGE_KEY = "online-whiteboard-color-pallet"
+// NOTE the deliberate spelling mismatch. The identifier was corrected to
+// PALETTE, but the stored key string is still "...-color-pallet" — and must
+// stay that way. It is a live sessionStorage key: renaming the VALUE would
+// orphan every existing user's saved primary/secondary colours the next time
+// they load the app. Renaming an identifier is free; renaming persisted data is
+// a migration. Leave the string alone.
+const COLOR_PALETTE_STORAGE_KEY = "online-whiteboard-color-pallet"
 //#endregion
 
 //#region Helper Defs
-function cloneColorPallet(colorPallet: ColorPallet): ColorPallet {
+function cloneColorPalette(colorPalette: ColorPalette): ColorPalette {
   return {
-    primary: { ...colorPallet.primary },
-    secondary: { ...colorPallet.secondary },
+    primary: { ...colorPalette.primary },
+    secondary: { ...colorPalette.secondary },
   }
 }
 
-function isColorPallet(value: unknown): value is ColorPallet {
+function isColorPalette(value: unknown): value is ColorPalette {
   if (!value || typeof value !== "object") {
     return false
   }
-  const candidate = value as Partial<ColorPallet>
+  const candidate = value as Partial<ColorPalette>
   return Boolean(candidate.primary && candidate.secondary)
 }
 
-function normalizeColorPallet(value: unknown): ColorPallet {
-  return isColorPallet(value)
-    ? cloneColorPallet(value)
-    : cloneColorPallet(DEFAULT_COLOR_PALLET)
+function normalizeColorPalette(value: unknown): ColorPalette {
+  return isColorPalette(value)
+    ? cloneColorPalette(value)
+    : cloneColorPalette(DEFAULT_COLOR_PALETTE)
 }
 //#endregion
 
 //#region Hook Def
 export default function useColorPalette(): UseColorPaletteResult {
-  const [colorPallet, setColorPallet] = useSessionStorageRef<ColorPallet>(
-    COLOR_PALLET_STORAGE_KEY,
-    normalizeColorPallet(DEFAULT_COLOR_PALLET),
+  const [colorPalette, setColorPalette] = useSessionStorageRef<ColorPalette>(
+    COLOR_PALETTE_STORAGE_KEY,
+    normalizeColorPalette(DEFAULT_COLOR_PALETTE),
     true,
   )
 
   const setColor = useCallback(
-    (type: ColorPalletKeys, color: ColorType) => {
-      const next = { ...colorPallet.current }
+    (type: ColorPaletteKeys, color: ColorType) => {
+      const next = { ...colorPalette.current }
       next[type] = { ...color }
 
-      setColorPallet(next)
+      setColorPalette(next)
     },
-    [colorPallet, setColorPallet],
+    [colorPalette, setColorPalette],
   )
 
   const swapColors = useCallback(() => {
-    setColorPallet({
-      primary: { ...colorPallet.current.secondary },
-      secondary: { ...colorPallet.current.primary },
+    setColorPalette({
+      primary: { ...colorPalette.current.secondary },
+      secondary: { ...colorPalette.current.primary },
     })
-  }, [colorPallet, setColorPallet])
+  }, [colorPalette, setColorPalette])
 
   return {
-    colorPallet,
+    colorPalette,
     setColor,
     swapColors,
   }

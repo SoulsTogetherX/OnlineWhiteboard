@@ -15,6 +15,16 @@
   --shadow-color: black;
 }
 
+/* Border-box everywhere so width includes padding + border. Without this a
+   control with width:100% plus its own padding/border is wider than its
+   container and overflows — which is exactly what pushed the sidebar buttons
+   past the panel edge. */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 body {
   width: 100vw;
   height: 100vh;
@@ -24,6 +34,10 @@ body {
 }
 button {
   all: unset;
+  /* `all: unset` resets box-sizing back to content-box (it doesn't inherit), so
+     re-assert border-box here — otherwise every styled button re-introduces the
+     overflow the universal rule above just fixed. */
+  box-sizing: border-box;
 }
 
 #root {

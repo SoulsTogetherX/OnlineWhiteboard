@@ -7,7 +7,9 @@
 //#endregion
 
 //#region Types
-export type Hsv = { h: number; s: number; v: number } // h 0–360, s/v 0–1
+// Not exported: only rgbToHsv's return annotation uses it. Callers destructure
+// the result rather than naming the type.
+type Hsv = { h: number; s: number; v: number } // h 0–360, s/v 0–1
 //#endregion
 
 //#region Imports
@@ -77,7 +79,11 @@ export function hsvToRgb(
 //#endregion
 
 //#region Hex <-> ColorType
-function clampByte(value: number): number {
+// Exported because the RGBA number inputs in ColorPopup need exactly this
+// coercion for user-typed values, and had reimplemented it byte-for-byte.
+// Non-finite input (a cleared or malformed field) collapses to 0 rather than
+// NaN, which would otherwise propagate into the canvas as a corrupt channel.
+export function clampByte(value: number): number {
   if (!Number.isFinite(value)) {
     return 0
   }
@@ -122,8 +128,38 @@ export function hexToColor(hex: string): ColorType | null {
     a: clean.length === 8 ? parseInt(clean.slice(6, 8), 16) : 255,
   }
 }
+//#endregion
 
-export function colorsEqual(a: ColorType, b: ColorType): boolean {
-  return a.r === b.r && a.g === b.g && a.b === b.b && a.a === b.a
+//#region Readable text on a coloured background
+// Relative luminance per WCAG 2.x: linearise each sRGB channel, then weight by
+// how bright the eye perceives it (green dominates, blue barely registers).
+function relativeLuminance(r: number, g: number, b: number): number {
+  const linear = (channel: number) => {
+    const s = channel / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+// Picks black or white text for a given background so the label stays legible —
+// the whole point of this file's presence in the cursor overlay, where a light
+// identity colour (pale green, pink, lavender) with hardcoded white text was
+// unreadable. Returns whichever of black/white has the higher WCAG contrast
+// ratio against the background; the crossover sits at luminance ≈ 0.179.
+// Malformed input falls back to black (the safer default on the light UI).
+export function readableTextColor(background: string): "#000000" | "#ffffff" {
+  const color = hexToColor(background)
+  if (color === null) {
+    return "#000000"
+  }
+  const luminance = relativeLuminance(color.r, color.g, color.b)
+  const contrastWithBlack = (luminance + 0.05) / 0.05
+  const contrastWithWhite = 1.05 / (luminance + 0.05)
+  return contrastWithBlack >= contrastWithWhite ? "#000000" : "#ffffff"
 }
 //#endregion
+
+// NOTE: colorsEqual used to live here too. It now lives in
+// shared/types/primitive.ts, because the flood fill and the compare-and-swap
+// undo patch need the same comparison and all three had drifted into separate
+// copies. Import it from @shared/types/primitive.

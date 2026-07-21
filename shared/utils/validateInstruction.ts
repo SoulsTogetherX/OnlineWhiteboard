@@ -1,13 +1,12 @@
 //#region Imports
 import {
-  CANVAS_BYTES,
-  CANVAS_HEIGHT,
-  CANVAS_WIDTH,
   MAX_SPRAY_DENSITY,
   MAX_SPRAY_RADIUS,
   MAX_STROKE_SIZE,
+  canvasBytes,
 } from "../constants/canvas"
 
+import type { CanvasDims } from "../constants/canvas"
 import type { DrawInstruction, PatchEntry } from "../types/drawProtocol"
 import type { ColorType, Vec } from "../types/primitive"
 //#endregion
@@ -44,7 +43,7 @@ export function isValidColor(value: unknown): value is ColorType {
 // Number.isInteger rejects NaN, Infinity and fractions in one go — all three
 // would otherwise slip past a naive `x >= 0 && x < CANVAS_WIDTH` check
 // (NaN comparisons are false, so NaN fails, but 1.5 and -0.0 would not).
-export function isValidVec(value: unknown): value is Vec {
+export function isValidVec(value: unknown, dims: CanvasDims): value is Vec {
   if (!Array.isArray(value) || value.length !== 2) {
     return false
   }
@@ -53,9 +52,9 @@ export function isValidVec(value: unknown): value is Vec {
     Number.isInteger(x) &&
     Number.isInteger(y) &&
     (x as number) >= 0 &&
-    (x as number) < CANVAS_WIDTH &&
+    (x as number) < dims.width &&
     (y as number) >= 0 &&
-    (y as number) < CANVAS_HEIGHT
+    (y as number) < dims.height
   )
 }
 
@@ -96,23 +95,25 @@ function isValidSeed(value: unknown): boolean {
 // A patch index is a raw byte offset into the RGBA buffer, so it must be in
 // range AND 4-byte aligned — an unaligned index would smear one color across
 // two pixels' channels.
-export function isValidPatchIdx(value: unknown): boolean {
+export function isValidPatchIdx(value: unknown, dims: CanvasDims): boolean {
   return (
     typeof value === "number" &&
     Number.isInteger(value) &&
     value >= 0 &&
-    value < CANVAS_BYTES &&
+    value < canvasBytes(dims) &&
     (value & 3) === 0
   )
 }
 
-function isValidPatchEntry(value: unknown): value is PatchEntry {
+function isValidPatchEntry(value: unknown, dims: CanvasDims): value is PatchEntry {
   if (!value || typeof value !== "object") {
     return false
   }
   const entry = value as Partial<PatchEntry>
   return (
-    isValidPatchIdx(entry.idx) && isValidColor(entry.from) && isValidColor(entry.to)
+    isValidPatchIdx(entry.idx, dims) &&
+    isValidColor(entry.from) &&
+    isValidColor(entry.to)
   )
 }
 //#endregion
@@ -125,7 +126,10 @@ function isValidPatchEntry(value: unknown): value is PatchEntry {
 // the bad ones out — a partially-understood patch is a sign of a broken or
 // hostile client, and silently applying half of it would leave the sender's
 // undo stack disagreeing with the canvas.
-export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
+export function isValidDrawInstruction(
+  inst: unknown,
+  dims: CanvasDims,
+): inst is DrawInstruction {
   if (!inst || typeof inst !== "object") {
     return false
   }
@@ -144,9 +148,11 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
   switch (candidate.type) {
     case "pencil":
     case "eraser":
-      return isValidVec(candidate.prevPos) && isValidVec(candidate.nextPos)
+      return (
+        isValidVec(candidate.prevPos, dims) && isValidVec(candidate.nextPos, dims)
+      )
     case "bucket":
-      return isValidVec(candidate.pos)
+      return isValidVec(candidate.pos, dims)
     case "spray": {
       const spray = candidate as {
         pos?: unknown
@@ -155,20 +161,26 @@ export function isValidDrawInstruction(inst: unknown): inst is DrawInstruction {
         seed?: unknown
       }
       return (
-        isValidVec(spray.pos) &&
+        isValidVec(spray.pos, dims) &&
         isBoundedInt(spray.radius, 1, MAX_SPRAY_RADIUS) &&
         isBoundedInt(spray.density, 1, MAX_SPRAY_DENSITY) &&
         isValidSeed(spray.seed)
       )
     }
     case "patch":
+      // The LENGTH check is as important as the per-entry check. Validating each
+      // entry bounds what one entry can do; only this bounds how many there are.
+      // The per-room bound is the canvas AREA (one entry per pixel), tighter than
+      // the global MAX_PATCH_ENTRIES the decoder uses before dims are known.
       return (
-        Array.isArray(candidate.entries) && candidate.entries.every(isValidPatchEntry)
+        Array.isArray(candidate.entries) &&
+        candidate.entries.length <= dims.width * dims.height &&
+        candidate.entries.every((entry) => isValidPatchEntry(entry, dims))
       )
     case "clear":
       // No fields beyond the base (already checked above). The GATE on clear is
       // authorisation, not shape: the server refuses a client-originated clear
-      // and only ever applies one it generated after a vote — so this returning
+      // and only ever applies one it generated for the owner — so this returning
       // true is safe, and lets a clear replay from the event log like anything else.
       return true
     default:

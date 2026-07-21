@@ -1,7 +1,7 @@
 //#region Imports
 import { pathToFileURL } from "node:url"
 
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import { num, parseArgs, str } from "./args"
 import { SimulatedClient, type PendingMap } from "./client"
@@ -151,7 +151,11 @@ export function printResult(result: RunResult): void {
     1,
   )
   const snapshotKb = (result.totalSnapshotBytesReceived / 1024).toFixed(1)
-  const canvasKb = ((CANVAS_BYTES * 4) / 3 / 1024).toFixed(1) // base64 size
+  const canvasKb = (
+    (canvasBytes(DEFAULT_CANVAS_DIMS) * 4) /
+    3 /
+    1024
+  ).toFixed(1) // base64 size
 
   console.log(
     `\n=== Room "${result.options.roomId}" — ${result.options.clients} clients ===`,

@@ -16,6 +16,8 @@
  * each is marked REGRESSION with what it guards.
  */
 
+import { inflateRawSync } from "node:zlib"
+
 const BASE = process.argv[2] ?? "http://localhost:8080"
 const WS_BASE = BASE.replace(/^http/, "ws")
 const ROOM = `smoke-${process.pid}`
@@ -30,15 +32,52 @@ const fail = (msg) => {
   console.error(`  ✗ ${msg}`)
 }
 
+// Decodes the binary frame envelope: version(1) + headerLength(2) + JSON header
+// + payload. Hand-rolled rather than imported because this probe is deliberately
+// dependency-free and cannot load TypeScript from shared/ — so if the format
+// ever changes without this being updated, the snapshot checks below fail loudly,
+// which is the drift alarm. Keep it in step with shared/utils/binaryFrame.ts.
+const BINARY_FRAME_VERSION = 1
+function decodeFrame(buffer) {
+  const bytes = new Uint8Array(buffer)
+  if (bytes.length < 3 || bytes[0] !== BINARY_FRAME_VERSION) {
+    return null
+  }
+  const headerLength = (bytes[1] << 8) | bytes[2]
+  const payloadStart = 3 + headerLength
+  if (payloadStart > bytes.length) {
+    return null
+  }
+  const header = JSON.parse(
+    Buffer.from(bytes.subarray(3, payloadStart)).toString("utf8"),
+  )
+  const raw = Buffer.from(bytes.subarray(payloadStart))
+  // `pixels` is the DECODED canvas; `wireBytes` is what actually crossed the
+  // network, so the compression assertions can compare the two.
+  const pixels =
+    header.compression === "deflate-raw" ? inflateRawSync(raw) : raw
+  return { ...header, pixels, wireBytes: raw.length }
+}
+
 function connect(room) {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(`${WS_BASE}/ws?roomId=${encodeURIComponent(room)}`)
+    ws.binaryType = "arraybuffer"
     const seen = []
     ws.addEventListener("message", (event) => {
       try {
-        seen.push(JSON.parse(event.data))
+        const message =
+          event.data instanceof ArrayBuffer
+            ? decodeFrame(event.data)
+            : JSON.parse(event.data)
+        // A null means an undecodable frame. Never push it: every predicate
+        // below reads `.type`, so one bad frame would throw inside waitFor's
+        // find() rather than simply not matching.
+        if (message !== null) {
+          seen.push(message)
+        }
       } catch {
-        /* non-JSON frames are not part of this protocol */
+        /* malformed frames are not part of this protocol */
       }
     })
     ws.addEventListener("open", () => resolve({ ws, seen }))
@@ -67,6 +106,38 @@ function waitFor(seen, predicate, what, timeoutMs = 8_000) {
 
 const draw = (roomId, instruction) =>
   JSON.stringify({ type: "draw", roomId, instruction })
+
+// Encodes a patch draw as the binary frame a real client now sends: the draw
+// message (minus entries) as the JSON header, 12 packed bytes per entry as the
+// payload. Hand-rolled to keep this probe dependency-free; keep it in step with
+// shared/utils/patchCodec.ts, same as decodeFrame mirrors binaryFrame.ts.
+function encodePatchFrame(roomId, instruction) {
+  const { entries, ...instructionHeader } = instruction
+  const payload = Buffer.alloc(entries.length * 12)
+  entries.forEach((e, i) => {
+    const o = i * 12
+    payload.writeUInt32BE(e.idx, o)
+    payload[o + 4] = e.from.r
+    payload[o + 5] = e.from.g
+    payload[o + 6] = e.from.b
+    payload[o + 7] = e.from.a
+    payload[o + 8] = e.to.r
+    payload[o + 9] = e.to.g
+    payload[o + 10] = e.to.b
+    payload[o + 11] = e.to.a
+  })
+  const header = Buffer.from(
+    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
+    "utf8",
+  )
+  const frame = Buffer.alloc(3 + header.length + payload.length)
+  frame[0] = BINARY_FRAME_VERSION
+  frame[1] = (header.length >> 8) & 0xff
+  frame[2] = header.length & 0xff
+  header.copy(frame, 3)
+  payload.copy(frame, 3 + header.length)
+  return frame
+}
 
 async function main() {
   console.log(`smoke test -> ${BASE} (room "${ROOM}")\n`)
@@ -112,14 +183,48 @@ async function main() {
     ? pass("ready roster includes self")
     : fail("ready roster does not include self")
 
+  // Permission state must arrive with the FIRST message, before any UI could
+  // render tools this connection may not be allowed to use.
+  ready.openEditing === true && ready.hasOwner === false
+    ? pass("ready carries room permissions (open, unowned)")
+    : fail(
+        `ready permissions wrong: openEditing=${ready.openEditing} hasOwner=${ready.hasOwner}`,
+      )
+  ready.self?.role === "guest"
+    ? pass("an anonymous connection is a guest, not a member")
+    : fail(`expected guest role, got ${ready.self?.role}`)
+
   const snapshot = await waitFor(
     a.seen,
     (m) => m.type === "canvas_snapshot",
     '"canvas_snapshot"',
   )
-  snapshot.width > 0 && snapshot.data.length > 0
-    ? pass(`canvas snapshot received (${snapshot.width}x${snapshot.height})`)
-    : fail("canvas snapshot was empty")
+  // The pixels now arrive as the binary frame's payload, so this asserts the
+  // EXACT byte count rather than "non-empty": 120 x 120 x 4 = 57,600. Under the
+  // old base64-in-JSON encoding the same canvas cost 76,800 characters.
+  const expectedBytes = snapshot.width * snapshot.height * 4
+  snapshot.width > 0 && snapshot.pixels?.length === expectedBytes
+    ? pass(
+        `canvas snapshot received as a binary frame (${snapshot.width}x${snapshot.height}, ${snapshot.pixels.length} bytes)`,
+      )
+    : fail(
+        `snapshot payload was ${snapshot.pixels?.length} bytes, expected ${expectedBytes}`,
+      )
+  snapshot.data === undefined
+    ? pass("snapshot header carries no base64 `data` field")
+    : fail("snapshot still carries a base64 `data` field — binary frames regressed")
+
+  // Compression is application-level, on the payload only. A blank canvas is
+  // 57,600 mostly-identical bytes, so deflate should crush it to a tiny
+  // fraction; asserting a real ratio (not just "it decoded") is what catches
+  // compression being silently skipped.
+  snapshot.compression === "deflate-raw" && snapshot.wireBytes < expectedBytes / 4
+    ? pass(
+        `snapshot payload is deflated on the wire (${snapshot.wireBytes} B -> ${snapshot.pixels.length} B, ${(snapshot.pixels.length / snapshot.wireBytes).toFixed(1)}x)`,
+      )
+    : fail(
+        `expected a deflated payload well under ${expectedBytes / 4} B, got compression=${snapshot.compression} wireBytes=${snapshot.wireBytes}`,
+      )
 
   await waitFor(a.seen, (m) => m.type === "pong", '"pong" for the ping sent at open')
   pass("REGRESSION: ping sent at open is answered (room-load race)")
@@ -207,6 +312,204 @@ async function main() {
   b.seen.some((m) => m.type === "cursor" && m.connectionId === undefined)
     ? fail("a cursor message arrived without a connectionId")
     : pass("relayed cursors carry a connectionId")
+
+  // --- Permissions are enforced by the SERVER ------------------------------
+  // A guest asking to wipe the board must be refused. The UI hides this button
+  // from non-owners, but hiding a control is not a permission check — only this
+  // is. A crafted client would simply not run the hiding code.
+  const revisionBeforeClear = fanout.revision
+  a.ws.send(JSON.stringify({ type: "room_action", roomId: ROOM, action: "clear" }))
+  await waitFor(a.seen, (m) => m.type === "error", "a rejection of the guest clear")
+  pass("guest's clear request is rejected (owner-only)")
+
+  // And the canvas must be untouched: a rejected action must not advance the
+  // revision, because that would mean it partially happened.
+  await new Promise((r) => setTimeout(r, 300))
+  b.seen.some(
+    (m) =>
+      m.type === "draw" &&
+      m.instruction?.type === "clear" &&
+      m.revision > revisionBeforeClear,
+  )
+    ? fail("the rejected clear was broadcast anyway")
+    : pass("rejected clear never reached the canvas or other clients")
+
+  // A guest resizing the canvas must be refused too — resize is owner-only, and
+  // it is a well-formed message (valid dims), so this proves the AUTHORISATION
+  // check, not the shape check, is doing the work. No other client should ever
+  // see a new-dimensioned snapshot from it.
+  a.seen.length = 0
+  a.ws.send(JSON.stringify({ type: "resize", roomId: ROOM, width: 300, height: 300 }))
+  await waitFor(a.seen, (m) => m.type === "error", "a rejection of the guest resize")
+  await new Promise((r) => setTimeout(r, 300))
+  b.seen.some((m) => m.type === "canvas_snapshot" && m.width === 300)
+    ? fail("the guest resize took effect and was broadcast")
+    : pass("guest's resize request is rejected (owner-only), never broadcast")
+
+  // --- Simultaneous joins into a cold room ----------------------------------
+  // REGRESSION (split-brain rooms): getOrCreateRoom checked `rooms`, then
+  // awaited five database calls before publishing into it. Every joiner that
+  // arrived during that window missed the cache and built its own RoomState,
+  // and the last to finish won the Map — so clients ended up in rooms nobody
+  // else could reach, each seeing presence of 1, with strokes reaching nobody.
+  // The orphaned rooms also kept their save/snapshot/flush timers running and
+  // went on persisting under a competing revision counter.
+  //
+  // A COLD room and NO serialisation are both essential to this test: it is the
+  // load window that was unguarded, so anything that lets one client finish
+  // joining first will pass whether or not the bug is present. After a restart
+  // every client reconnects at once into cold rooms, which is exactly this.
+  const joinRoom = `${ROOM}-join`
+  const joiners = await Promise.all([
+    connect(joinRoom),
+    connect(joinRoom),
+    connect(joinRoom),
+  ])
+  await Promise.all(
+    joiners.map((j, i) =>
+      waitFor(j.seen, (m) => m.type === "canvas_snapshot", `joiner ${i}'s snapshot`),
+    ),
+  )
+  // Presence is broadcast on every join, so the LAST one each client saw should
+  // list all three.
+  await new Promise((r) => setTimeout(r, 500))
+  const rosters = joiners.map(
+    (j) => j.seen.filter((m) => m.type === "presence").pop()?.participants?.length ?? 0,
+  )
+  rosters.every((n) => n === 3)
+    ? pass("three simultaneous joins land in ONE room (presence 3/3/3)")
+    : fail(`simultaneous joins split the room — presence counts [${rosters.join(", ")}]`)
+
+  // The decisive check: a stroke from one joiner must reach the other two.
+  joiners[0].ws.send(
+    draw(joinRoom, {
+      type: "pencil",
+      prevPos: [3, 3],
+      nextPos: [3, 3],
+      color: RED,
+      instructionId: 20,
+      sessionId: "smoke-join",
+    }),
+  )
+  await Promise.all(
+    joiners
+      .slice(1)
+      .map((j, i) =>
+        waitFor(
+          j.seen,
+          (m) => m.type === "draw" && m.instruction.sessionId === "smoke-join",
+          `joiner ${i + 1} to receive the stroke`,
+        ),
+      ),
+  )
+  pass("REGRESSION: a stroke reaches every client that joined simultaneously")
+  joiners.forEach((j) => j.ws.close())
+
+  // --- Convergence under concurrent undo ------------------------------------
+  // REGRESSION (silent desync): every check above asserts DELIVERY — that a
+  // message arrived. None asserted that two clients end up holding the same
+  // BYTES, which is the property the whole shared-protocol design exists for and
+  // the one that fails silently when it fails at all.
+  //
+  // The bug this guards: clients used to re-run a patch's compare-and-swap on a
+  // patch the SERVER had already run it on. Only patches are conditional, so a
+  // client whose optimistic undo had moved a pixel off the expected `from` would
+  // SKIP a write the server made, then advance its revision anyway — so the
+  // heartbeat never noticed and it stayed diverged until an unrelated snapshot.
+  //
+  // Driving the real client is out of scope for a dependency-free probe, so this
+  // asserts the server half the fix rests on: that the server rejects a stale
+  // patch outright rather than partially applying it, and that both clients'
+  // snapshots agree byte-for-byte afterwards.
+  const cvRoom = `${ROOM}-converge`
+  const c = await connect(cvRoom)
+  const cSnapshot = await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's snapshot")
+  const d = await connect(cvRoom)
+  await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's snapshot")
+
+  // Paint one pixel RED so both clients and the server agree on a start state.
+  // The byte index of pixel (1,1) depends on the room's WIDTH — which is
+  // per-room now — so derive it from the snapshot rather than hardcoding a
+  // stride. A wrong stride would target the wrong pixel and the CAS would find
+  // no RED there, silently applying nothing.
+  const idx = (1 * cSnapshot.width + 1) * 4
+  c.ws.send(
+    draw(cvRoom, {
+      type: "pencil",
+      prevPos: [1, 1],
+      nextPos: [1, 1],
+      color: RED,
+      instructionId: 10,
+      sessionId: "smoke-c",
+    }),
+  )
+  await waitFor(d.seen, (m) => m.type === "draw" && m.instruction.sessionId === "smoke-c", "the shared start state")
+
+  // D's undo lands first and moves the pixel RED -> BLUE. Sent as a BINARY patch
+  // frame — the path real clients now use — so this also proves the server
+  // decodes a packed patch into the same message a JSON one would have been.
+  d.ws.send(
+    encodePatchFrame(cvRoom, {
+      type: "patch",
+      entries: [{ idx, from: RED, to: BLUE }],
+      instructionId: 11,
+      sessionId: "smoke-d",
+    }),
+  )
+  const dPatch = await waitFor(
+    c.seen,
+    (m) => m.type === "draw" && m.instruction.sessionId === "smoke-d",
+    "D's binary patch to reach C",
+  )
+  dPatch.instruction.entries?.length === 1
+    ? pass("a BINARY patch that passes compare-and-swap is decoded and broadcast")
+    : fail(`expected 1 applied entry, got ${dPatch.instruction.entries?.length}`)
+
+  // C's undo of the SAME pixel is now stale: it expects RED, the server holds
+  // BLUE. It must be rejected wholesale, not applied. Also a binary frame.
+  c.ws.send(
+    encodePatchFrame(cvRoom, {
+      type: "patch",
+      entries: [{ idx, from: RED, to: { r: 0, g: 0, b: 0, a: 0 } }],
+      instructionId: 12,
+      sessionId: "smoke-stale",
+    }),
+  )
+  await new Promise((r) => setTimeout(r, 400))
+  d.seen.some((m) => m.type === "draw" && m.instruction.sessionId === "smoke-stale")
+    ? fail("a stale patch was applied and broadcast — compare-and-swap regressed")
+    : pass("REGRESSION: a stale patch is rejected, never applied or broadcast")
+
+  // Both clients resync and must receive byte-identical canvases holding BLUE.
+  c.seen.length = 0
+  d.seen.length = 0
+  c.ws.send(JSON.stringify({ type: "resync", roomId: cvRoom }))
+  d.ws.send(JSON.stringify({ type: "resync", roomId: cvRoom }))
+  const cSnap = await waitFor(c.seen, (m) => m.type === "canvas_snapshot", "C's resync snapshot")
+  const dSnap = await waitFor(d.seen, (m) => m.type === "canvas_snapshot", "D's resync snapshot")
+
+  const cBytes = cSnap.pixels
+  const dBytes = dSnap.pixels
+  cBytes.equals(dBytes)
+    ? pass(`both clients' canvases are byte-identical (${cBytes.length} bytes)`)
+    : fail("clients received DIFFERENT canvases — silent desync")
+  cBytes[idx] === 0 && cBytes[idx + 2] === 255 && cBytes[idx + 3] === 255
+    ? pass("the surviving pixel is the one the server accepted (BLUE, not the stale undo)")
+    : fail(
+        `pixel at (1,1) is rgba(${cBytes[idx]},${cBytes[idx + 1]},${cBytes[idx + 2]},${cBytes[idx + 3]}), expected BLUE`,
+      )
+
+  c.ws.close()
+  d.ws.close()
+
+  // Claiming ownership requires an account — an anonymous guest cannot.
+  a.ws.send(JSON.stringify({ type: "claim_ownership", roomId: ROOM }))
+  await waitFor(
+    a.seen,
+    (m) => m.type === "error" && /sign in/i.test(m.message ?? ""),
+    "a rejection of the guest ownership claim",
+  )
+  pass("guest cannot claim ownership (sign-in required)")
 
   a.ws.close()
   b.ws.close()

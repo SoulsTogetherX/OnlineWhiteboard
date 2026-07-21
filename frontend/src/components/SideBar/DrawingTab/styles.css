@@ -1,0 +1,23 @@
+.drawing-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+}
+
+.drawing-tab-tools {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+}
+
+/* The tool dropdown takes the remaining width; undo/redo sit beside it. */
+.drawing-tab-tools > .tool-picker {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.drawing-tab-history {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.35rem;
+}

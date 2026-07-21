@@ -98,6 +98,14 @@ jobs:
         run: npm run lint
         working-directory: frontend
 
+      # The frontend's own unit tests (its pure colour-space maths). These
+      # existed and passed locally but were never executed here, so nothing
+      # would have caught them breaking — a test CI doesn't run is a test that
+      # rots silently.
+      - name: Test frontend
+        run: npm test
+        working-directory: frontend
+
       # --- backend -----------------------------------------------------------
       - name: Install backend
         run: npm ci
@@ -163,6 +171,15 @@ jobs:
         run: |
           cp .env.example .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-throwaway-password/' .env
+          # The prod stack fails CLOSED on email-at-rest secrets: .env.example
+          # ships "<generate me>" placeholders, and a placeholder is non-empty so
+          # the server boots — but it isn't a valid 32-byte base64 key, so the
+          # first /api/auth/register call throws and returns 500 (which the
+          # permissions probe hits on its very first step). Generate valid
+          # throwaway keys per run — the stack is ephemeral and unreachable from
+          # outside the runner. node (not sed) because base64 contains + / = that
+          # sed would treat specially.
+          node -e "const c=require('crypto'),fs=require('fs');let e=fs.readFileSync('.env','utf8');for(const k of ['EMAIL_INDEX_PEPPER','EMAIL_ENCRYPTION_KEY'])e=e.replace(new RegExp('^'+k+'=.*','m'),k+'='+c.randomBytes(32).toString('base64'));fs.writeFileSync('.env',e)"
 
       # Reuse layers across runs. Without this every run re-downloads and
       # re-installs node_modules inside the image.
@@ -177,6 +194,19 @@ jobs:
 
       - name: Smoke test
         run: node scripts/smoke-test.mjs http://localhost:8080
+
+      # Adversarial counterpart to the smoke test: proves the RUNNING server
+      # applies the socket trust-boundary guards, not just that the unit tests
+      # say it should. Unit tests can pass while the guard is wired up wrong.
+      - name: Security probe
+        run: node scripts/security-probe.mjs http://localhost:8080
+
+      # Drives the whole permission model with real accounts: nobody is
+      # auto-owner, ownership is claimed, locking stops viewers and guests, and
+      # an editor request round-trips. Permission rules are the kind of thing
+      # unit tests can agree on while the wiring is wrong.
+      - name: Permissions probe
+        run: node scripts/permissions-probe.mjs http://localhost:8080
 
       # Only on failure, and only then — a green run should stay quiet.
       - name: Dump logs on failure

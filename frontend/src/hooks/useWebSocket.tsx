@@ -1,7 +1,5 @@
 //#region Imports
 import { useCallback, useEffect, useMemo, useRef } from "react"
-
-import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
 
 //#region Type Defs
@@ -9,7 +7,7 @@ type MaybeRefOrGetter<T> = T | React.RefObject<T> | (() => T)
 
 export type WebSocketURL = string | URL | undefined
 export type WebSocketStatus = "OPENED" | "CONNECTING" | "CLOSED"
-export type WebSocketMessage = string | ArrayBuffer | Blob
+export type WebSocketMessage = string | ArrayBufferLike | ArrayBufferView | Blob
 export type WebSocketPayload = WebSocketMessage | Record<string, unknown>
 
 export type WebSocketResult = {
@@ -18,14 +16,14 @@ export type WebSocketResult = {
   send: (data: WebSocketPayload) => boolean
   open: () => void
   close: () => void
-  ws: React.RefObject<ClientSocket | null>
+  ws: React.RefObject<WebSocket | null>
 }
 
 export type WebSocketOptions = {
-  onConnected?: (ws: ClientSocket) => void
-  onDisconnected?: (ws: ClientSocket, event: CloseEvent) => void
-  onError?: (ws: ClientSocket, event: Event) => void
-  onMessage?: (ws: ClientSocket, event: MessageEvent) => void
+  onConnected?: (ws: WebSocket) => void
+  onDisconnected?: (ws: WebSocket, event: CloseEvent) => void
+  onError?: (ws: WebSocket, event: Event) => void
+  onMessage?: (ws: WebSocket, event: MessageEvent) => void
   immediate?: boolean
   autoConnect?: boolean
   autoClose?: boolean
@@ -88,6 +86,16 @@ function toWebSocketUrl(url: WebSocketURL, roomId: string): string | undefined {
 }
 
 function serializeSocketPayload(payload: WebSocketPayload): WebSocketMessage {
+  // Binary payloads pass straight through — a Uint8Array (a patch frame) is an
+  // object, so it MUST be caught before the JSON branch below or it would be
+  // stringified to "{}" and silently corrupted.
+  if (
+    payload instanceof ArrayBuffer ||
+    ArrayBuffer.isView(payload) ||
+    payload instanceof Blob
+  ) {
+    return payload
+  }
   if (typeof payload === "object" && payload !== null) {
     return JSON.stringify(payload)
   }
@@ -139,7 +147,7 @@ export default function useWebSocket(
 
   const status = useRef<WebSocketStatus>("CLOSED")
   const data = useRef<WebSocketMessage | undefined>(undefined)
-  const ws = useRef<ClientSocket | null>(null)
+  const ws = useRef<WebSocket | null>(null)
 
   const manualClose = useRef(false)
   const retried = useRef(0)
@@ -157,7 +165,14 @@ export default function useWebSocket(
     if (!socket || socket.readyState !== WebSocket.OPEN) return false
 
     try {
-      socket.send(serializeSocketPayload(payload))
+      // The cast bridges our loose WebSocketMessage (which allows a
+      // SharedArrayBuffer-backed view) to the DOM send signature (which does
+      // not). Every value we ever pass is a string, a JSON string, or a patch
+      // frame backed by a fresh ArrayBuffer — never shared — so the runtime
+      // contract holds; only the types are stricter than reality here.
+      socket.send(
+        serializeSocketPayload(payload) as Parameters<WebSocket["send"]>[0],
+      )
       return true
     } catch (error) {
       console.error("Failed to serialize or send data:", error)
@@ -283,7 +298,12 @@ export default function useWebSocket(
     manualClose.current = false
     status.current = "CONNECTING"
 
-    const socket = new WebSocket(fullUrl) as ClientSocket
+    const socket = new WebSocket(fullUrl)
+    // Canvas snapshots arrive as binary frames. The browser default is "blob",
+    // which would force an async read before the pixels could be applied; an
+    // ArrayBuffer decodes synchronously in the message handler, so a snapshot
+    // still lands in a single turn like every other message.
+    socket.binaryType = "arraybuffer"
     ws.current = socket
 
     socket.addEventListener("open", () => {

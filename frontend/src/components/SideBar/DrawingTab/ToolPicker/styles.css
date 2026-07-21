@@ -1,0 +1,110 @@
+.tool-picker {
+  position: relative;
+}
+
+.tool-picker-trigger,
+.tool-picker-option {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+
+  padding: 0.5rem 0.6rem;
+
+  color: var(--text-color);
+  font-size: 0.9rem;
+
+  cursor: pointer;
+}
+
+.tool-picker-trigger {
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+  background-color: var(--popup-background);
+}
+
+.tool-picker-trigger:hover,
+.tool-picker-option:hover {
+  background-color: rgba(0, 0, 0, 0.06);
+}
+
+.tool-picker-trigger:focus-visible,
+.tool-picker-option:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: -2px;
+}
+
+.tool-picker-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+}
+
+.tool-picker-icon svg {
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: currentColor;
+}
+
+.tool-picker-name {
+  flex: 1 1 auto;
+  text-align: left;
+}
+
+/* Chevron pointing down; rotates when the menu is open. */
+.tool-picker-chevron {
+  width: 0;
+  height: 0;
+
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--text-color);
+
+  transition: transform 0.15s ease;
+}
+
+.tool-picker-trigger[aria-expanded="true"] .tool-picker-chevron {
+  transform: rotate(180deg);
+}
+
+.tool-picker-menu {
+  position: absolute;
+  z-index: 1;
+  top: calc(100% + 0.25rem);
+  left: 0;
+  right: 0;
+
+  margin: 0;
+  padding: 0.25rem;
+
+  list-style: none;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background-color: var(--popup-background);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.tool-picker-option {
+  border: none;
+  border-radius: 0.3rem;
+  background: none;
+}
+
+.tool-picker-option-active {
+  background-color: rgba(22, 119, 255, 0.12);
+  font-weight: 600;
+}
+
+.tool-picker-shortcut {
+  flex-shrink: 0;
+
+  padding: 0 0.35rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+
+  font-size: 0.7rem;
+  font-family: monospace;
+  color: var(--sub-text-color);
+}

@@ -1,20 +1,6 @@
-.playback-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 90;
-  background: rgb(0 0 0 / 0.6);
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 1rem;
-}
-
+/* The overlay/card chrome now comes from PopupBase's .popup-front; this panel is
+   just the flex column laid out inside it. */
 .playback-panel {
-  background: var(--popup-bg, #fff);
-  color: var(--popup-fg, #222);
-  border-radius: 0.6rem;
-  padding: 1rem;
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
   display: flex;
   flex-direction: column;
   gap: 0.75rem;

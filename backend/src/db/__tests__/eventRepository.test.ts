@@ -13,7 +13,7 @@ import {
 } from "../eventRepository"
 import { runMigrations } from "../migrate"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { CANVAS_BYTES } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -64,7 +64,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("appends events and loads them back in revision order", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
 
     // Insert deliberately out of order to prove the query sorts, not the input.
     await appendDrawEvents(roomId, [
@@ -81,7 +81,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("loads only events strictly newer than a given revision", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [
       event(1, pencil([0, 0], [1, 1])),
       event(2, pencil([2, 2], [3, 3])),
@@ -95,7 +95,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("is idempotent — re-appending the same revision does not duplicate or error", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
 
     await appendDrawEvents(roomId, [event(1, pencil([0, 0], [1, 1]))])
     // Simulates a flush that partially succeeded and gets retried.
@@ -110,7 +110,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("round-trips a JSONB instruction structurally intact", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     const original = pencil([7, 8], [9, 10])
 
     await appendDrawEvents(roomId, [event(1, original)])
@@ -124,8 +124,8 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
     // Snapshot at revision 5 (blank), then two events drawn "after the
     // checkpoint" — the exact shape recovery faces after a crash.
-    const snapshotPixels = new Uint8ClampedArray(CANVAS_BYTES)
-    await saveCanvas(roomId, snapshotPixels, 5)
+    const snapshotPixels = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
+    await saveCanvas(roomId, snapshotPixels, 5, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [
       event(6, pencil([0, 0], [3, 0])),
       event(7, pencil([0, 1], [3, 1])),
@@ -136,13 +136,13 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
     const recovered = new Uint8ClampedArray(snapshotPixels)
     const events = await loadEventsSince(roomId, 5)
     for (const e of events) {
-      applyDrawInstructionToCanvas(recovered, e.instruction)
+      applyDrawInstructionToCanvas(recovered, e.instruction, DEFAULT_CANVAS_DIMS)
     }
 
     // Build the expected canvas independently by applying the same strokes.
-    const expected = new Uint8ClampedArray(CANVAS_BYTES)
-    applyDrawInstructionToCanvas(expected, pencil([0, 0], [3, 0]))
-    applyDrawInstructionToCanvas(expected, pencil([0, 1], [3, 1]))
+    const expected = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
+    applyDrawInstructionToCanvas(expected, pencil([0, 0], [3, 0]), DEFAULT_CANVAS_DIMS)
+    applyDrawInstructionToCanvas(expected, pencil([0, 1], [3, 1]), DEFAULT_CANVAS_DIMS)
 
     expect(events.map((e) => e.revision)).toEqual([6, 7])
     expect(Array.from(recovered)).toEqual(Array.from(expected))
@@ -150,7 +150,7 @@ describe.skipIf(!DB_CONFIGURED)("eventRepository (integration)", () => {
 
   it("cascades event deletion when the room is deleted", async () => {
     const roomId = freshRoomId()
-    await ensureRoom(roomId)
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [event(1, pencil([0, 0], [1, 1]))])
 
     await db.deleteFrom("rooms").where("id", "=", roomId).execute()

@@ -28,16 +28,22 @@ type Timestamp = ColumnType<Date, Date | string | undefined, Date | string>
 //#endregion
 
 //#region Table Rows
-// A room's identity and metadata, split apart from its pixel data. This is
-// where per-room settings live now (title) and where ownership/membership will
-// attach later. `revision` is the room's current head — the count of applied
-// instructions — kept in sync with the in-memory RoomState.
+// A room's identity and metadata, split apart from its pixel data. `revision`
+// is the room's current head — the count of applied instructions — kept in sync
+// with the in-memory RoomState.
+//
+// Ownership/membership attaches via the room_members table, not here. `title` is provisioned but not yet written by any code path: the read
+// path (listRoomsForUser) already selects it, so adding a "name your room"
+// feature is a UI change rather than a migration. It reads as null today.
 export interface RoomsTable {
   id: string
   title: ColumnType<string | null, string | null | undefined, string | null>
   width: number
   height: number
   revision: Generated<number>
+  // Whether people without edit authority (guests AND viewers) may draw.
+  // Generated because the column has a database default.
+  open_editing: Generated<boolean>
   created_at: Timestamp
   updated_at: Timestamp
 }
@@ -77,9 +83,18 @@ export interface DrawEventsTable {
 
 // A registered account. `password_hash` is a self-describing scrypt string
 // (never the password); `color` is the identity colour shown in presence.
+// `id` is NOT Generated: it is produced by the application (newUserId), not by
+// the column default, because it is the AAD binding email_ciphertext to this
+// row and therefore has to exist before the row is built.
+//
+// There is deliberately no plaintext `email`. `email_index` is a slow-KDF blind
+// index (deterministic, so it can be looked up and kept UNIQUE) and
+// `email_ciphertext` is AES-256-GCM. Neither is readable without a secret that
+// lives outside the database. See auth/emailCrypto.ts.
 export interface UsersTable {
-  id: Generated<string>
-  email: string
+  id: string
+  email_index: string
+  email_ciphertext: string
   username: string
   password_hash: string
   color: string
@@ -87,7 +102,8 @@ export interface UsersTable {
 }
 
 // Server-side session store. `id` is the SHA-256 hash of the cookie token, not
-// the token itself (see migration 004). A row exists only while a login is live.
+// the token itself (see 001_initial_schema). A row exists only while a login is
+// live.
 export interface SessionsTable {
   id: string
   user_id: string
@@ -103,7 +119,8 @@ export interface SavedColorsTable {
 }
 
 // A user's role in a room (the users<->rooms many-to-many). `role` is one of
-// owner/editor/viewer, constrained in the database (migration 006).
+// owner/editor/viewer, constrained in the database by a CHECK constraint, with
+// a partial unique index enforcing at most one owner per room.
 export interface RoomMembersTable {
   room_id: string
   user_id: string
@@ -112,7 +129,7 @@ export interface RoomMembersTable {
   updated_at: Timestamp
 }
 
-// A durable, named full-canvas version (migration 007). rgba is the pixel buffer
+// A durable, named full-canvas version. rgba is the pixel buffer
 // at `revision`. created_by is nullable (ON DELETE SET NULL) — the version
 // outlives the user who made it.
 export interface CheckpointsTable {
@@ -130,8 +147,9 @@ export interface CheckpointsTable {
 
 //#region Database
 // The top-level shape Kysely is generic over: property name = table name.
-// `canvases` is intentionally absent — migration 002 drops it after moving its
-// data into rooms + canvas_snapshots.
+// There is intentionally no `canvases` table: the original single-table design
+// was superseded by rooms + canvas_snapshots before the migrations were squashed
+// into one baseline, so it never exists on a database built from this schema.
 export interface Database {
   rooms: RoomsTable
   canvas_snapshots: CanvasSnapshotsTable

@@ -1,101 +1,75 @@
 //#region Imports
-import { useCallback, useEffect, useRef, useState } from "react"
+import { useCallback, useEffect, useRef } from "react"
 
-import ToolMenu from "@/components/ToolMenu"
-import type { AppTool } from "@/components/ToolMenu"
 import CanvasBoard from "@/components/CanvasBoard"
 import CursorOverlay from "@/components/CursorOverlay"
 import RoomPopup from "@/components/Popups/RoomPopup"
 import MembersPopup from "@/components/Popups/MembersPopup"
 import ColorPopup from "@/components/Popups/ColorPopup"
-import ColorSelector from "@/components/ColorSelector"
 import RoomStatus from "@/components/RoomStatus"
-import PresenceRoster from "@/components/PresenceRoster"
-import VotePrompt from "@/components/VotePrompt"
 import Dashboard from "@/components/Dashboard"
-import CheckpointsPopup from "@/components/Popups/CheckpointsPopup"
 import PlaybackViewer from "@/components/PlaybackViewer"
-import HamburgerButton from "@/components/HamburgerButton"
 import AuthControl from "@/components/AuthControl"
 import AuthPopup from "@/components/Popups/AuthPopup"
+import SideBar from "@/components/SideBar"
+import RoomTab from "@/components/SideBar/RoomTab"
+import DrawingTab from "@/components/SideBar/DrawingTab"
+import TimelineTab from "@/components/SideBar/TimelineTab"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
 import useRoomConnection from "@/hooks/useRoomConnection"
 import useColorPalette from "@/hooks/useColorPalette"
 import useUndoRedo from "@/hooks/useUndoRedo"
-import useMediaQuery from "@/hooks/useMediaQuery"
 import useAuth from "@/hooks/useAuth"
 import useCursorBroadcast from "@/hooks/useCursorBroadcast"
+import useCursorPreferences from "@/hooks/useCursorPreferences"
 import useRecentColors from "@/hooks/useRecentColors"
 import useSavedColors from "@/hooks/useSavedColors"
 import useEyedropper from "@/hooks/useEyedropper"
+import useDrawingTools from "@/hooks/useDrawingTools"
+import useSidebar from "@/hooks/useSidebar"
+import useColorPopup from "@/hooks/useColorPopup"
+import useDisclosure from "@/hooks/useDisclosure"
+import useKeymap from "@/hooks/useKeymap"
 
-import { DEFAULT_DRAW_ACTION, DESKTOP_MEDIA_QUERY } from "@/constants/ui"
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
-import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
 
-import { hasEditAuthority } from "@shared/types/identity"
+import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
-import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
-import type { ColorPalletKeys, ColorType } from "@shared/types/primitive"
+import type { ColorType } from "@shared/types/primitive"
 
 import "./styles.css"
 //#endregion
 
 //#region Page Def
 export default function App() {
-  // Refs
+  // Canvas plumbing — the frame that pans/zooms and the canvas element itself.
   const frameRef = useRef<HTMLDivElement>(
     null,
   ) as React.RefObject<HTMLDivElement>
   const canvasRef = useRef<HTMLCanvasElement>(
     null,
   ) as React.RefObject<HTMLCanvasElement>
-  const drawAction = useRef<DrawAction>(DEFAULT_DRAW_ACTION)
 
-  // Tool Bar
-  // On desktop the toolbar is permanently visible, so `isToolbarOpen` only
-  // governs the mobile slide-out. Deriving one `isToolbarVisible` boolean keeps
-  // React and the CSS from disagreeing (see useMediaQuery for why that mattered).
-  const isDesktop = useMediaQuery(DESKTOP_MEDIA_QUERY)
-  const [isToolbarOpen, setIsToolbarOpen] = useState<boolean>(false)
-  const isToolbarVisible = isDesktop || isToolbarOpen
+  // Drawing tools: the tool / stroke / eyedropper ref+state cluster (§13.5). The
+  // refs are read by the pointer handlers on every event; the parallel state is
+  // what the Drawing tab renders.
+  const {
+    drawAction,
+    selectedTool,
+    selectTool,
+    eyedropperActive,
+    revertToLastDrawTool,
+    strokeSizeRef,
+    strokeSize,
+    setStrokeSize,
+  } = useDrawingTools()
 
-  // The selected tool is kept in BOTH a ref and state, deliberately:
-  //   - the ref is what the pointer handlers read on every event, so changing
-  //     tools never re-subscribes the drag listeners;
-  //   - the state is what lets the toolbar render which tool is active.
-  // Keeping the pair here, in one place, is what lets ToolMenu stay a plain
-  // presentational component instead of writing to a ref it was handed.
-  const [selectedTool, setSelectedTool] = useState<AppTool>(
-    DEFAULT_DRAW_ACTION.type,
-  )
-  // The eyedropper is a mode, not a draw action: while it's on, drawing is
-  // suppressed (eyedropperActive gates useCanvasDrawing) and a click samples
-  // instead. lastDrawTool remembers what to switch back to after a pick.
-  const eyedropperActive = useRef<boolean>(false)
-  const lastDrawTool = useRef<ToolType>(DEFAULT_DRAW_ACTION.type)
-  const selectTool = useCallback((type: AppTool) => {
-    if (type === "eyedropper") {
-      eyedropperActive.current = true
-    } else {
-      lastDrawTool.current = type
-      eyedropperActive.current = false
-      drawAction.current = { type }
-    }
-    setSelectedTool(type)
-  }, [])
-
-  // Stroke size. The ref is what the pointer handlers read at gesture start; the
-  // state drives the slider. Same ref+state split as the tool selection.
-  const strokeSizeRef = useRef<number>(DEFAULT_STROKE_SIZE)
-  const [strokeSize, setStrokeSizeState] = useState<number>(DEFAULT_STROKE_SIZE)
-  const setStrokeSize = useCallback((size: number) => {
-    strokeSizeRef.current = size
-    setStrokeSizeState(size)
-  }, [])
+  // The right sidebar (Phase 5) is the only tool surface now — the old floating
+  // toolbar is gone. It starts open on desktop and collapsed on a phone.
+  const sidebar = useSidebar()
 
   // View-only lock, read by the pointer handlers. A viewer's drawing is blocked
   // client-side (the server enforces it too) so strokes don't flash and revert.
@@ -103,20 +77,27 @@ export default function App() {
 
   // Auth
   const { user, isLoading: authLoading, login, register, logout } = useAuth()
-  const [isAuthOpen, setIsAuthOpen] = useState<boolean>(false)
+  const authPopup = useDisclosure()
 
   // Color
-  const [isColorOpen, setIsColorOpen] = useState<boolean>(false)
-  const [selectedColor, setSelectedColor] = useState<ColorPalletKeys>("primary")
-  const { colorPallet, setColor, swapColors } = useColorPalette()
+  const colorPopup = useColorPopup()
+  const { colorPalette, setColor, swapColors } = useColorPalette()
   const { recent, addRecent } = useRecentColors()
   const { saved, addSaved, removeSaved } = useSavedColors(user)
 
-  // Room
-  const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false)
-  const [isMembersOpen, setIsMembersOpen] = useState<boolean>(false)
-  const [isDashboardOpen, setIsDashboardOpen] = useState<boolean>(false)
-  const [isCheckpointsOpen, setIsCheckpointsOpen] = useState<boolean>(false)
+  // Viewer cursor display preferences (hide cursors / hide names), persisted
+  // client-side. Read by CursorOverlay and toggled from the Room tab.
+  const {
+    showCursors,
+    showNames: showCursorNames,
+    setShowCursors,
+    setShowNames: setShowCursorNames,
+  } = useCursorPreferences()
+
+  // Room — the floating popups App still owns, plus the live connection.
+  const roomPicker = useDisclosure()
+  const members = useDisclosure()
+  const dashboard = useDisclosure()
   const {
     roomId,
     participants,
@@ -125,9 +106,16 @@ export default function App() {
     sendDrawInstruction,
     loadRoom,
     sendCursor,
-    activeVote,
-    requestClear,
-    castVote,
+    settings,
+    clearCanvas,
+    claimOwnership,
+    releaseOwnership,
+    setOpenEditing,
+    resize,
+    canvasDims,
+    editorRequests,
+    requestEditor,
+    respondEditor,
     checkpoints,
     createCheckpoint,
     restoreCheckpoint,
@@ -135,40 +123,63 @@ export default function App() {
     requestPlayback,
     playback,
     clearPlayback,
+    canvasResize,
     cursorsRef,
     cursorIds,
-  } = useRoomConnection(canvasRef, () => setIsRoomOpen(false), user?.id ?? null)
+  } = useRoomConnection(canvasRef, roomPicker.close, user?.id ?? null)
 
   // Undo/Redo
-  const { pushAction, undo, redo, canUndo, canRedo, notice } = useUndoRedo(
-    canvasRef,
-    sendDrawInstruction,
-  )
+  const { pushAction, undo, redo, canUndo, canRedo, notice, reanchorHistory } =
+    useUndoRedo(canvasRef, sendDrawInstruction)
+
+  // A resize changes the canvas stride, so every stored undo entry's byte index
+  // must be re-anchored (top-left) to the new size — kept where the pixel still
+  // exists, dropped where a shrink cut it away. canvasResize carries the old and
+  // new dims of the most recent resize.
+  useEffect(() => {
+    if (canvasResize) {
+      reanchorHistory(canvasResize.from, canvasResize.to)
+    }
+  }, [canvasResize, reanchorHistory])
 
   // Eyedropper: sample a canvas pixel into the primary color, then revert to the
-  // last drawing tool. Defined here because it needs the palette and recent-color
-  // setters as well as the tool selection.
+  // last drawing tool. The bridge between the drawing-tools and colour clusters,
+  // so it lives here in the composition root.
   const onEyedropperPick = useCallback(
     (color: ColorType) => {
       setColor("primary", color)
       addRecent(colorToHex8(color))
-      selectTool(lastDrawTool.current)
+      revertToLastDrawTool()
     },
-    [setColor, addRecent, selectTool],
+    [setColor, addRecent, revertToLastDrawTool],
   )
 
-  // Canvas Settup
+  // Downloading the current canvas as a PNG. Used by the Room tab's download
+  // button (§12.9: shared as soon as a second caller appears).
+  const handleDownload = useCallback(() => {
+    if (canvasRef.current) {
+      downloadCanvasImage(canvasRef.current, roomId)
+    }
+  }, [roomId])
+
+  // Canvas Setup
   useCanvasMotion(frameRef, canvasRef)
-  // Keep the drawing lock in step with this connection's role.
-  const isViewer = self?.role === "viewer"
+  // Keep the drawing lock in step with this connection's role AND the room's
+  // open-editing setting. Uses the shared canDraw rule rather than re-testing
+  // roles inline, so the client's drawing lock and the server's rejection path
+  // can never disagree about who is allowed to draw.
+  //
+  // Reacts to settings.openEditing too, so an owner turning editing off locks
+  // everyone else's tools on the next broadcast — no reconnect needed.
+  const isReadOnly = !canDraw(self?.role ?? "guest", settings.openEditing)
   useEffect(() => {
-    viewOnlyRef.current = isViewer
-  }, [isViewer])
+    viewOnlyRef.current = isReadOnly
+  }, [isReadOnly])
 
   useCanvasDrawing(
     canvasRef,
     drawAction,
-    colorPallet,
+    colorPalette,
     sendDrawInstruction,
     pushAction,
     eyedropperActive,
@@ -178,118 +189,70 @@ export default function App() {
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   useCursorBroadcast(canvasRef, sendCursor)
 
-  // Keyboard shortcuts (desktop only — mobile uses the toolbar buttons)
-  useEffect(() => {
-    const onKeyDown = (ev: KeyboardEvent) => {
-      const isModified = ev.ctrlKey || ev.metaKey
-      if (!isModified || ev.key.toLowerCase() !== "z") {
-        return
-      }
-      ev.preventDefault()
-      if (ev.shiftKey) {
-        redo()
-      } else {
-        undo()
-      }
-    }
-
-    window.addEventListener("keydown", onKeyDown)
-    return () => window.removeEventListener("keydown", onKeyDown)
-  }, [undo, redo])
+  // The app's keyboard map: undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) always, and
+  // the single-key tool shortcuts (P/E/F/S/I) while the sidebar is open.
+  useKeymap({
+    sidebarOpen: sidebar.isOpen,
+    onSelectTool: selectTool,
+    onUndo: undo,
+    onRedo: redo,
+  })
 
   // Frontend
   return (
-    <div
-      ref={frameRef}
-      className="app-wrapper"
-      onClick={() => setIsToolbarOpen(false)}
-    >
-      <RoomStatus roomId={roomId} socketLabel={socketLabel} />
-      <PresenceRoster
-        participants={participants}
-        selfConnectionId={self?.connectionId ?? null}
+    <div ref={frameRef} className="app-wrapper">
+      <RoomStatus
+        roomId={roomId}
+        socketLabel={socketLabel}
+        onOpenRoomPicker={roomPicker.open}
       />
-      {/* History is available to everyone — replay is read-only. */}
-      <button
-        type="button"
-        className="history-button"
-        onClick={() => setIsCheckpointsOpen(true)}
-      >
-        History
-      </button>
-      {user && (
-        <>
-          <button
-            type="button"
-            className="members-button"
-            onClick={() => setIsMembersOpen(true)}
-          >
-            Members
-          </button>
-          <button
-            type="button"
-            className="my-rooms-button"
-            onClick={() => setIsDashboardOpen(true)}
-          >
-            My Rooms
-          </button>
-        </>
-      )}
-      <AuthControl
-        user={user}
-        isLoading={authLoading}
-        onOpenAuth={() => setIsAuthOpen(true)}
-        onLogout={logout}
-      />
-      <HamburgerButton
-        isOpen={isToolbarOpen}
-        onClick={() => setIsToolbarOpen((open) => !open)}
-      />
-      <ToolMenu
-        isOpen={isToolbarVisible}
-        selectedTool={selectedTool}
-        onSelectTool={selectTool}
-        strokeSize={strokeSize}
-        onStrokeSizeChange={setStrokeSize}
-        openRoomPicker={() => setIsRoomOpen(true)}
-        onClear={requestClear}
-        onDownload={() => {
-          if (canvasRef.current) {
-            downloadCanvasImage(canvasRef.current, roomId)
-          }
-        }}
-        onUndo={undo}
-        onRedo={redo}
-        canUndo={canUndo}
-        canRedo={canRedo}
-      />
-      <VotePrompt vote={activeVote} onVote={castVote} />
+      {/* Top-right cluster: the logged-in user's room actions plus the auth
+          control, laid out as one flex row instead of three independently
+          fixed-positioned elements with magic right offsets. */}
+      <div className="app-actions">
+        {user && (
+          <>
+            <button
+              type="button"
+              className="app-action-button"
+              onClick={dashboard.open}
+            >
+              My Rooms
+            </button>
+            <button
+              type="button"
+              className="app-action-button"
+              onClick={members.open}
+            >
+              Members
+            </button>
+          </>
+        )}
+        <AuthControl
+          user={user}
+          isLoading={authLoading}
+          onOpenAuth={authPopup.open}
+          onLogout={logout}
+        />
+      </div>
       <CanvasBoard canvasRef={canvasRef} />
       <CursorOverlay
         canvasRef={canvasRef}
         cursorsRef={cursorsRef}
         cursorIds={cursorIds}
         participants={participants}
+        showCursors={showCursors}
+        showNames={showCursorNames}
       />
       {notice && <div className="undo-notice">{notice}</div>}
-      <ColorSelector
-        colorPallet={colorPallet}
-        onSwap={swapColors}
-        openColorPopup={(primary: boolean) => {
-          setSelectedColor(primary ? "primary" : "secondary")
-          setIsColorOpen(true)
-        }}
-      />
       <ColorPopup
-        isOpen={isColorOpen}
-        onClose={() => setIsColorOpen(false)}
-        // Was hardcoded to "primary": opening the secondary swatch showed
-        // primary's channels, and Apply then wrote those values into secondary.
-        currentColor={colorPallet.current[selectedColor]}
+        isOpen={colorPopup.isOpen}
+        onClose={colorPopup.close}
+        currentColor={colorPalette.current[colorPopup.target]}
         onApply={(color) => {
-          setColor(selectedColor, color)
+          setColor(colorPopup.target, color)
           addRecent(colorToHex8(color))
-          setIsColorOpen(false)
+          colorPopup.close()
         }}
         recent={recent}
         saved={saved}
@@ -297,45 +260,86 @@ export default function App() {
         onRemoveSavedColor={removeSaved}
       />
       <RoomPopup
-        isOpen={isRoomOpen}
+        isOpen={roomPicker.isOpen}
         roomId={roomId}
-        onClose={() => setIsRoomOpen(false)}
+        onClose={roomPicker.close}
         onLoad={loadRoom}
       />
       <MembersPopup
-        isOpen={isMembersOpen}
+        isOpen={members.isOpen}
         roomId={roomId}
-        onClose={() => setIsMembersOpen(false)}
+        onClose={members.close}
       />
       <Dashboard
-        isOpen={isDashboardOpen}
+        isOpen={dashboard.isOpen}
         currentRoomId={roomId}
-        onClose={() => setIsDashboardOpen(false)}
+        onClose={dashboard.close}
         onOpenRoom={(nextRoomId) => {
           loadRoom(nextRoomId)
-          setIsDashboardOpen(false)
-        }}
-      />
-      <CheckpointsPopup
-        isOpen={isCheckpointsOpen}
-        checkpoints={checkpoints}
-        canEdit={hasEditAuthority(self?.role ?? "guest")}
-        onClose={() => setIsCheckpointsOpen(false)}
-        onCreate={createCheckpoint}
-        onRestore={restoreCheckpoint}
-        onDelete={deleteCheckpoint}
-        onReplay={(id) => {
-          requestPlayback(id)
-          setIsCheckpointsOpen(false)
+          dashboard.close()
         }}
       />
       <PlaybackViewer playback={playback} onClose={clearPlayback} />
       <AuthPopup
-        isOpen={isAuthOpen}
-        onClose={() => setIsAuthOpen(false)}
+        isOpen={authPopup.isOpen}
+        onClose={authPopup.close}
         onLogin={login}
         onRegister={register}
       />
+      {/* Phase 5 sidebar. All three tabs — Drawing, Room, Timeline — are wired. */}
+      <SideBar
+        isOpen={sidebar.isOpen}
+        onToggle={sidebar.toggle}
+        activeTab={sidebar.activeTab}
+        onTabChange={sidebar.setActiveTab}
+      >
+        {sidebar.activeTab === "drawing" ? (
+          <DrawingTab
+            selectedTool={selectedTool}
+            onSelectTool={selectTool}
+            strokeSize={strokeSize}
+            onStrokeSizeChange={setStrokeSize}
+            colorPalette={colorPalette}
+            onSwap={swapColors}
+            openColorPopup={colorPopup.open}
+            onUndo={undo}
+            onRedo={redo}
+            canUndo={canUndo}
+            canRedo={canRedo}
+          />
+        ) : sidebar.activeTab === "room" ? (
+          <RoomTab
+            participants={participants}
+            self={self}
+            openEditing={settings.openEditing}
+            hasOwner={settings.hasOwner}
+            canvasWidth={canvasDims.width}
+            canvasHeight={canvasDims.height}
+            onClaimOwnership={claimOwnership}
+            onReleaseOwnership={releaseOwnership}
+            onSetOpenEditing={setOpenEditing}
+            onResize={resize}
+            onClear={clearCanvas}
+            onDownload={handleDownload}
+            editorRequests={editorRequests}
+            onRequestEditor={requestEditor}
+            onRespondEditor={respondEditor}
+            showCursors={showCursors}
+            showCursorNames={showCursorNames}
+            onShowCursorsChange={setShowCursors}
+            onShowCursorNamesChange={setShowCursorNames}
+          />
+        ) : (
+          <TimelineTab
+            checkpoints={checkpoints}
+            canEdit={hasEditAuthority(self?.role ?? "guest")}
+            onCreate={createCheckpoint}
+            onRestore={restoreCheckpoint}
+            onDelete={deleteCheckpoint}
+            onReplay={requestPlayback}
+          />
+        )}
+      </SideBar>
     </div>
   )
 }

@@ -1,5 +1,5 @@
 //#region Imports
-import { useRef, useState } from "react"
+import { useRef, useState, type KeyboardEvent } from "react"
 
 import { hsvToRgb, rgbToHsv } from "@/utils/color"
 
@@ -12,6 +12,17 @@ import "./styles.css"
 function clamp01(value: number): number {
   return Math.max(0, Math.min(1, value))
 }
+function clampHue(value: number): number {
+  return Math.max(0, Math.min(360, value))
+}
+
+// Keyboard step sizes. Shift gives a coarse step so crossing the full range
+// doesn't take a hundred key presses, which is the usual reason people abandon
+// a keyboard-driven slider.
+const SV_STEP = 0.01
+const SV_STEP_COARSE = 0.1
+const HUE_STEP = 1
+const HUE_STEP_COARSE = 10
 //#endregion
 
 //#region Component
@@ -77,6 +88,76 @@ export default function HsvPicker({ color, onChange }: HsvPickerProps) {
     emit(nextHue, s, v)
   }
 
+  // --- Keyboard ---
+  // Both controls declare role="slider" and tabIndex={0}, which PROMISES
+  // keyboard operation. Without these handlers that promise was false: the
+  // controls took focus and then ignored every key. A focusable control that
+  // does nothing is worse for assistive-tech users than one that was never
+  // focusable, because the ARIA role advertises an interaction that isn't
+  // there. Key mapping follows the WAI-ARIA slider pattern.
+  const onSvKeyDown = (ev: KeyboardEvent<HTMLDivElement>) => {
+    const step = ev.shiftKey ? SV_STEP_COARSE : SV_STEP
+    let nextS = s
+    let nextV = v
+
+    switch (ev.key) {
+      case "ArrowLeft":
+        nextS = clamp01(s - step)
+        break
+      case "ArrowRight":
+        nextS = clamp01(s + step)
+        break
+      case "ArrowUp":
+        nextV = clamp01(v + step)
+        break
+      case "ArrowDown":
+        nextV = clamp01(v - step)
+        break
+      case "Home":
+        nextS = 0
+        break
+      case "End":
+        nextS = 1
+        break
+      default:
+        return
+    }
+
+    // Only after a key we actually handled, so Tab and shortcuts still work.
+    ev.preventDefault()
+    emit(hue, nextS, nextV)
+  }
+
+  const onHueKeyDown = (ev: KeyboardEvent<HTMLDivElement>) => {
+    const step = ev.shiftKey ? HUE_STEP_COARSE : HUE_STEP
+    // No initialiser: every branch below assigns it and `default` returns, so
+    // seeding it with `hue` would be a value nothing reads.
+    let nextHue: number
+
+    switch (ev.key) {
+      case "ArrowLeft":
+      case "ArrowDown":
+        nextHue = clampHue(hue - step)
+        break
+      case "ArrowRight":
+      case "ArrowUp":
+        nextHue = clampHue(hue + step)
+        break
+      case "Home":
+        nextHue = 0
+        break
+      case "End":
+        nextHue = 360
+        break
+      default:
+        return
+    }
+
+    ev.preventDefault()
+    setHue(nextHue)
+    emit(nextHue, s, v)
+  }
+
   return (
     <div className="hsv-picker">
       <div
@@ -87,6 +168,7 @@ export default function HsvPicker({ color, onChange }: HsvPickerProps) {
         aria-label="Saturation and brightness"
         aria-valuetext={`saturation ${Math.round(s * 100)}%, brightness ${Math.round(v * 100)}%`}
         tabIndex={0}
+        onKeyDown={onSvKeyDown}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           svDragging.current = true
@@ -114,6 +196,7 @@ export default function HsvPicker({ color, onChange }: HsvPickerProps) {
         aria-valuemax={360}
         aria-valuenow={Math.round(hue)}
         tabIndex={0}
+        onKeyDown={onHueKeyDown}
         onPointerDown={(e) => {
           e.currentTarget.setPointerCapture(e.pointerId)
           hueDragging.current = true

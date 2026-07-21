@@ -1,7 +1,7 @@
 //#region Imports
 import { useEffect } from "react"
 
-import { getPosCorrected } from "@shared/utils/helperProtocallMethods"
+import { getPosCorrected } from "@shared/utils/helperProtocolMethods"
 
 import type { Vec } from "@shared/types/primitive"
 //#endregion

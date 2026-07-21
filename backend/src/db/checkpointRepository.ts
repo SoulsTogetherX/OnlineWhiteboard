@@ -1,7 +1,8 @@
 //#region Imports
 import { db } from "./pool"
+import { packPixels, unpackPixels } from "./pixelStorage"
 
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import type { CanvasDims } from "@shared/constants/canvas"
 //#endregion
 
 //#region Type Defs
@@ -17,6 +18,10 @@ export type CheckpointMeta = {
 export type LoadedCheckpoint = {
   pixels: Uint8ClampedArray
   revision: number
+  // The dimensions the checkpoint was captured at, which may differ from the
+  // room's CURRENT size if it was resized since. The caller crops/pads to fit.
+  width: number
+  height: number
 }
 
 const MAX_CHECKPOINTS_PER_ROOM = 20
@@ -28,6 +33,7 @@ export async function createCheckpoint(input: {
   name: string
   revision: number
   pixels: Uint8ClampedArray
+  dims: CanvasDims
   createdBy: string | null
 }): Promise<CheckpointMeta> {
   const row = await db
@@ -36,9 +42,12 @@ export async function createCheckpoint(input: {
       room_id: input.roomId,
       name: input.name,
       revision: input.revision,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
-      rgba: Buffer.from(input.pixels),
+      width: input.dims.width,
+      height: input.dims.height,
+      // Gzipped for storage. Checkpoints are the heaviest thing in the schema —
+      // a full canvas each, up to 20 per room — so this is where compression
+      // pays most.
+      rgba: packPixels(input.pixels),
       created_by: input.createdBy,
     })
     .returning(["id", "name", "revision", "created_at as createdAt"])
@@ -70,12 +79,29 @@ export async function loadCheckpoint(
     .where("id", "=", checkpointId)
     .executeTakeFirst()
 
-  if (!row || row.width !== CANVAS_WIDTH || row.height !== CANVAS_HEIGHT) {
+  if (!row) {
     return null
   }
+
+  const dims = { width: row.width, height: row.height }
+
+  // Null on undecompressable bytes (validated against the checkpoint's OWN
+  // dimensions) joins the "no such checkpoint" path, so a restore fails visibly
+  // instead of writing garbage over the live canvas and broadcasting it.
+  const pixels = unpackPixels(row.rgba, dims)
+  if (pixels === null) {
+    console.error(
+      `checkpoint "${checkpointId}" in room "${roomId}" could not be ` +
+        `decompressed (${row.rgba.length} stored bytes, ${dims.width}x${dims.height})`,
+    )
+    return null
+  }
+
   return {
-    pixels: new Uint8ClampedArray(row.rgba),
+    pixels,
     revision: row.revision,
+    width: dims.width,
+    height: dims.height,
   }
 }
 

@@ -1,12 +1,13 @@
 import { describe, expect, it } from "vitest"
 
 import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
-import { getIdxFromVec } from "../helperProtocallMethods"
-import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
+import { getIdxFromVec } from "../helperProtocolMethods"
+import { canvasBytes } from "../../constants/canvas"
 
 import {
   BASE,
   BLUE,
+  DIMS,
   GREEN,
   RED,
   getPixel,
@@ -28,7 +29,7 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
       ...BASE,
     } as DrawInstruction
 
-    const applied = applyDrawInstructionToCanvas(pixels, inst)
+    const applied = applyDrawInstructionToCanvas(pixels, inst, DIMS)
 
     expect(applied).toBe(inst)
     expect(getPixel(pixels, 3, 0)).toEqual(RED)
@@ -38,10 +39,10 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
     const pixels = makeCanvas()
     const inst = { type: "bucket", pos: [0, 0], color: RED, ...BASE } as DrawInstruction
 
-    const applied = applyDrawInstructionToCanvas(pixels, inst)
+    const applied = applyDrawInstructionToCanvas(pixels, inst, DIMS)
 
     expect(applied).toBe(inst)
-    expect(paintedCount(pixels)).toBe(CANVAS_WIDTH * CANVAS_HEIGHT)
+    expect(paintedCount(pixels)).toBe(DIMS.width * DIMS.height)
   })
 
   it("returns a patch narrowed to only the entries that applied", () => {
@@ -52,13 +53,13 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
     const inst: PatchInstruction = {
       type: "patch",
       entries: [
-        { idx: getIdxFromVec([0, 0]), from: RED, to: BLUE },
-        { idx: getIdxFromVec([1, 0]), from: RED, to: BLUE },
+        { idx: getIdxFromVec([0, 0], DIMS), from: RED, to: BLUE },
+        { idx: getIdxFromVec([1, 0], DIMS), from: RED, to: BLUE },
       ],
       ...BASE,
     }
 
-    const applied = applyDrawInstructionToCanvas(pixels, inst) as PatchInstruction
+    const applied = applyDrawInstructionToCanvas(pixels, inst, DIMS) as PatchInstruction
 
     expect(applied).not.toBeNull()
     expect(applied.entries).toHaveLength(1)
@@ -74,13 +75,13 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
       pos: [0, 0],
       color: RED,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
     expect(paintedCount(pixels)).toBeGreaterThan(0)
 
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "clear",
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).not.toBeNull()
     expect(paintedCount(pixels)).toBe(0)
@@ -93,9 +94,9 @@ describe("applyDrawInstructionToCanvas — dispatch", () => {
 
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "patch",
-      entries: [{ idx: getIdxFromVec([0, 0]), from: RED, to: BLUE }],
+      entries: [{ idx: getIdxFromVec([0, 0], DIMS), from: RED, to: BLUE }],
       ...BASE,
-    })
+    }, DIMS)
 
     expect(applied).toBeNull()
   })
@@ -117,7 +118,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
       nextPos: [1_000_000_000, 1_000_000_000],
       color: RED,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     // Bresenham is a `while (true)` loop that steps one pixel at a time. With
     // no bounds check this runs a billion iterations and pins a core — one
@@ -136,7 +137,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
       nextPos: [2, 2],
       color: RED,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).toBeNull()
     expect(paintedCount(pixels)).toBe(0)
@@ -152,7 +153,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
         nextPos: bad,
         color: RED,
         ...BASE,
-      } as DrawInstruction)
+      } as DrawInstruction, DIMS)
 
       expect(applied).toBeNull()
     }
@@ -166,7 +167,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
       type: "pencil",
       color: RED,
       ...BASE,
-    } as unknown as DrawInstruction)
+    } as unknown as DrawInstruction, DIMS)
 
     expect(applied).toBeNull()
   })
@@ -176,10 +177,10 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
 
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "bucket",
-      pos: [CANVAS_WIDTH, 0],
+      pos: [DIMS.width, 0],
       color: RED,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).toBeNull()
     expect(paintedCount(pixels)).toBe(0)
@@ -188,12 +189,12 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
   it("rejects patch entries with an out-of-range or misaligned index", () => {
     const pixels = makeCanvas()
 
-    for (const idx of [-4, CANVAS_BYTES, CANVAS_BYTES + 4, 3]) {
+    for (const idx of [-4, canvasBytes(DIMS), canvasBytes(DIMS) + 4, 3]) {
       const applied = applyDrawInstructionToCanvas(pixels, {
         type: "patch",
         entries: [{ idx, from: { r: 0, g: 0, b: 0, a: 0 }, to: RED }],
         ...BASE,
-      })
+      }, DIMS)
 
       expect(applied).toBeNull()
     }
@@ -209,7 +210,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
       nextPos: [1, 1],
       color: { r: 999, g: -1, b: NaN, a: 255 },
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).toBeNull()
     expect(paintedCount(pixels)).toBe(0)
@@ -226,7 +227,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
         color: RED,
         size,
         ...BASE,
-      } as unknown as DrawInstruction)
+      } as unknown as DrawInstruction, DIMS)
 
       expect(applied).toBeNull()
     }
@@ -243,7 +244,7 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
       color: RED,
       size: 5,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).not.toBeNull()
     expect(paintedCount(pixels)).toBeGreaterThan(1)
@@ -256,12 +257,12 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
     const applied = applyDrawInstructionToCanvas(pixels, {
       type: "pencil",
       prevPos: [0, 0],
-      nextPos: [CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1],
+      nextPos: [DIMS.width - 1, DIMS.height - 1],
       color: RED,
       ...BASE,
-    } as DrawInstruction)
+    } as DrawInstruction, DIMS)
 
     expect(applied).not.toBeNull()
-    expect(getPixel(pixels, CANVAS_WIDTH - 1, CANVAS_HEIGHT - 1)).toEqual(RED)
+    expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(RED)
   })
 })

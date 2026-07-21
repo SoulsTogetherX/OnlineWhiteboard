@@ -1,6 +1,8 @@
 //#region Imports
 import { useCallback, useEffect, useState } from "react"
 
+import { loadStringArray, saveStringArray } from "@/utils/localStorageArray"
+
 import type { AuthUser } from "@shared/types/identity"
 //#endregion
 
@@ -10,23 +12,9 @@ const MAX_SAVED = 24
 //#endregion
 
 //#region Storage helpers (guest)
-function loadGuest(): string[] {
-  try {
-    const raw = localStorage.getItem(GUEST_STORAGE_KEY)
-    const parsed = raw ? JSON.parse(raw) : []
-    return Array.isArray(parsed) ? parsed.filter((c) => typeof c === "string") : []
-  } catch {
-    return []
-  }
-}
-
-function saveGuest(colors: string[]): void {
-  try {
-    localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(colors))
-  } catch {
-    /* ignore */
-  }
-}
+const loadGuest = (): string[] => loadStringArray(GUEST_STORAGE_KEY)
+const saveGuest = (colors: string[]): void =>
+  saveStringArray(GUEST_STORAGE_KEY, colors)
 
 async function api(
   method: "GET" | "POST" | "DELETE",

@@ -3,12 +3,13 @@ import { randomUUID } from "node:crypto"
 
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import { getOpenEditing, setOpenEditing } from "../roomRepository"
 import { db } from "../pool"
 import { appendDrawEvents, ensureRoom } from "../eventRepository"
 import { pruneStaleRooms } from "../roomRepository"
 import { saveCanvas } from "../canvasRepository"
 import { runMigrations } from "../migrate"
-import { CANVAS_BYTES, CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { DrawInstruction } from "@shared/types/drawProtocol"
 //#endregion
@@ -28,8 +29,8 @@ async function insertRoomAt(id: string, updatedAt: Date): Promise<void> {
     .insertInto("rooms")
     .values({
       id,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: DEFAULT_CANVAS_DIMS.width,
+      height: DEFAULT_CANVAS_DIMS.height,
       updated_at: updatedAt,
     })
     .execute()
@@ -113,8 +114,8 @@ describe.skipIf(!DB_CONFIGURED)("roomRepository — stale-room cleanup (integrat
   it("cascades: deleting a stale room removes its snapshot and events too", async () => {
     const id = freshId()
     // Give it a snapshot (via saveCanvas) and an event...
-    await saveCanvas(id, new Uint8ClampedArray(CANVAS_BYTES), 5)
-    await ensureRoom(id)
+    await saveCanvas(id, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 5, DEFAULT_CANVAS_DIMS)
+    await ensureRoom(id, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(id, [{ revision: 6, instruction: pencil() }])
     // ...then age it past the cutoff. saveCanvas stamped NOW(), so overwrite it.
     await db
@@ -158,5 +159,57 @@ describe.skipIf(!DB_CONFIGURED)("roomRepository — stale-room cleanup (integrat
     expect(still?.id).toBe(id)
     expect(deleted).toBeGreaterThanOrEqual(0)
   })
+
+  //#region Open editing
+  it("defaults an unknown room to OPEN, matching the column default", async () => {
+    // A room row only exists after its first save, so a brand-new room people
+    // are already drawing in is legitimately absent here. Returning "locked"
+    // for it would put every new room into a state nobody chose.
+    expect(await getOpenEditing(`never-created-${freshId()}`)).toBe(true)
+  })
+
+  it("persists the toggle both ways", async () => {
+    const id = freshId()
+    await insertRoomAt(id, daysAgo(1))
+
+    await setOpenEditing(id, false)
+    expect(await getOpenEditing(id)).toBe(false)
+
+    await setOpenEditing(id, true)
+    expect(await getOpenEditing(id)).toBe(true)
+  })
+
+  it("can set the toggle before the room has ever been saved", async () => {
+    // The owner may lock a room the instant they claim it, which can happen
+    // before any snapshot has been written.
+    const id = freshId()
+    await setOpenEditing(id, false)
+    expect(await getOpenEditing(id)).toBe(false)
+
+    await db.deleteFrom("rooms").where("id", "=", id).execute()
+  })
+
+  it("does not clobber a room's dimensions when toggling", async () => {
+    // setOpenEditing upserts, and its insert path carries placeholder
+    // width/height. Those must never overwrite a real room's dimensions —
+    // saveCanvas owns those.
+    const id = freshId()
+    await insertRoomAt(id, daysAgo(1))
+    const before = await db
+      .selectFrom("rooms")
+      .select(["width", "height"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+
+    await setOpenEditing(id, false)
+
+    const after = await db
+      .selectFrom("rooms")
+      .select(["width", "height"])
+      .where("id", "=", id)
+      .executeTakeFirstOrThrow()
+    expect(after).toEqual(before)
+  })
+  //#endregion
 })
 //#endregion

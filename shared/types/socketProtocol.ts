@@ -1,6 +1,6 @@
 //#region Imports
 import type { DrawInstruction } from "./drawProtocol"
-import type { Participant } from "./identity"
+import type { Participant, RoomRole } from "./identity"
 import type { Vec } from "./primitive"
 //#endregion
 
@@ -29,20 +29,70 @@ export type ClientSocketMessage =
       pos: Vec | null
     }
   | {
-      // Request a room-wide destructive action (currently only "clear"). If the
-      // requester is the only recent editor the server applies it immediately;
-      // otherwise it opens a vote among the recent editors.
-      type: "request_action"
+      // A room-wide destructive action, applied immediately. OWNER ONLY.
+      // Why a single accountable owner rather than group consensus is recorded
+      // in CLAUDE.md's decision record.
+      type: "room_action"
       roomId: string
       action: RoomAction
     }
   | {
-      // A recent editor's vote on an open request. The server tallies these and
-      // resolves the vote when everyone has approved (or anyone rejects).
-      type: "vote"
+      // Take ownership of a room that has none. Signed-in visitors only, and
+      // only while the room is unowned — ownership is opt-in, never assigned
+      // automatically, and persists across sessions once claimed.
+      type: "claim_ownership"
       roomId: string
-      voteId: string
+    }
+  | {
+      // Give up ownership, leaving the room unowned so somebody else can claim
+      // it. OWNER ONLY (it is a no-op for anyone else by construction).
+      //
+      // The releasing owner becomes an EDITOR, not a viewer: they are handing
+      // back a crown, not asking to be locked out of a board they have been
+      // running. Dropping them to viewer would mean releasing ownership could
+      // silently cost them the ability to draw in their own locked room.
+      type: "release_ownership"
+      roomId: string
+    }
+  | {
+      // Turn open editing on or off. OWNER ONLY. When off, only owner/editor
+      // may draw; when on, viewers and guests may too.
+      type: "set_open_editing"
+      roomId: string
+      enabled: boolean
+    }
+  | {
+      // Resize the room's canvas. OWNER ONLY. Crop/pad from the top-left
+      // (§16 — lossless for the kept region, unlike resampling), then broadcast
+      // a fresh snapshot so every client adopts the new size. width/height must
+      // be within [MIN_CANVAS_DIMENSION, MAX_CANVAS_DIMENSION]; the server
+      // validates and ignores a no-op (same size).
+      type: "resize"
+      roomId: string
+      width: number
+      height: number
+    }
+  | {
+      // A signed-in viewer asking the owner for editor access. Meaningless from
+      // a guest (no account to promote) or from someone who already has it.
+      type: "request_editor"
+      roomId: string
+    }
+  | {
+      // The owner's answer to a pending request. OWNER ONLY.
+      type: "respond_editor"
+      roomId: string
+      userId: string
       approve: boolean
+    }
+  | {
+      // Directly set a member's role. OWNER ONLY. Promoting someone to owner is
+      // an ownership TRANSFER — the current owner becomes an editor in the same
+      // transaction, because a room has exactly one owner.
+      type: "set_member_role"
+      roomId: string
+      userId: string
+      role: RoomRole
     }
   | {
       // Save the current canvas as a named, durable version. Editors only.
@@ -72,9 +122,26 @@ export type ClientSocketMessage =
       fromCheckpointId?: string
     }
 
-// Room-wide actions that require consensus. Kept as its own type so resize
-// (P1d) slots in beside clear without touching the message shapes.
+// Room-wide destructive actions, owner-only. Kept as its own type so resize
+// slots in beside clear without touching the message shapes.
 export type RoomAction = "clear"
+
+// How a snapshot frame's payload is encoded. "deflate-raw" is raw DEFLATE with
+// no gzip/zlib wrapper — the frame header already identifies the payload, so a
+// wrapper would be pure overhead, and the browser's DecompressionStream speaks
+// it natively.
+//
+// Compression is applied to the payload ONLY, never to the transport. See
+// backend/src/sockets/snapshotCompression.ts and CLAUDE.md §16 for why
+// permessage-deflate stays off.
+export type SnapshotCompression = "none" | "deflate-raw"
+
+// A pending request for editor access, as shown to the owner. Carries the
+// account id (the owner needs it to answer) and the display name to show.
+export type EditorRequest = {
+  userId: string
+  name: string
+}
 
 // A saved version's metadata as seen by clients (no pixel bytes — those are only
 // materialised on restore/playback). createdAt is an ISO string over the wire.
@@ -97,6 +164,12 @@ export type ServerSocketMessage =
       type: "ready"
       roomId: string
       revision: number
+      // The room's permission state, sent with the very first message so the
+      // client never renders a toolbar before it knows what this connection is
+      // allowed to do. Without it there is a window where the UI shows drawing
+      // tools that the server would reject.
+      openEditing: boolean
+      hasOwner: boolean
       // Who the server decided this connection is (account or guest), plus the
       // current roster. `self` lets a guest client learn its generated name and
       // colour, which it has no other way of knowing.
@@ -110,12 +183,26 @@ export type ServerSocketMessage =
       revision: number
     }
   | {
+      // Sent as a BINARY frame, not text: this object is the frame's JSON
+      // header and the RGBA pixels are the frame's payload (see
+      // shared/utils/binaryFrame.ts). Base64 inside JSON inflated the canvas by
+      // a third — 57,600 B became 76,800 chars — and cost a per-byte decode
+      // loop on the client, for a transport that has always been binary-capable.
+      //
+      // There is deliberately no `data` field. The pixels are not part of the
+      // header, so nothing can accidentally serialise them back into JSON.
+      //
+      // `compression` describes the payload. It is a header FIELD rather than a
+      // second frame layout, which is the whole reason the envelope carries a
+      // JSON header: adding compression cost no format change and no version
+      // bump. The server picks per snapshot and may answer "none" when
+      // compressing would have made the payload bigger.
       type: "canvas_snapshot"
       roomId: string
       revision: number
       width: number
       height: number
-      data: string
+      compression: SnapshotCompression
     }
   | {
       // Tiny periodic heartbeat replacing the old full-canvas broadcast.
@@ -144,33 +231,30 @@ export type ServerSocketMessage =
       pos: Vec | null
     }
   | {
-      // A vote has opened. Sent to every recent editor (the voters). `voters` is
-      // the number whose approval is needed; the initiator is counted as already
-      // approving. `deadline` is an epoch-ms timestamp after which it auto-fails.
-      type: "vote_started"
+      // The room's permission state. Sent on join and broadcast whenever it
+      // changes, so every client can grey out controls using the same facts the
+      // server enforces with.
+      type: "room_settings"
       roomId: string
-      voteId: string
-      action: RoomAction
-      initiatorName: string
-      voters: number
-      approvals: number
-      deadline: number
+      openEditing: boolean
+      hasOwner: boolean
     }
   | {
-      // Running tally as votes come in.
-      type: "vote_update"
+      // Pending editor requests. Sent ONLY to the owner — the list names people
+      // who want promoting, and nobody else has any use for it or any right to
+      // it. Ephemeral: requests live in memory and disappear when the requester
+      // disconnects, because a request from someone who has left is noise.
+      type: "editor_requests"
       roomId: string
-      voteId: string
-      voters: number
-      approvals: number
+      requests: EditorRequest[]
     }
   | {
-      // The vote ended. `approved` true means the action was applied (the canvas
-      // change arrives separately as the normal "draw"/"clear" broadcast).
-      type: "vote_resolved"
+      // This connection's own identity changed — almost always its role, after
+      // claiming ownership or being promoted. Sent only to the affected socket;
+      // everyone else learns the same thing from the presence broadcast.
+      type: "role_changed"
       roomId: string
-      voteId: string
-      approved: boolean
+      self: Participant
     }
   | {
       // The room's saved versions. Sent on join and whenever the list changes
@@ -182,10 +266,21 @@ export type ServerSocketMessage =
   | {
       // The data to animate history, sent only to the requester: a base canvas
       // (base64 RGBA) at baseRevision, plus the ordered events to replay onto it.
+      //
+      // Still TEXT, unlike canvas_snapshot. The binary envelope carries one bulk
+      // payload behind a small header, and `steps` is neither small nor bulk —
+      // it is an unbounded list that would have to live in the header, where the
+      // u16 length field cannot hold it. Playback is also a rare, user-initiated
+      // request rather than something every client receives on join, so the
+      // bandwidth argument that motivated binary snapshots barely applies.
       type: "playback"
       roomId: string
       base: string
       baseRevision: number
+      // The dimensions the base canvas (and the steps) are in, so the viewer
+      // animates at the right size for a resized room.
+      width: number
+      height: number
       steps: PlaybackStep[]
     }
   | {

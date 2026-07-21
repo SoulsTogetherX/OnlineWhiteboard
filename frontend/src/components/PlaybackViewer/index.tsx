@@ -1,9 +1,10 @@
 //#region Imports
 import { useEffect, useRef, useState } from "react"
 
+import PopupBase from "@/components/Popups/PopupBase"
+
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { createImageDataFromBase64 } from "@shared/utils/helperProtocallMethods"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "@shared/constants/canvas"
+import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
 
 import type { PlaybackData } from "@/hooks/useRoomConnection"
 
@@ -25,6 +26,10 @@ export interface PlaybackViewerProps {
 // recorded instructions in order, through the SAME shared function the live
 // canvas uses (so a replay looks byte-identical to how it was drawn). Stepping
 // forward applies incrementally; scrubbing backward rebuilds from the base.
+//
+// Routed through PopupBase so the dialog role, aria-modal, Escape-to-close and
+// inert are handled once (§12.9) — it previously had role="dialog" but no Escape
+// and no inert. Playback is read-only, so anyone (including viewers) may watch.
 export default function PlaybackViewer({
   playback,
   onClose,
@@ -55,7 +60,16 @@ export default function PlaybackViewer({
     if (!playback) {
       return
     }
-    const base = createImageDataFromBase64(playback.base)
+    // The playback message carries the base's dimensions, so a resized room's
+    // history animates at the right size. A mismatched length returns null and
+    // animates nothing rather than throwing.
+    const base = createImageDataFromBase64(playback.base, {
+      width: playback.width,
+      height: playback.height,
+    })
+    if (base === null) {
+      return
+    }
     baseRef.current = base
     workingRef.current = new ImageData(
       new Uint8ClampedArray(base.data),
@@ -77,13 +91,26 @@ export default function PlaybackViewer({
     if (!ctx) {
       return
     }
+    // Match the element to the base's dimensions (a resized room may differ from
+    // the default), guarded so an unchanged size does not clear the bitmap.
+    if (canvas.width !== base.width || canvas.height !== base.height) {
+      canvas.width = base.width
+      canvas.height = base.height
+    }
     // Going backward: rebuild the working buffer from the base.
     if (step < renderedStepRef.current) {
       working.data.set(base.data)
       renderedStepRef.current = 0
     }
     for (let i = renderedStepRef.current; i < step; i += 1) {
-      applyDrawInstructionToCanvas(working, playback.steps[i].instruction)
+      // "replay": these steps are logged history, already decided. Re-running a
+      // patch's CAS here would animate a canvas that never existed.
+      applyDrawInstructionToCanvas(
+        working,
+        playback.steps[i].instruction,
+        { width: base.width, height: base.height },
+        "replay",
+      )
     }
     renderedStepRef.current = step
     ctx.putImageData(working, 0, 0)
@@ -100,61 +127,65 @@ export default function PlaybackViewer({
     return () => clearTimeout(id)
   }, [playing, playback, step, total])
 
-  if (!playback) {
-    return null
-  }
-
   const atEnd = step >= total
   return (
-    <div className="playback-overlay" role="dialog" aria-label="History playback">
-      <div className="playback-panel">
-        <header className="playback-header">
-          <h2 className="playback-title">History playback</h2>
-          <button type="button" className="playback-close" onClick={onClose}>
-            Close
-          </button>
-        </header>
+    <PopupBase
+      isOpen={playback !== null}
+      onClose={onClose}
+      label="History playback"
+    >
+      {/* Gated on playback: the animation effects key off the canvas ref, so it
+          exists only while a playback is loaded. */}
+      {playback && (
+        <div className="playback-panel">
+          <header className="playback-header">
+            <h2 className="playback-title">History playback</h2>
+            <button type="button" className="playback-close" onClick={onClose}>
+              Close
+            </button>
+          </header>
 
-        <div className="playback-stage">
-          <canvas
-            ref={canvasRef}
-            className="playback-canvas"
-            width={CANVAS_WIDTH}
-            height={CANVAS_HEIGHT}
-          />
-        </div>
+          <div className="playback-stage">
+            <canvas
+              ref={canvasRef}
+              className="playback-canvas"
+              width={playback.width}
+              height={playback.height}
+            />
+          </div>
 
-        <div className="playback-controls">
-          <button
-            type="button"
-            onClick={() => {
-              if (atEnd) {
-                setStep(0)
-                setPlaying(true)
-              } else {
-                setPlaying((p) => !p)
-              }
-            }}
-          >
-            {playing && !atEnd ? "⏸ Pause" : atEnd ? "↻ Replay" : "▶ Play"}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={total}
-            value={step}
-            aria-label="Playback position"
-            onChange={(ev) => {
-              setPlaying(false)
-              setStep(Number(ev.target.value))
-            }}
-          />
-          <span className="playback-count">
-            {step} / {total}
-          </span>
+          <div className="playback-controls">
+            <button
+              type="button"
+              onClick={() => {
+                if (atEnd) {
+                  setStep(0)
+                  setPlaying(true)
+                } else {
+                  setPlaying((p) => !p)
+                }
+              }}
+            >
+              {playing && !atEnd ? "⏸ Pause" : atEnd ? "↻ Replay" : "▶ Play"}
+            </button>
+            <input
+              type="range"
+              min={0}
+              max={total}
+              value={step}
+              aria-label="Playback position"
+              onChange={(ev) => {
+                setPlaying(false)
+                setStep(Number(ev.target.value))
+              }}
+            />
+            <span className="playback-count">
+              {step} / {total}
+            </span>
+          </div>
         </div>
-      </div>
-    </div>
+      )}
+    </PopupBase>
   )
 }
 //#endregion

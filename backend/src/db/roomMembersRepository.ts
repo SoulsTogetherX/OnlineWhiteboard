@@ -36,14 +36,15 @@ export async function resolveRole(
   return (row?.role as RoomRole | undefined) ?? null
 }
 
-// Ensures the user has a membership in the room, creating one on first visit:
-// the first registered user to arrive claims OWNER, everyone after is an EDITOR.
-// Idempotent — returns the existing role if they're already a member.
+// Ensures the user has a membership in the room, creating one on first visit as
+// a VIEWER. Idempotent — returns the existing role if they're already a member.
 //
-// Race-safety leans on the partial unique index `room_one_owner` (migration
-// 006): if two users try to claim ownership of a brand-new room simultaneously,
-// one owner INSERT wins and the other hits a unique violation (23505), which we
-// catch and downgrade to editor. No lock, no transaction needed.
+// Everyone starts as a viewer, including the very first person to open a brand
+// new room. Ownership is never assigned automatically; it is claimed
+// deliberately (see claimOwnership). The previous behaviour — first signed-in
+// visitor silently becomes owner, everyone after becomes editor — meant simply
+// opening a link handed you powers you never asked for and never saw mentioned,
+// and it made ownership a race rather than a choice.
 export async function ensureMembership(
   roomId: string,
   userId: string,
@@ -53,24 +54,84 @@ export async function ensureMembership(
     return existing
   }
 
+  await db
+    .insertInto("room_members")
+    .values({ room_id: roomId, user_id: userId, role: "viewer" })
+    .onConflict((oc) => oc.columns(["room_id", "user_id"]).doNothing())
+    .execute()
+
+  // Re-read rather than assuming: a concurrent insert may have won the
+  // onConflict, and that row is the truth.
+  return (await resolveRole(roomId, userId)) ?? "viewer"
+}
+
+// Takes ownership of a room that has none. Returns "owner" on success, or null
+// if the room already has an owner.
+//
+// Race-safety leans entirely on the partial unique index `room_one_owner`
+// rather than on a read-then-write: two people clicking "claim" at the same
+// instant both pass any check-first test, but only one INSERT/UPDATE can
+// survive the index, and the loser gets 23505. No lock, no transaction, no
+// window.
+export async function claimOwnership(
+  roomId: string,
+  userId: string,
+): Promise<RoomRole | null> {
   try {
     await db
       .insertInto("room_members")
       .values({ room_id: roomId, user_id: userId, role: "owner" })
+      .onConflict((oc) =>
+        oc
+          .columns(["room_id", "user_id"])
+          .doUpdateSet({ role: "owner", updated_at: new Date() }),
+      )
       .execute()
     return "owner"
   } catch (error) {
-    if ((error as { code?: string }).code !== "23505") {
-      throw error
+    if ((error as { code?: string }).code === "23505") {
+      // Someone else already owns it.
+      return null
     }
-    // Owner already exists (or a concurrent claim won) — join as editor.
-    await db
-      .insertInto("room_members")
-      .values({ room_id: roomId, user_id: userId, role: "editor" })
-      .onConflict((oc) => oc.columns(["room_id", "user_id"]).doNothing())
-      .execute()
-    return (await resolveRole(roomId, userId)) ?? "editor"
+    throw error
   }
+}
+
+// Gives up ownership, leaving the room unowned. Returns true if this user was
+// the owner and has been stepped down.
+//
+// The `role = 'owner'` predicate in the WHERE clause is the authorisation: a
+// non-owner's UPDATE matches zero rows and changes nothing, so there is no
+// check-then-write window for two requests to slip through.
+//
+// They become an EDITOR rather than a viewer, so handing back the crown never
+// silently costs them the ability to draw in a room they had locked.
+//
+// Note this deliberately does what setRole REFUSES to do — leave a room with no
+// owner. There it would be an accident that orphans a room; here it is the
+// entire point, which is why it is a separate function rather than a flag.
+export async function releaseOwnership(
+  roomId: string,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .updateTable("room_members")
+    .set({ role: "editor", updated_at: new Date() })
+    .where("room_id", "=", roomId)
+    .where("user_id", "=", userId)
+    .where("role", "=", "owner")
+    .executeTakeFirst()
+  return Number(result.numUpdatedRows ?? 0n) > 0
+}
+
+export async function roomHasOwner(roomId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("room_members")
+    .select("user_id")
+    .where("room_id", "=", roomId)
+    .where("role", "=", "owner")
+    .executeTakeFirst()
+  return Boolean(row)
 }
 //#endregion
 
@@ -92,16 +153,12 @@ export async function listMembers(roomId: string): Promise<RoomMember[]> {
   return rows.map((row) => ({ ...row, role: row.role as RoomRole }))
 }
 
-export async function countOwners(roomId: string): Promise<number> {
-  const row = await db
-    .selectFrom("room_members")
-    .select((eb) => eb.fn.countAll<string>().as("count"))
-    .where("room_id", "=", roomId)
-    .where("role", "=", "owner")
-    .executeTakeFirst()
-  return Number(row?.count ?? 0)
-}
-
+// TEST-ONLY assertion helper — deliberately kept despite having no production
+// caller. Production never needs to count owners: the one-owner invariant is
+// enforced structurally, by the `room_one_owner` partial unique index (migration
+// 006) plus setRole's atomic transfer and removeMember's refusal to remove an
+// owner. This exists so the tests can assert that invariant directly, which is
+// worth more than the tidiness of deleting it.
 // Sets a member's role. A room has EXACTLY ONE owner (enforced by the
 // room_one_owner partial unique index), which shapes two cases:
 //
@@ -169,7 +226,8 @@ export async function removeMember(
     return false
   }
   // The owner can't be removed — transfer ownership first. This keeps the
-  // one-owner invariant without a countOwners check (there's only ever one).
+  // one-owner invariant without needing to count owners (there's only ever one,
+  // guaranteed by the room_one_owner partial unique index).
   if (current === "owner") {
     return false
   }

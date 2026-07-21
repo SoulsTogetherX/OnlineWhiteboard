@@ -1,0 +1,28 @@
+.labelled-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.labelled-slider-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+
+  font-size: 0.85rem;
+  color: var(--text-color);
+}
+
+.labelled-slider-value {
+  color: var(--sub-text-color);
+  font-variant-numeric: tabular-nums;
+}
+
+.labelled-slider input[type="range"] {
+  width: 100%;
+}
+
+.labelled-slider input[type="range"]:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}

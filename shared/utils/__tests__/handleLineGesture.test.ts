@@ -3,15 +3,14 @@ import { describe, expect, it } from "vitest"
 import {
   handleDrawLineMotion,
   handleDrawLineStart,
-} from "../handleLineProtocall"
-import { CANVAS_HEIGHT, CANVAS_WIDTH } from "../../constants/canvas"
+} from "../handleLineProtocol"
 
-import { RED, getPixel, makeCanvas } from "./testHelpers"
+import { DIMS, RED, getPixel, makeCanvas } from "./testHelpers"
 
 import type { BaseInstruction, LineAction } from "../../types/drawProtocol"
 
 // Gesture-level tests for the pointer path, as opposed to the wire path in
-// handleLineProtocall.test.ts.
+// handleLineProtocol.test.ts.
 //
 // The DOM surface these functions touch is tiny — getBoundingClientRect,
 // getContext('2d'), getImageData, putImageData — so a hand-rolled stub covers it
@@ -21,8 +20,8 @@ import type { BaseInstruction, LineAction } from "../../types/drawProtocol"
 function makeFakeCanvas(pixels: Uint8ClampedArray): HTMLCanvasElement {
   const imageData = {
     data: pixels,
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width: DIMS.width,
+    height: DIMS.height,
   } as unknown as ImageData
 
   const ctx = {
@@ -31,14 +30,14 @@ function makeFakeCanvas(pixels: Uint8ClampedArray): HTMLCanvasElement {
   } as unknown as CanvasRenderingContext2D
 
   return {
-    width: CANVAS_WIDTH,
-    height: CANVAS_HEIGHT,
+    width: DIMS.width,
+    height: DIMS.height,
     getContext: () => ctx,
     getBoundingClientRect: () => ({
       left: 0,
       top: 0,
-      width: CANVAS_WIDTH,
-      height: CANVAS_HEIGHT,
+      width: DIMS.width,
+      height: DIMS.height,
     }),
   } as unknown as HTMLCanvasElement
 }
@@ -52,8 +51,8 @@ const ev = (x: number, y: number): PointerEvent =>
     buttons: 1,
   }) as PointerEvent
 
-const MAX_X = CANVAS_WIDTH - 1
-const MAX_Y = CANVAS_HEIGHT - 1
+const MAX_X = DIMS.width - 1
+const MAX_Y = DIMS.height - 1
 
 function startGesture() {
   const pixels = makeCanvas()
@@ -70,8 +69,8 @@ describe("line gesture — drawing off the edge of the canvas", () => {
     // in-bounds sample instead of continuing to the canvas edge.
     const { pixels, canvas, da, base } = startGesture()
 
-    handleDrawLineStart(canvas, base, da, ev(40, 50))
-    const inst = handleDrawLineMotion(canvas, base, da, ev(300, 50))
+    handleDrawLineStart(canvas, base, da, ev(40, 50), DIMS)
+    const inst = handleDrawLineMotion(canvas, base, da, ev(300, 50), DIMS)
 
     expect(inst).not.toBeNull()
     expect(inst!.nextPos).toEqual([MAX_X, 50])
@@ -81,21 +80,21 @@ describe("line gesture — drawing off the edge of the canvas", () => {
 
   it("reaches the bottom and left edges too", () => {
     const down = startGesture()
-    handleDrawLineStart(down.canvas, down.base, down.da, ev(60, 40))
-    handleDrawLineMotion(down.canvas, down.base, down.da, ev(60, 400))
+    handleDrawLineStart(down.canvas, down.base, down.da, ev(60, 40), DIMS)
+    handleDrawLineMotion(down.canvas, down.base, down.da, ev(60, 400), DIMS)
     expect(getPixel(down.pixels, 60, MAX_Y)).toEqual(RED)
 
     const left = startGesture()
-    handleDrawLineStart(left.canvas, left.base, left.da, ev(40, 60))
-    handleDrawLineMotion(left.canvas, left.base, left.da, ev(-400, 60))
+    handleDrawLineStart(left.canvas, left.base, left.da, ev(40, 60), DIMS)
+    handleDrawLineMotion(left.canvas, left.base, left.da, ev(-400, 60), DIMS)
     expect(getPixel(left.pixels, 0, 60)).toEqual(RED)
   })
 
   it("emits an instruction whose endpoints are in-bounds, so it passes validation", () => {
     const { canvas, da, base } = startGesture()
 
-    handleDrawLineStart(canvas, base, da, ev(40, 50))
-    const inst = handleDrawLineMotion(canvas, base, da, ev(9999, -9999))
+    handleDrawLineStart(canvas, base, da, ev(40, 50), DIMS)
+    const inst = handleDrawLineMotion(canvas, base, da, ev(9999, -9999), DIMS)
 
     // The segment still crosses the canvas, so something is drawn — and what
     // goes on the wire must never carry the raw off-canvas coordinates.
@@ -112,13 +111,13 @@ describe("line gesture — drawing off the edge of the canvas", () => {
   it("draws nothing while the pointer moves around entirely outside", () => {
     const { pixels, canvas, da, base } = startGesture()
 
-    handleDrawLineStart(canvas, base, da, ev(60, 60))
-    handleDrawLineMotion(canvas, base, da, ev(300, 60)) // exits right
+    handleDrawLineStart(canvas, base, da, ev(60, 60), DIMS)
+    handleDrawLineMotion(canvas, base, da, ev(300, 60), DIMS) // exits right
     const painted = pixels.slice()
 
     // Wander around out there — none of this should touch the canvas.
-    const a = handleDrawLineMotion(canvas, base, da, ev(320, 70))
-    const b = handleDrawLineMotion(canvas, base, da, ev(340, 90))
+    const a = handleDrawLineMotion(canvas, base, da, ev(320, 70), DIMS)
+    const b = handleDrawLineMotion(canvas, base, da, ev(340, 90), DIMS)
 
     expect(a).toBeNull()
     expect(b).toBeNull()
@@ -132,9 +131,9 @@ describe("line gesture — drawing off the edge of the canvas", () => {
     // would start from the wrong place and visibly kink.
     const { pixels, canvas, da, base } = startGesture()
 
-    handleDrawLineStart(canvas, base, da, ev(60, 60))
-    handleDrawLineMotion(canvas, base, da, ev(240, 60)) // out to the right
-    const back = handleDrawLineMotion(canvas, base, da, ev(100, 70)) // back in
+    handleDrawLineStart(canvas, base, da, ev(60, 60), DIMS)
+    handleDrawLineMotion(canvas, base, da, ev(240, 60), DIMS) // out to the right
+    const back = handleDrawLineMotion(canvas, base, da, ev(100, 70), DIMS) // back in
 
     expect(back).not.toBeNull()
     // Entry lies on the right edge, between the two y values — NOT at y=60 flat.
@@ -146,7 +145,7 @@ describe("line gesture — drawing off the edge of the canvas", () => {
   it("still paints a single dot for a click that never moves", () => {
     const { pixels, canvas, da, base } = startGesture()
 
-    const inst = handleDrawLineStart(canvas, base, da, ev(7, 8))
+    const inst = handleDrawLineStart(canvas, base, da, ev(7, 8), DIMS)
 
     expect(inst).not.toBeNull()
     expect(inst!.prevPos).toEqual([7, 8])

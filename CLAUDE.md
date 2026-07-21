@@ -1,236 +1,53 @@
 # OnlineWhiteboard — Architecture & Working Notes
 
-> Context document for AI-assisted work on this repo. Written 2026-07-16.
-> Every claim marked **[verified]** was confirmed by running the stack, not inferred.
-> Lives at the repo root so Claude Code auto-loads it.
-
-## Changelog
-
-**2026-07-17 (security pass) — hardening of the auth surface.** New `backend/src/security/`
-(origin allowlist, CSRF guard, rate limiter). All verified live.
-
-- **CSWSH** (S1): the WS upgrade now rejects browser handshakes from a non-allowlisted Origin
-  (`sockets/index.ts` + `security/origin.ts`). Without it, any site could open an authenticated
-  socket as the visitor (SameSite doesn't cover WS). Non-browser clients (no Origin) allowed.
-- **CSRF** (S2): `csrfOriginGuard` middleware rejects state-changing (`POST`/`DELETE`) API
-  requests from unrecognised origins — defence-in-depth over SameSite=Lax.
-- **Rate limiting** (S3): in-memory per-IP limiter on login (10/15min) and register (5/60min),
-  keyed off nginx's `X-Real-IP`. Per-process — multi-instance needs Redis.
-- **Common passwords** (S4): small blocklist in `validation.ts`. Full fix = HIBP k-anonymity
-  (needs outbound call, documented).
-- **PII** (S5): dropped `userId` from the broadcast `Participant` — it was a stable per-account
-  id exposed to everyone in the room (cross-room deanonymisation). Presence now carries only
-  connectionId/name/colour/isGuest.
-- **Headers** (S6): `security-headers.conf` adds CSP, HSTS, Referrer-Policy, X-Frame-Options
-  DENY. NOTE the nginx `add_header` inheritance trap — a location with its own add_header drops
-  ALL inherited ones, so the snippet is `include`d in the server block AND in the two cache
-  locations. CSP `style-src 'unsafe-inline'` is required by the app's inline `style={{}}`;
-  scripts stay `'self'`.
-- **Cookie/logging** (S7): `__Host-sid` cookie name in prod (requires Secure+Path=/+no-Domain);
-  register error logging now logs only code/message, never the error object (could carry query
-  params → email/hash).
-- **`ALLOWED_ORIGINS`** env added (`.env`/`.env.example`) — the CSRF/CSWSH allowlist. Fails OPEN
-  with a startup warning if unset, so a misconfig degrades to "no check" not "total lockout".
-- **Residual (documented, needs infra):** email verification (fully fixes register-time email
-  enumeration), HIBP breach check, Redis-backed rate-limit/sessions for multi-instance, password
-  reset. Broader WS message-flood rate limiting also still open (see §9 draw-flood note).
-
-**2026-07-17 (later) — accounts, presence, live cursors, full colour picker.**
-Six verified features (A–F). New migrations 004 (users+sessions) and 005 (saved_colors).
-
-- **Auth (optional accounts).** Email+password, scrypt-hashed (`backend/src/auth/password.ts`,
-  built-in `crypto.scrypt` — no native dep, Alpine-safe). Server-side sessions: cookie holds
-  a random token, DB stores only its SHA-256 hash (`backend/src/auth/session.ts`). httpOnly +
-  SameSite=Lax cookie, Secure in prod. Routes `POST /api/auth/{register,login,logout}` +
-  `GET /api/auth/me` (`backend/src/routes/auth.ts`). Login uses a generic error + constant-work
-  path so it can't leak which emails exist. Frontend: `useAuth` + `AuthPopup` + `AuthControl`.
-- **Identity per connection.** `resolveConnectionIdentity` reads the session cookie on the WS
-  upgrade → logged-in user identity, else a generated guest (name+colour). Every socket gets a
-  `connectionId` (unique per socket; two tabs = two participants). Attached in `sockets/index.ts`.
-- **Presence + cursors.** Protocol changed: `ready` now carries `self` + `participants`,
-  `presence` carries `participants` (not `activeUsers`), and there's a new ephemeral `cursor`
-  message (client→server pos, server→room relay with connectionId — NEVER applied to canvas or
-  logged). Frontend: `PresenceRoster`, `CursorOverlay` (rAF-positioned, reads getBoundingClientRect
-  each frame so cursors track pan/zoom — note rAF pauses in hidden tabs, which is correct).
-  Login/logout reconnects the socket via `reconnectKey` in `useWebSocket` so identity refreshes
-  without reload.
-- **Colour picker.** Visual HSV square + hue slider (`HsvPicker`, colour maths in
-  `frontend/src/utils/color.ts`, unit-tested). Recent colours (localStorage, always) + saved
-  palette (per-account via `/api/colors` when logged in, localStorage as guest — `useSavedColors`).
-  Eyedropper is a FRONTEND-only tool (`AppTool = ToolType | "eyedropper"`); it gates drawing via a
-  `disabledRef` on `useCanvasDrawing` and samples the canvas ImageData in `useEyedropper`.
-- **Tests:** shared 71, frontend 8 (colour maths — new `frontend/vitest.config.ts`), backend 33
-  (added password + auth/session integration). Smoke test gained identity + cursor checks (15
-  checks). All green in dev and prod.
-- **Gotchas hit:** frontend prod build (`tsc -b`) typechecks test files, so `vitest` had to be a
-  frontend devDep (matches backend). The newer `react-hooks/set-state-in-effect` lint rule forced
-  the "sync-state-during-render" pattern in `HsvPicker` and `useSavedColors` (not effects).
-  `crypto.scrypt` needs a raised `maxmem` for N=2^15. Express 5 accepts `return res.json()` in
-  handlers. The in-app browser pane is a HIDDEN tab so rAF doesn't fire there — verified cursor
-  positioning by running one frame manually.
-
-**2026-07-17 — durable persistence (event sourcing) + Kysely + DB migrations.**
-Delivered in four verified stages. Data model went from one `canvases` blob table
-to `rooms` + `canvas_snapshots` + `draw_events`.
-
-- **Kysely** (typed SQL query builder) replaces raw `pool.query`. `backend/src/db/schema.ts`
-  is the hand-written `Database` interface every query is checked against; keep it in sync
-  with the migrations by hand (or adopt kysely-codegen later).
-- **Migrations** own the schema now — `backend/src/db/migrations/00N_*.ts` (raw SQL via the
-  `sql` tag), registered EXPLICITLY by import in `migrate.ts` (a static provider, because the
-  esbuild prod bundle has no migration files on disk for `FileMigrationProvider` to scan).
-  They run on startup before `listen`. The old `database/notes_table.sql` initdb script and
-  `ensureCanvasTable()`-on-every-save are both gone; `database/Dockerfile` is now stock
-  Postgres.
-- **Event sourcing = point 3 (no data loss).** Every applied instruction is appended to
-  `draw_events` (batched flush every 250 ms; `RoomManager.flushEvents`). Recovery in
-  `getOrCreateRoom` = latest snapshot + replay events with `revision > snapshot.revision`,
-  through the SAME `applyDrawInstructionToCanvas` the live path and the unit tests use.
-  Verified: `docker kill` mid-draw (no snapshot) recovers via replay; hard-crash loss window
-  is one flush (~250 ms) instead of the 15 s snapshot interval.
-- **Graceful shutdown** (closes the old gap): `SIGTERM`/`SIGINT` → `RoomManager.shutdown()`
-  flushes every room's buffer + writes a final snapshot before exit. `server.close` +
-  `pool.end`. Only works because the Dockerfile runs `node` as PID 1. Verified: `docker stop`
-  returns in <1 s, logs "draining rooms" → "Shutdown complete".
-- **Compaction** (Stage 4): `saveCanvas` now, in ONE transaction, upserts the room, writes
-  the snapshot, prunes older snapshots, AND deletes `draw_events` with `revision <=` the
-  snapshot's. Bounds the log to ~one save interval of drawing. Atomic so events are only
-  trimmed once their replacement snapshot is committed. Tradeoff: discards history older than
-  the last snapshot (fine for a whiteboard; keep events unpruned if you ever want time-travel).
-- **Tests:** 71 unit (shared/, unchanged) + **15 backend integration** against a real
-  Postgres (`backend/src/db/__tests__/*.test.ts`, Vitest, `backend/vitest.config.ts`). Gated
-  on `POSTGRES_PASSWORD` being set so `npm test` stays green with no DB. CI's `verify` job
-  gained a `services: postgres` container; run locally against a throwaway
-  `docker run -p 55432:5432 postgres`.
-- **Fixed in passing:** `.env` had CRLF line endings, so Compose stored the Postgres password
-  WITH a trailing `\r`. The app worked only because the backend read the same CRLF file; any
-  clean client (host test, CI) failed auth. Added `.gitattributes` (force LF) and normalised
-  the local `.env`.
-- **Gotcha for future work:** node-postgres does NOT serialise a JS object for a JSONB column
-  on INSERT (hand it `JSON.stringify`) but DOES parse it on SELECT. That asymmetry is encoded
-  in `draw_events.instruction`'s three-arm `ColumnType` in `schema.ts` — get it wrong and it's
-  a runtime error, not a type error. Also: `db.destroy()` ends the pool; don't also call
-  `pool.end()`. And a native Windows Postgres on `:5432` shadows the Docker one for HOST
-  connections (not for the app, which uses the Docker network) — use a throwaway on a free
-  port for local integration runs.
-
-**2026-07-16 (later still) — two bugs, both found from one dev-loop symptom.**
-71 tests now.
-
-**A. Messages sent before a room finished loading were silently dropped.**
-`RoomManager.addClient` registered its `socket.on("message")` listener *after*
-`await this.getOrCreateRoom(roomId)` — an await that hits Postgres. Anything the
-client sent during that window had no listener, and `ws` discarded it.
-
-Not a rare race: clients ping the instant the socket opens, and a room only
-loads from the DB when it is **not** cached — i.e. for the first client into any
-room, every time. Observed loop: ping dropped → no pong → the client's 5s
-heartbeat timeout → close 4000 → reconnect → but that client leaving evicted the
-room from the cache → cold again → same race. Three cycles (~14s) before it
-happened to win. **In production this silently dropped a user's first strokes.**
-
-Fix: attach every listener synchronously before the await, buffer arrivals
-(capped by `MAX_PENDING_MESSAGES`), drain in order once ready. Same function had
-a leak: a client disconnecting mid-load never fired `removeClient` (its close
-listener wasn't attached yet), and its dead socket was then added to the room —
-leaving a room that could never empty, with its save/snapshot timers running
-forever. `disposeIfEmpty` is now the single place those timers stop.
-Verified: heartbeat timeouts 3 → **0**, recovery ~14s → ~1.9s.
-
-> The `[vite] ws proxy error: ECONNREFUSED` that surfaced this is **expected, not
-> a bug** — editing `shared/` restarts the backend (tsx) while the frontend
-> HMRs, so for ~1s there is genuinely nothing listening on `backend:3000`. One
-> line per restart is honest reporting. What was broken was the reconnect loop
-> hiding behind it.
-
-**B. Strokes stopped short of the canvas edge.** See §4.8.
-
-**2026-07-16 (later) — tests + bug sweep.**
-
-- **Vitest at the repo root** (`npm test`): 51 tests over `shared/utils/*`.
-  Tests live in `shared/utils/__tests__/`, next to the code. Root
-  `package.json`/`vitest.config.ts` exist ONLY for this — it is not an npm
-  workspace. `npm run typecheck:shared` is a third opinion on shared/.
-- **`shared/utils/validateInstruction.ts`** — runtime validation at the single
-  fan-in point (`applyDrawInstructionToCanvas`). See §9-security.
-- **ESLint: 28 problems → 0.** All 4 packages typecheck; `loadtest/` un-ignored.
-
-Fixed (see §9 for the full detail on each):
-| # | Bug | Why it mattered |
-|---|---|---|
-| 1 | **DoS**: `setPixelLine` had no bounds check | A `nextPos: [1e9, 1e9]` froze the event loop for every room. Synchronous, so uninterruptible — it hung the _test runner_ too. |
-| 2 | Backend crash-loop on any DB error | `void addClient(...)` → unhandled rejection → process death → every user in every room dropped. |
-| 3 | Mobile hamburger couldn't open the toolbar | Click bubbled to the wrapper's close handler; same batch, last write wins. |
-| 4 | Secondary color picker edited primary | `currentColor` hardcoded to `"primary"`. |
-| 5 | Color swap never persisted | Bypassed `useColorPalette`, mutated the ref in place. |
-| 6 | `useSessionID` watched the wrong storage key | Cross-tab sync could never fire. |
-| 7 | `useDrawActions` captured `canvasRef.current` at render | Null on first render; drawing worked only after an unrelated re-render. |
-| 8 | `getVecFromIdx` dead **and** wrong | Missing the `>> 2`; deleted. |
-| 9 | `express.json()` registered twice | The intended 2mb limit never applied. |
-| 10 | `.gitignore`'s blanket `*.js` | Hid `frontend/eslint.config.js` from the repo entirely. |
-| 11 | loadtest `npm run run` a no-op on Windows | `file://${argv[1]}` never matches `import.meta.url` on win32. |
-| 12 | loadtest didn't typecheck | Missing `instructionId`/`sessionId`; `tsx` strips types unchecked. |
-
-Also: active-tool indicator added (was impossible — see §4.7); `inert` on closed
-popups/toolbar; accessible names on every control; Escape closes popups;
-`useMediaQuery` unified the toolbar's React state with its CSS.
-
-**NOT fixed / deliberately left:** the `Pallet`/`Protocall` spelling (§10 — needs
-one atomic sweep), Redis-backed rooms (§12.11), graceful shutdown (§12.5).
-
-**2026-07-16 — production build path added.** The repo previously had no production
-pipeline at all (see §7.4, now resolved). Added:
-
-- Multi-stage `frontend/Dockerfile` (`deps` → `dev` | `build` → `prod`) with nginx
-- Multi-stage `backend/Dockerfile` (`deps` → `dev` | `build` → `prod`) with esbuild
-- `frontend/nginx.conf.template` — replaces Vite's dev proxy in production
-- `docker-compose.prod.yaml` — standalone production stack
-- `GET /api/health` for container/platform probes
-
-Fixed along the way (each surfaced _by_ the production build):
-
-- **Frontend did not typecheck.** `tsc -b` failed with 2 errors; only `npm run build`
-  runs it, and Docker never called `npm run build`. Root cause was `DrawAction` and
-  `*Instruction` sharing one position type — now split (§4.6).
-- **Backend crash-loop on any DB error.** `void roomManager.addClient(...)` turned a
-  rejection into an unhandled rejection, killing the whole process and every connected
-  user. Now caught, closing only the offending socket with code 1011.
-- **`express.json()` registered twice**, so the intended 2mb limit never applied.
-- **`.gitignore`'s blanket `*.js`** silently excluded `frontend/eslint.config.js` from the
-  repo — a fresh clone had a broken `npm run lint`.
-- **Docker layer cache** — frontend copied source before `npm install`, so any edit
-  re-downloaded every dependency.
-
-Still open: everything in §9 except the items above.
+> Context document for working on this repo, human or AI. Lives at the repo root so
+> Claude Code auto-loads it. Rewritten 2026-07-17 to describe the system as it is now.
+> **Corrected 2026-07-20:** §1, §5.1, §5.3, §5.6, §5.7, §7, §8, §11, §14, §16, §17 brought
+> back in line with Phases 2–5 — the vote/consensus system (removed in Phase 2) was still
+> documented, the canvas was still described as 120×120 (now per-room 256²), the email blind
+> index was described as HMAC (it is a slow scrypt KDF), and the test counts and Phase 5
+> status were stale.
+>
+> **Read §12 (Working agreements) before changing anything.**
+>
+> Picking up mid-project? **§17 is the roadmap** — what is done, what is next, and the
+> scope of each remaining phase. **§16 is the decision record** — every non-obvious choice
+> with the alternative that was rejected and why. Read both before proposing a change that
+> "simplifies" something; most of the traps are already written down there.
 
 ---
 
-## 1. What this project is
+## 1. What this is
 
-A real-time collaborative pixel whiteboard. Users join a **room** by id, draw on a shared
-120×120 canvas, and every stroke propagates live to everyone else in that room. Canvas
-state survives disconnects — it is periodically persisted to PostgreSQL.
+A real-time collaborative **pixel** whiteboard. Users join a **room** by id, draw on a
+shared **256×256 RGBA** canvas (per-room, resizable within `[16, 512]` — see Phase 4), and
+every stroke propagates live to everyone in that room. Canvas state survives disconnects,
+restarts and hard crashes.
 
 The defining architectural decision: **the server owns an authoritative pixel buffer**,
 not a list of shapes. Everything else follows from that.
+
+Feature surface today: freehand pencil/eraser, flood-fill bucket, spray can, adjustable
+brush size, concurrency-safe undo/redo, live presence + cursors, optional accounts,
+per-room roles, owner-only board clearing, named checkpoints with restore, history
+playback, a "My Rooms" dashboard with thumbnails, and a saved colour palette.
 
 ---
 
 ## 2. Tech stack
 
-| Layer         | Choice                        | Version                                | Notes                                         |
-| ------------- | ----------------------------- | -------------------------------------- | --------------------------------------------- |
-| Frontend      | React + Vite                  | React 19.2, Vite 8.1                   | No router, no state library, no CSS framework |
-| Backend       | Express + `ws`                | Express 5.2, ws 8.21                   | Raw `ws`, **not** Socket.IO                   |
-| Database      | PostgreSQL                    | 18-alpine                              | Single `canvases` table                       |
-| Language      | TypeScript                    | FE ~6.0, BE ^5.8                       | **Different TS versions per package**         |
-| Runtime       | Node                          | FE image 24-alpine, BE image 22-alpine | **Mismatched on purpose? Probably not**       |
-| Dev runner    | `tsx watch` (BE), `vite` (FE) | —                                      | Backend is never compiled; tsx strips types   |
-| Orchestration | Docker Compose                | —                                      | 3 services: frontend, backend, database       |
-| Load testing  | Custom `ws` harness           | —                                      | `loadtest/` — **gitignored**, see §11         |
-
-**Not present, deliberately worth knowing:** no tests of any kind, no CI, no linting on
-backend, no auth, no rate limiting, no production build path (see §7.4).
+| Layer         | Choice                             | Notes                                        |
+| ------------- | ---------------------------------- | -------------------------------------------- |
+| Frontend      | React 19 + Vite 8                  | No router, no state library, no CSS framework |
+| Backend       | Express 5 + `ws` 8                 | Raw `ws`, **not** Socket.IO                   |
+| Database      | PostgreSQL 18-alpine               | Accessed via **Kysely** (typed query builder) |
+| Schema        | Ordered SQL migrations             | `backend/src/db/migrations/00N_*.ts`, run at startup |
+| Language      | TypeScript                         | FE `~6.0`, BE `^5.8` — different per package  |
+| Runtime       | Node 22 (all images, CI, `@types/node`) | Kept aligned on purpose — see §11        |
+| Dev runner    | `tsx watch` (BE), `vite` (FE)      | Backend is never compiled in dev              |
+| Prod          | Multi-stage Docker → nginx + esbuild bundle | `docker-compose.prod.yaml`           |
+| Tests         | Vitest — shared + backend + frontend (frontend runs node + jsdom projects) | See §11         |
+| CI            | GitHub Actions                     | Verify job + full prod-stack e2e              |
 
 ---
 
@@ -238,743 +55,864 @@ backend, no auth, no rate limiting, no production build path (see §7.4).
 
 ```
 OnlineWhiteboard/
-├── CLAUDE.md               # this document — architecture notes, auto-loaded
-├── docker-compose.yaml      # DEV stack (Vite HMR + tsx watch)
-├── docker-compose.prod.yaml # PROD stack (nginx + compiled backend), standalone
-├── .env / .env.example     # ALL ports + hostnames come from here
-├── frontend/               # React + Vite SPA
-│   ├── vite.config.ts      # aliases + DEV proxy — read this first
-│   ├── nginx.conf.template # PROD proxy — must mirror vite.config.ts's proxy
-│   ├── Dockerfile          # multi-stage: deps -> dev | build -> prod
+├── CLAUDE.md                 # this document
+├── .githooks/pre-commit      # the verification gate (§12)
+├── docker-compose.yaml       # DEV stack (Vite HMR + tsx watch)
+├── docker-compose.prod.yaml  # PROD stack (nginx + compiled backend)
+├── .env / .env.example       # ALL ports, hostnames, credentials, origins
+├── frontend/                 # React + Vite SPA
+│   ├── vite.config.ts        # aliases + DEV proxy — read this first
+│   ├── nginx.conf.template   # PROD proxy — must mirror vite.config.ts
+│   └── src/{app,components,hooks,utils,constants}
+├── backend/                  # Express + ws
 │   └── src/
-│       ├── main.tsx        # StrictMode root
-│       ├── app/App.tsx     # composition root; wires every hook
-│       ├── components/     # 8 components, each folder = index.tsx + styles.css
-│       ├── hooks/          # the actual logic lives here
-│       └── constants/ui.ts
-├── backend/                # Express + ws
-│   └── src/
-│       ├── server.ts       # entry: express + http + WebSocketServer
-│       ├── routes/         # nearly empty — one stub POST /api
-│       ├── sockets/
-│       │   ├── index.ts    # HTTP->WS upgrade gate
-│       │   └── roomManager/index.ts   # ★ the heart of the app
-│       └── db/             # pool.ts + canvasRepository.ts
-├── shared/                 # ★ imported by BOTH frontend and backend
-│   ├── types/              # protocol contracts
-│   ├── constants/canvas/   # CANVAS_WIDTH/HEIGHT/BYTES
-│   └── utils/              # the draw algorithms — run on BOTH sides
-├── database/               # Dockerfile + notes_table.sql
-└── loadtest/               # standalone ws load harness (gitignored)
+│       ├── server.ts         # entry: express + http + WebSocketServer + shutdown
+│       ├── sockets/          # upgrade gate + roomManager (★ the heart)
+│       ├── db/               # pool, schema, migrations, repositories
+│       ├── auth/             # password, session, identity, requireUser
+│       ├── routes/           # auth, colors, rooms, health
+│       └── security/         # origin, csrf, rateLimit
+├── shared/                   # ★ imported by BOTH frontend and backend
+│   ├── types/                # protocol + identity contracts
+│   ├── constants/canvas/     # dimensions, brush + spray caps
+│   └── utils/                # the draw algorithms — run on BOTH sides
+├── database/                 # stock Postgres image (schema lives in migrations)
+├── loadtest/                 # standalone ws load harness
+└── scripts/smoke-test.mjs    # dependency-free prod-stack probe (used by CI)
 ```
 
-### The `shared/` folder is the most important idea in the repo
+---
+
+## 4. `shared/` — the most important idea in the repo
 
 `shared/utils/*` contains the **pixel-mutation algorithms** (Bresenham line, flood fill,
-CAS patch). Both the browser and the Node server import and execute the _same source
-file_. This is why the server can maintain an authoritative canvas that provably matches
-what clients render — there is one implementation, not two that must be kept in sync.
+seeded spray, compare-and-swap patch). Both the browser and the Node server import and
+execute the *same source file*. That is why the server can maintain an authoritative canvas
+provably identical to what clients render — there is one implementation, not two kept in
+sync by discipline.
 
-This is the single strongest talking point in this codebase for an interview.
+**This is the single strongest talking point in the codebase.**
 
-**How `shared/` is wired (three separate mechanisms — know all three):**
+### How it is wired — three separate mechanisms, know all three
 
 1. **Frontend build**: `vite.config.ts` → `resolve.alias["@shared"] = ../shared`
 2. **Type checking**: `tsconfig.app.json` / `backend/tsconfig.json` → `paths: {"@shared/*": ["../shared/*"]}`
-3. **Backend runtime**: `tsx` reads `paths` from `backend/tsconfig.json` and resolves at import time
+3. **Backend runtime**: `tsx` reads `paths` from `backend/tsconfig.json`; prod bundles via esbuild
 
-`shared/` is **not** an npm package — no `package.json`, no workspaces. It is joined
-purely by path aliases. In Docker this works because of a neat trick: both containers
-have `WORKDIR /app`, and compose mounts `./shared:/shared`. So `../shared` from `/app`
-resolves to `/shared`. **[verified]**
+`shared/` is **not** an npm package — no `package.json`, no workspaces. It is joined purely
+by path aliases. In Docker this works because both containers use `WORKDIR /app` and compose
+mounts `./shared:/shared`, so `../shared` resolves.
 
-> **Fragility to know:** because there is no workspace, `shared/` is invisible to
-> `npm install`, has no independent typecheck, and the loadtest's copy of the types has
-> already silently drifted out of date (§11).
+> ### ⚠️ `shared/` has NO build boundary
+>
+> A change under `shared/` hits frontend, backend **and** loadtest simultaneously, with
+> nothing to stop you. This is the repo's most important operational fact — the pre-commit
+> hook encodes it by re-verifying every consumer whenever `shared/` is touched.
+
+### What belongs in `shared/`
+
+Anything both sides must agree on: the wire protocol types, the pixel algorithms, canvas
+dimensions and abuse caps, instruction validation, colour equality, the role list and the
+authorisation helpers. If the client and server could ever disagree about it, it goes here.
 
 ---
 
-## 4. How it works — the runtime story
+## 5. Runtime — how it actually works
 
-### 4.1 Joining a room **[verified by live probe]**
+### 5.1 Joining a room
 
 ```
-Browser                                  Server
-  |-- GET /ws?roomId=X  (HTTP Upgrade) --->|  sockets/index.ts
-  |                                        |  reject unless pathname==="/ws" && roomId
+Browser                                   Server
+  |-- GET /ws?roomId=X (HTTP Upgrade) ---->|  sockets/index.ts
+  |                                        |  reject unless pathname==="/ws"
+  |                                        |  reject disallowed Origin (CSWSH, §9)
+  |                                        |  reject missing roomId
   |<---------- 101 Switching --------------|
-  |                                        |  roomManager.addClient()
-  |                                        |  getOrCreateRoom(X):
-  |                                        |    cache hit? -> reuse
-  |                                        |    miss -> loadCanvas(X) from Postgres
-  |<-- {type:"ready", revision, activeUsers}
-  |<-- {type:"canvas_snapshot", data:<base64 57600B -> 76800 chars>}
-  |<-- {type:"presence", activeUsers}      |  broadcast to whole room
+  |                                        |  resolveConnectionIdentity(cookie)
+  |                                        |    -> account identity, or generated guest
+  |                                        |  ensureMembership -> role for this room
+  |                                        |  getOrCreateRoom: cache hit, else
+  |                                        |    latest snapshot + replay newer events
+  |<-- {ready, revision, self, participants}
+  |<-- [BINARY frame: {canvas_snapshot} header + deflated RGBA (256² = 262144B raw)]
+  |<-- {checkpoints, ...}
+  |<-- {presence, participants}   (broadcast to the room)
 ```
 
-Observed exactly this sequence, in this order, with `b64len=76800`. **[verified]**
+Messages that arrive **before** the room finishes loading are buffered (capped at
+`MAX_PENDING_MESSAGES = 64`) and drained in order — see §13.1, this is load-bearing.
 
-### 4.2 Drawing **[verified]**
+### 5.2 Drawing
 
-```
-Client                                   Server
-  pointerdown/move
-  -> useDrag -> useCanvasDrawing -> useDrawActions
-  -> handleDrawLineStart/Motion  (paints LOCALLY, optimistically)
-  -> returns DrawInstruction
-  |-- {type:"draw", roomId, instruction} ->|
-  |                                        | applyDrawInstructionToCanvas(room.pixels, inst)
-  |                                        | room.revision += 1; room.isDirty = true
-  |<-- {type:"draw", instruction, revision} -- broadcast to ALL incl. sender
-  other clients apply it to their ImageData
-```
+Client paints **optimistically** (locally, before the server confirms), then sends a
+`DrawInstruction`. The server applies it to its buffer via the same shared function,
+bumps `revision`, appends to the event log, and broadcasts to **everyone including the
+sender**. Re-applying your own stroke is idempotent (same pixels, same colour).
 
-Note the client paints **before** the server confirms (optimistic local echo), and the
-sender also receives its own stroke back. The sender ignores nothing — it re-applies its
-own stroke idempotently (drawing the same pixels the same color is a no-op).
+Tools: `pencil`, `eraser`, `bucket`, `spray`. Plus `patch` (undo/redo, never from the
+toolbar) and `clear` (server-generated only, never accepted from a client).
 
-### 4.3 The revision heartbeat — a genuinely good optimization
+**The spray can is worth understanding**: the instruction carries a `seed`, not a pixel
+list. `shared/utils/random.ts` (mulberry32) reproduces the identical splatter on the server
+and every client. `Math.random()` could not be used inside the apply path — it isn't
+seedable, so two clients would paint different splatters and desync. Choosing the seed with
+`Math.random()` on the client is fine; only the *value* travels.
 
-Every 10s the server broadcasts `{type:"revision_check", revision}` — a few dozen bytes.
-Each client compares against its own `lastRevision`. Only a client that has **fallen
-behind** sends `{type:"resync"}`, and only that client gets a fresh 75KB snapshot.
+**Brush size** is a diameter, stamped as a filled disc along the Bresenham path
+(`forEachDiscPixel`), deduped per stroke so undo entries stay proportional to area painted
+rather than stroke-length × brush-area.
 
-The comments in `shared/types/socketProtocol.ts` say this replaced an older design that
-broadcast the full canvas to everyone every 10s. That's O(clients × 75KB) every 10s →
-now O(clients × ~40B). **This is the best perf story in the repo — know it cold.**
+### 5.3 The revision heartbeat — the best perf story here
 
-> ⚠️ The `loadtest/README.md` still documents the OLD behavior and its headline finding
-> no longer reproduces. The harness ignores `revision_check` and never sends `resync`, so
-> **it does not exercise the new snapshot path at all.**
+Every 10s the server broadcasts `{revision_check, revision}` — a few dozen bytes. Each
+client compares it to its own last-applied revision; only a client that has **fallen
+behind** sends `{resync}`, and only that client receives a fresh snapshot (the whole
+canvas — 256²×4 = 262144B raw at the default size, deflated on the wire).
 
-### 4.4 Undo/redo — compare-and-swap patches **[verified: CAS rejection works]**
+This replaced an older design that broadcast the whole canvas to everyone every 10s:
+O(clients × snapshot) → O(clients × ~40B), and the cost no longer grows with canvas size.
 
-This is the most sophisticated part of the codebase.
+### 5.4 Undo/redo — compare-and-swap patches
 
-- While drawing, `withRecording()` (`helperProtocallMethods.ts`) wraps the pixel-setter so
-  every write also records `{idx, from, to}` — the undo entry is built **for free** off
-  the same loop that paints. No separate diffing pass.
-- On gesture end, `useDrawActions` calls `onCommitAction(instructionId, entries)` →
-  `useUndoRedo.pushAction()`.
+The most sophisticated part of the codebase.
+
+- While drawing, `withRecording()` wraps the pixel setter so every write also records
+  `{idx, from, to}` — the undo entry is built **for free** off the same loop that paints.
 - Undo reverses the entries (`from`↔`to`) and sends a `PatchInstruction`.
 - `handleDrawPatchInstruction` applies each entry **only if the pixel currently equals
-  `from`**. Anything someone else painted over is skipped.
-- The applied _subset_ is returned, so the server broadcasts only what really landed, and
-  the client pushes only what really landed onto the redo stack — and tells the user
-  ("Undo only partially applied — someone else drew over part of it").
+  `from`**. Anything a collaborator painted over is skipped.
+- The applied *subset* is returned, so the server broadcasts only what really landed and
+  the client stacks only what really landed — and tells the user when an undo applied
+  partially.
 
-I verified the CAS: sending a patch with a deliberately wrong `from` produced **no
-broadcast at all** — correctly rejected. **[verified]**
+Naive undo in a collaborative app clobbers other people's work. This makes undo safe under
+concurrency **without full OT/CRDT machinery**. Second-strongest talking point.
 
-Why this matters: naive undo in a collaborative app would clobber other users' work.
-This design makes undo _safe under concurrency_ without needing full OT/CRDT machinery.
-It is the second-strongest interview talking point.
+Stack caps are dual: `MAX_ACTIONS = 50` **or** `MAX_BYTES = 64KB`, whichever hits first —
+a long scribble is many actions/few entries, a bucket fill is one action/many entries.
+Neither cap alone bounds both shapes.
 
-Stack caps are dual (`useUndoRedo.ts`): `MAX_ACTIONS = 50` **or** `MAX_BYTES = 64KB`,
-whichever hits first — because a long scribble is many actions/few entries while a bucket
-fill is one action/many entries. Neither cap alone bounds both shapes.
+### 5.5 Identity, presence and cursors
 
-### 4.8 Off-canvas strokes: RAW positions + clipping (don't "simplify" this)
+Every connection gets an identity at upgrade time: a logged-in user (from the session
+cookie) or a generated guest. `connectionId` is **per socket** — the same account in two
+tabs is two participants.
 
-`LineAction.prevPos/nextPos` hold **raw, possibly off-canvas** pointer positions.
-`handleDraw` clips the segment with `clipSegmentToCanvas` (Liang–Barsky) and
-draws/sends only the clipped part. Three things depend on that split:
+`Participant` deliberately carries **no account id**: it is broadcast to everyone in the
+room, and a stable per-account identifier would let anyone correlate a user across rooms.
 
-1. **The stroke reaches the edge.** `handleDraw` used to `return null` whenever
-   the pointer was outside, so a stroke ended at the last in-bounds *sample*,
-   visibly short of the edge.
-2. **Clipping ≠ clamping.** Clamping each axis independently sends (200, 60) to
-   (119, 60), but the segment from (50, 50) actually leaves the canvas at
-   (119, 55). Clamping bends the line; for a fast flick at a corner it's obvious.
-   There is a test asserting exactly this.
-3. **Re-entry is correct.** Coming back on-screen, the segment starts where the
-   real line crosses the edge — computable only from the raw off-canvas
-   position. Store a clamped value and the return stroke kinks.
+Cursors are a separate ephemeral `cursor` message: relayed to others, **never** applied to
+the canvas, never logged, never persisted. Client-side they live in a **ref** (mutated many
+times a second, no re-render) with a separate `cursorIds` state that only changes when a
+cursor appears or disappears. `CursorOverlay` positions them in a rAF loop.
 
-The wire instruction is built from the **clipped** endpoints, never from `da`'s
-raw ones — `validateInstruction` requires in-bounds coordinates and would (
-correctly) drop the raw form.
+### 5.6 Roles and authorisation
 
-> **Why `handleDrawLineLeave` is the wrong place to fix this** — a natural first
-> attempt, and it cannot work. `useDrag` calls `element.setPointerCapture()` on
-> pointerdown, and while a pointer is captured the browser does **not** fire
-> `pointerleave` on the element when the pointer moves off it (capture makes the
-> element the hit-test target for everything; leave fires at release). So the
-> leave handler never runs mid-drag. The fix has to live on the `pointermove`
-> path, which is what `handleDraw` is.
+`ConnectionRole = "owner" | "editor" | "viewer" | "guest"`.
 
-`getPosCorrected` still exists and is still right for the **bucket** tool: a
-fill clicked outside the canvas should be ignored, not clipped.
+The rules live once, in `shared/types/identity.ts`, and **both sides call them**:
 
-### 4.7 The tool/palette ref-vs-state split (read before touching ToolMenu)
+| Helper             | Allows                                    | Who              |
+| ------------------ | ----------------------------------------- | ---------------- |
+| `canDraw`          | drawing                                   | `owner`/`editor` always; `viewer`/`guest` only while `open_editing` is on |
+| `hasEditAuthority` | create/restore/delete checkpoints         | `owner`, `editor` |
+| `canManageRoom`    | clear, resize, toggle open editing, change roles, remove members | `owner` only |
+| `canRequestEditor` | ask the owner for editor access           | `viewer` only    |
 
-The selected tool lives in **both** a ref and state, in `App.tsx`, on purpose:
+The server is the authority; client checks are cosmetic (greying out controls). A crafted
+client cannot bypass them — `RoomManager` re-checks on every message.
 
-- the **ref** (`drawAction`) is what the pointer handlers read on every event, so
-  changing tools never re-subscribes the drag listeners;
-- the **state** (`selectedTool`) is what lets the toolbar render the active tool.
+Membership: everyone — including the first visitor — joins as a **viewer**. Ownership is
+never automatic: it is **claimed** on an unowned room and **released** explicitly, and it
+persists across sessions. Guests are never members. A room has **at most one owner**,
+enforced structurally (§13.4).
 
-`App` owns both and passes `selectedTool` + `onSelectTool` down. `ToolMenu` used
-to receive the ref and write to it — mutating a prop, and the reason the active
-tool could never be shown (a ref write triggers no re-render, so there was no
-`.active` style because the feature was _impossible_).
+### 5.7 Destructive actions are owner-only
 
-`colorPallet` is still a ref (`useSessionStorageRef`), so `ColorSelector` keeps a
-local `isSwapped` boolean purely as a render trigger. Note the swatch `<button>`s
-deliberately carry **no `key`**: React reconciles them by index, reuses both DOM
-nodes and only swaps their `top`/`bottom` class, which is what animates the
-slide. Adding keys reorders the nodes instead and kills the animation.
+Clearing the board is not a draw instruction a client may send — the server **rejects** a
+client-originated `clear`. The only path is a `room_action` message, which the server
+applies on the owner's behalf **after checking `canManageRoom` (owner only)**. It then flows
+through the normal event-log + broadcast path like any other instruction.
 
-### 4.6 Action vs Instruction — the type distinction (fixed 2026-07-16)
+An earlier design gated clears behind a consensus **vote** among recent editors (unanimous
+approval, timeouts, a voter set). Phase 2 removed it entirely (§16, §17): one accountable
+owner is simpler to reason about and deletes a whole class of stuck-vote edge cases rather
+than handling them. There is no `request_action` message, no voter set, and no vote timers
+in the protocol any more.
 
-These two look interchangeable and are not:
+### 5.8 Checkpoints and playback (time travel)
 
-- **`DrawAction`** = a gesture _in progress_. The toolbar creates one holding nothing but
-  `{ type: "pencil" }`, and the pointer handlers mutate positions into it as the gesture
-  runs. Positions are therefore `Partial`.
-- **`DrawInstruction`** = a _completed_ fact headed for the wire. Positions are guaranteed,
-  plus `instructionId` + `sessionId` from `BaseInstruction`.
+- **Checkpoint** = a named, durable full-canvas snapshot at a revision. Editors only.
+  Capped at **20 per room**; pixels are captured synchronously before any await so the
+  stored bytes and revision can't disagree.
+- **Restore** sets the live pixels, bumps the revision, persists, and broadcasts a fresh
+  snapshot to everyone. It is *not* logged as an instruction — the new snapshot **is** the
+  state, and recovery reads the latest snapshot.
+- **Playback** is read-only, so anyone (including viewers) may watch. The server sends a
+  base canvas + the ordered events after it; the client animates by applying them.
 
-Originally both derived from one `*Shared` type with **required** positions, which made
-`{ type: "pencil" }` fail to typecheck and left the defensive guards in the handlers
-(`if (!action.prevPos ...)`, `action.pos ?? [0,0]`) unreachable. Nobody noticed because
-`tsc -b` never ran (§7.4). Now split via `Partial<PencilPositions>` vs `PencilPositions`.
-
-Note the union assignability subtlety: `{ type: ToolType }` is only assignable to the
-`DrawAction` union because TypeScript expands a union-typed discriminant across the
-union's members — and that only works once the _other_ properties are optional. Making
-positions required again would break `ToolMenu.setTool` immediately.
-
-### 4.5 Persistence
-
-- `saveTimer` per room: every 15s, `if (isDirty)` → `saveCanvas()` (`INSERT … ON CONFLICT
-DO UPDATE`, i.e. upsert).
-- Last client leaves → final save, timers cleared, room **evicted from memory**.
-- `loadCanvas` returns a blank canvas if dimensions don't match — so changing
-  `CANVAS_WIDTH` silently discards every existing drawing.
+Checkpoints interact with compaction: `saveRoom` keeps events newer than the **oldest
+checkpoint** so history stays replayable from it.
 
 ---
 
-## 5. Docker — what it is and how it's used here
+## 6. Persistence and durability
 
-### What Docker is (for the writeup/interview)
+Data model: `rooms` + `canvas_snapshots` + `draw_events` (+ `users`, `sessions`,
+`saved_colors`, `room_members`, `checkpoints`).
 
-A **container** packages an app with its dependencies and a minimal filesystem, and runs
-it as an isolated process on the host kernel. Unlike a VM there's no guest OS — startup is
-milliseconds and overhead is near zero. Key nouns:
+**Event sourcing is what makes data loss sub-second.** Every applied instruction is appended
+to `draw_events`, flushed in batches every `FLUSH_INTERVAL_MS = 250ms` (or early past
+`MAX_EVENT_BUFFER = 200`). Recovery = latest snapshot + replay every event with a greater
+revision, through the **same** `applyDrawInstructionToCanvas` the live path and unit tests
+use.
 
-- **Image** — an immutable, layered filesystem snapshot built from a `Dockerfile`. Each
-  instruction is a cached layer; changing one invalidates everything after it.
-- **Container** — a running instance of an image.
-- **Volume** — persistent storage that outlives containers (images are ephemeral).
-- **Bind mount** — maps a host directory into the container; edits on the host appear
-  instantly inside. This is what makes hot-reload work in dev.
-- **Compose** — declares a multi-container app in one YAML, on a shared virtual network
-  where services address each other **by service name as hostname**.
+| Mechanism            | Interval | Purpose                                          |
+| -------------------- | -------- | ------------------------------------------------ |
+| Event flush          | 250 ms   | Durability floor — bounds hard-crash loss        |
+| Snapshot / save      | 15 s     | Recovery base; also compacts the log             |
+| `revision_check`     | 10 s     | Cheap sync heartbeat (§5.3)                      |
+| ws ping              | 30 s     | Dead-socket reaping                              |
+| Stale-room + session sweep | 24 h | Bounds the only unbounded tables (90-day room retention) |
 
-### How it's used here
+**Compaction**: writing a snapshot also deletes the `draw_events` it supersedes, in the
+**same transaction** — so events are only trimmed once their replacement is committed.
 
-Three services in `docker-compose.yaml`:
-
-**`database`** — `postgres:18-alpine`. `notes_table.sql` is copied into
-`/docker-entrypoint-initdb.d/`, a Postgres convention: scripts there run **only on first
-init of an empty data directory**. Data lives in the named volume `database-v`.
-
-- A `healthcheck` runs `pg_isready`; `backend` uses `depends_on: condition:
-service_healthy` so it never starts against a database that isn't accepting connections.
-  This is the _correct_ way to sequence — plain `depends_on` only waits for _start_, not
-  readiness.
-
-**`backend`** — build context is the **repo root** (not `./backend`) so the Dockerfile can
-reach `shared/`. Runs `tsx watch src/server.ts`. `./backend/src:/app/src` and
-`./shared:/shared` are bind-mounted for hot reload.
-
-**`frontend`** — same context trick. Runs the **Vite dev server** (see §7.4 — this is
-also the "production" path, which is a problem).
-
-**The `/app/node_modules` anonymous-volume trick** (in both): bind-mounting
-`./frontend/src` is fine, but if you mounted the whole folder the host's (possibly absent
-or OS-wrong) `node_modules` would shadow the image's. Listing `/app/node_modules` as an
-anonymous volume masks the host copy and keeps the container's own installed deps. Common
-and worth being able to explain.
-
-**Env indirection:** every port/hostname comes from `.env`. `container_name:
-${BACKEND_HOST}` = `server-c`, and `VITE_API_BASE: "http://backend:${BACKEND_PORT}"`
-resolves via Compose's DNS. Note the subtlety: `VITE_API_BASE` uses the **service name**
-`backend`, not the container name `server-c`.
-
-**`CHOKIDAR_USEPOLLING=true`** — file-watch events don't cross the Windows/WSL2 boundary
-reliably, so watchers poll every 300ms instead. Costs CPU; necessary on Windows.
-
-**`develop.watch` + `action: rebuild`** — Compose Watch rebuilds the image when
-`package.json`/`Dockerfile` change (source is already live via bind mount). Requires
-`docker compose watch`, not plain `up`.
-
-### ⚠️ Postgres 18 changed PGDATA — do not "fix" the volume mount
-
-`PGDATA` in `postgres:18-alpine` is **`/var/lib/postgresql/18/docker`**, _not_ the classic
-`/var/lib/postgresql/data` **[verified]**. Both compose files therefore mount the **parent**
-`/var/lib/postgresql`, which keeps the versioned directory inside the volume.
-
-"Correcting" this to `/var/lib/postgresql/data` looks right, matches every pre-18 tutorial,
-and **silently persists nothing** — Postgres would write to the container's ephemeral layer
-and every canvas would vanish on restart, with no error anywhere. Verified that a canvas
-survives `down`/`up` with the current mount.
-
-### Docker weaknesses — status
-
-Fixed 2026-07-16:
-
-- ~~Frontend `node:24-alpine` vs backend `node:22-alpine` drift~~ → both `node:22-alpine`.
-- ~~No multi-stage build / `NODE_ENV=production` / non-root `USER` / healthchecks~~ → all
-  present in the `prod` targets.
-- ~~`COPY ./frontend .` before `RUN npm install` busting the cache~~ → manifests are copied
-  first, and `npm ci` replaces `npm install` for reproducibility.
-- ~~`database` publishes 5432~~ → still published in **dev** (convenient, and the loadtest
-  needs 3000); **not** published in prod. Prod exposes only nginx on `PROD_PORT`.
-
-Still open:
-
-- `POSTGRES_PASSWORD` reaches containers via compose `env_file`, so it's in the process
-  environment. Fine for local/self-hosted; use Docker secrets or a managed DB for anything
-  real.
-- No `.env` validation — a missing var fails at connect time with an opaque error.
-
-### container_name vs service name vs network alias (bit me — read this)
-
-Compose gives a container **three** possible DNS names on its network:
-
-1. the **service name** (`backend`, `database`) — always an alias, always works;
-2. the **`container_name`** if set (`postgres-c`) — _global to the Docker daemon_, so two
-   stacks can't both use it;
-3. explicit **network aliases** — scoped to that project's network.
-
-`backend/src/db/pool.ts` dials `POSTGRES_HOST` (= `postgres-c`). Dev gets that name for
-free from `container_name: ${POSTGRES_HOST}`. The prod stack deliberately omits
-`container_name` (so it can run alongside dev), which broke DNS → `ENOTFOUND postgres-c` →
-the backend crash-looped. Fixed with a **network alias** on the prod `database` service.
-
-If you ever add a third stack, or rename a service, check this first.
+**Graceful shutdown**: `SIGTERM`/`SIGINT` → flush every room's buffer + write a final
+snapshot before exit. Works only because the Dockerfile runs `node` as PID 1, not `npm`.
+A normal deploy therefore loses **nothing**; a hard `docker kill` loses at most ~250 ms.
 
 ---
 
-## 6. The `.env` contract
+## 7. Auth
 
-```
-API_BASE=http://localhost          PUBLIC_SITE_URL=http://localhost:5173
-FRONTEND_HOST=frontend-c           FRONTEND_PORT=5173
-BACKEND_HOST=server-c              BACKEND_PORT=3000
-POSTGRES_HOST=postgres-c           POSTGRES_PORT=5432
-POSTGRES_USER=postgre              POSTGRES_PASSWORD=<set me>   POSTGRES_DB=info_db
-```
+Optional accounts — the app is fully usable as a guest.
 
-`.env.example` → rename to `.env`, set `POSTGRES_PASSWORD`, then `docker compose up
---build`. App at `http://localhost:5173`.
-
-Gotcha: `pool.ts` reads `POSTGRES_HOST` etc. from the process env — supplied by
-`env_file: .env` on the backend service. There is **no validation**; a missing var fails
-at connect time with an opaque error.
-
----
-
-## 7. Vite — deep dive
-
-### 7.1 What Vite is and why it exists
-
-Vite is a frontend build tool with **two completely different engines**, and understanding
-that split is the whole point:
-
-**Dev — native ESM, no bundling.**
-Older tools (Webpack, CRA) bundled your entire app before serving the first byte; startup
-grew linearly with codebase size. Vite instead serves your source as **native ES modules**
-straight to the browser. The browser's own `import` statements pull modules on demand.
-Vite only transforms the specific file requested (stripping TS types, compiling JSX) —
-per-file, on demand, cached. That's why it started in **1013 ms** here **[verified]**, and
-why that number barely moves as the app grows.
-
-Two supporting pieces make that viable:
-
-- **Dependency pre-bundling** (esbuild, Go — 10–100× faster than JS bundlers). `react` ships
-  as many small CJS/ESM files; unbundled, the browser would fire hundreds of requests. Vite
-  pre-bundles deps once into `node_modules/.vite/deps/` and converts CJS→ESM. You can see
-  it in the transformed output: `import __vite__cjsImport0_react from
-"/node_modules/.vite/deps/react.js?v=fcf04d2d"` **[verified]**. The `?v=` hash is a cache
-  key — bump deps, hash changes, browser refetches.
-- **HMR over native ESM** — swap one module in place, keep app state.
-
-**Prod — Rollup bundling.**
-Native ESM in production means a request waterfall over the network. So `vite build` uses
-**Rollup** for tree-shaking, code-splitting, minification, hashed filenames. Dev and prod
-are therefore _different pipelines_ — the classic Vite footgun (something can work in dev
-and break in build).
-
-### 7.2 How Vite is used in THIS project
-
-`frontend/vite.config.ts` is small but every line earns its place:
-
-```ts
-export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "")
-  const backendTarget = env.VITE_API_BASE || "http://localhost:3000"
-  return {
-    plugins: [react()],
-    resolve: { alias: { "@": "./src", "@shared": "../shared" } },
-    server: {
-      proxy: {
-        "/api": { target: backendTarget, changeOrigin: true },
-        "/ws": { target: backendTarget, changeOrigin: true, ws: true },
-      },
-    },
-  }
-})
-```
-
-**(a) Function form + `loadEnv`.** Config is a function of `{mode}` so it can read env at
-config time. `loadEnv(mode, cwd, "")` — the third arg is the **prefix filter**, and `""`
-means _load everything_, not just `VITE_`-prefixed vars. Important distinction:
-
-- Vars exposed to **client code** via `import.meta.env` must be `VITE_`-prefixed. That
-  prefix is a **security boundary** — it prevents `POSTGRES_PASSWORD` from being inlined
-  into a public bundle.
-- `loadEnv(..., "")` in _config_ bypasses the filter, but config runs in Node, so nothing
-  leaks to the client. That's legitimate — just know the difference if asked.
-
-**(b) `@vitejs/plugin-react`.** Uses Babel to inject the JSX transform and **React Fast
-Refresh** (state-preserving HMR for components). `jsx: "react-jsx"` in `tsconfig.app.json`
-means the automatic runtime — no `import React` needed.
-
-**(c) Aliases — the monorepo glue.** `@` → `./src` kills `../../../` chains. `@shared` →
-`../shared` is what makes the shared-protocol architecture possible on the frontend.
-
-> **The interesting part.** Vite has a filesystem sandbox (`server.fs.allow`) that
-> normally refuses to serve files outside the project root — and `/shared` _is_ outside
-> `/app`. I expected this to break. It doesn't: Vite rewrites the import to
-> `/@fs/shared/utils/handleCanvasProtocol.ts` and serves it **HTTP 200** **[verified]**.
-> `/@fs/` is Vite's escape hatch for exactly this (linked packages, monorepos). Worth
-> knowing it's load-bearing here, because tightening `fs.allow` or changing the root would
-> break the app instantly.
-
-**(d) The dev proxy — the most load-bearing 8 lines.** The frontend calls **`/ws`**, a
-_same-origin relative path_ (`useWebSocket("/ws", ...)` in `useRoomConnection.ts`). Vite's
-dev server proxies it to `http://backend:3000`. This means:
-
-- **No CORS.** Browser only ever talks to `localhost:5173`.
-- **No hardcoded backend URL** in client code.
-- `ws: true` opts the `/ws` route into **WebSocket upgrade proxying** — without it, the
-  101 handshake is not forwarded and realtime silently dies.
-- `changeOrigin: true` rewrites the `Host` header to the target.
-
-`useWebSocket.toWebSocketUrl()` then resolves `/ws` against `window.location`, upgrading
-`http:`→`ws:` / `https:`→`wss:`, and appends `?roomId=`. That's why the client works
-identically on localhost and behind TLS.
-
-### 7.3 How Vite is _meant_ to be used with React (the general pattern)
-
-- `index.html` is the **entry point and is served as a real file** — not generated from a
-  template like CRA. Its `<script type="module" src="/src/main.tsx">` is the graph root.
-- `main.tsx` → `createRoot(...).render(<StrictMode><App/></StrictMode>)`.
-- **StrictMode in dev double-invokes** renders/effects to surface impurity. This matters
-  here: effects that mutate the canvas or open sockets run twice. `useWebSocket` guards
-  with a `readyState` check — that guard is not incidental, it's what makes StrictMode
-  survivable.
-- Static assets: `import img from "./x.png"` returns a hashed URL; `public/` is copied
-  verbatim.
-- `import.meta.env.DEV / .PROD / .MODE` for env branching.
-- `npm run dev` → dev server; `npm run build` → `tsc -b && vite build` → `dist/`;
-  `npm run preview` → serve `dist/` locally to sanity-check the _real_ bundle.
-
-Note `"build": "tsc -b && vite build"` — Vite's own transform **does not typecheck** (it
-just strips types via esbuild). `tsc -b` is what actually enforces types. This is why the
-loadtest, which runs under `tsx` with no `tsc` step, has silently broken types (§11).
-
-### 7.4 ✅ RESOLVED — the dev-server-as-production problem
-
-**Historical context (this was the repo's #1 problem; kept because the reasoning is the
-whole point of the current design).** `frontend/Dockerfile` used to run `npm run dev` — the
-_dev server_ — as the only way to run the app. That meant `vite build`/Rollup was never
-exercised, the `tsc -b` typecheck never ran (which is precisely how 2 type errors
-accumulated unnoticed), it shipped unminified source plus the HMR client, and — most
-subtly — **the `/api` + `/ws` proxy is a dev-server feature that does not survive
-`vite build`**, so the app had no production networking story at all.
-
-**Now:** `frontend/Dockerfile` is multi-stage with a `dev` target (unchanged behavior) and
-a `prod` target that runs `tsc -b && vite build` and serves `dist/` from nginx.
-`frontend/nginx.conf.template` re-implements the dev proxy's `/api` and `/ws` routes —
-that file is the direct production replacement for `server.proxy` in `vite.config.ts`, and
-the two must be kept in agreement.
-
-**The invariant that makes this work:** the client requests a _relative_ `/ws`
-(`useWebSocket("/ws", ...)`), never an absolute URL. `toWebSocketUrl` resolves it against
-`window.location` and upgrades `http:`→`ws:` / `https:`→`wss:`. So whatever origin serves
-the page also proxies the socket, and **one built artifact runs in any environment with no
-rebuild**. Do not "fix" this into a `VITE_WS_URL` env var — that would reintroduce a
-per-environment rebuild for no benefit.
+- **Passwords**: scrypt (salted, memory-hard) via built-in `node:crypto` — no native
+  dependency, Alpine-safe. The password itself is never stored.
+- **Sessions**: server-side. The cookie holds a random token; the DB stores only its
+  **SHA-256 hash**, so a database leak can't be replayed as live logins. `httpOnly`,
+  `SameSite=Lax`, `Secure` in prod, `__Host-sid` name in prod.
+- **Login** uses a generic error + constant-work path so it cannot leak which emails exist.
+- Logging in/out **reconnects the socket** (via `reconnectKey`) so the server re-resolves
+  identity without a page reload.
+- **Logout also force-closes every live socket for that session** server-side — a session
+  registry keyed by the token *hash* closes them with code `1008`. A socket is authenticated
+  once at upgrade and then lives for the tab's lifetime, so deleting the session row alone
+  would leave it acting as the logged-in user; the registry is what makes logout end access
+  immediately on a shared machine. A periodic sweep (30 min) likewise drops sockets whose
+  session has expired or been revoked.
 
 ---
 
-## 8. Frontend architecture
+## 8. Security posture
 
-**React is a chrome layer around an imperative canvas.** No drawing goes through React
-rendering — pixels are mutated via refs on `ImageData` and blitted with `putImageData`.
-This is correct and deliberate; understand it before "fixing" anything.
+| Threat | Defence |
+| --- | --- |
+| CSWSH (cross-site WebSocket hijacking) | Origin allowlist checked at the upgrade, before it becomes a socket. `SameSite` does **not** reliably cover WS upgrades — this is the primary defence. |
+| CSRF | `csrfOriginGuard` on state-changing API requests, on top of `SameSite=Lax`. |
+| Credential stuffing | Per-IP rate limits: login **10 / 15 min**, register **5 / 60 min** (keyed off nginx's `X-Real-IP`). In-memory, so per-process — multi-instance needs Redis. |
+| Weak / breached passwords | Common-password blocklist (`auth/validation.ts`) **plus** live **HIBP k-anonymity** breach screening (`auth/breachedPassword.ts`, fail-open). The blocklist is the floor; HIBP is what actually stops reused-from-a-leak passwords. |
+| Socket flooding / DoS | **Weighted-cost token bucket** (cost = server *work*, not message count) + **per-identity connection caps** enforced at the WS upgrade *before* any DB query — `backend/src/security/socketLimits.ts`. In-memory / per-process. |
+| Deanonymisation | `Participant` carries no account id (§5.5). |
+| Malicious instructions | Two-layer runtime validation: `shared/utils/validateSocketMessage.ts` guards the **envelope** (message type + all non-pixel fields), `validateInstruction.ts` guards the **pixel payload** at the single fan-in point (§13.2). |
+| Clickjacking / sniffing / TLS downgrade | `security-headers.conf`: CSP, HSTS, `X-Frame-Options: DENY`, `nosniff`, Referrer-Policy. |
 
-`App.tsx` is a composition root wiring:
+**Origin allowlist fails OPEN in development, CLOSED in production.** If `ALLOWED_ORIGINS`
+(or `PUBLIC_SITE_URL`) is unset, dev still runs — a check that blocks local work gets
+deleted — but production **refuses** browser requests and logs at error level. A security
+control that silently switches itself off when misconfigured is worse than one that breaks
+loudly. Requests with **no** Origin (health probes, the smoke test, curl) are always allowed;
+they can't carry a victim's cookie.
 
-- `useCanvasMotion(frameRef, canvasRef)` — middle-drag pan + wheel zoom, written to **CSS
-  custom properties** (`--drag-pos-x/y`, `--scroll-scale`) so transforms stay on the
-  compositor and never trigger React renders. Nice technique.
-- `useCanvasDrawing(canvasRef, drawAction, colorPallet, sendDrawInstruction, pushAction)`
-- `useRoomConnection(canvasRef, closeRoom)` → `useWebSocket`
-- `useUndoRedo(canvasRef, sendDrawInstruction)`
-- `useColorPalette()` → `useSessionStorageRef`
-
-**Hook layering (clean, worth preserving):**
-
-```
-useDrag / useScrollWheel      <- raw pointer/wheel events, pointer capture
-   └─ useCanvasDrawing        <- adapts drag events to draw actions
-        └─ useDrawActions     <- tool dispatch + records undo entries
-             └─ shared/utils/handle*Protocall  <- the actual algorithms
-```
-
-`useWebSocket` is a hand-rolled, genuinely competent socket client: auto-reconnect with
-backoff, app-level ping/pong heartbeat with pong timeout (close code 4000 = app-owned),
-`beforeunload` cleanup, ref-based status to avoid render churn.
-
-**State lives in three places with no consistent rule** — `useState`, refs-as-state
-(`drawAction`, `colorPallet`), and sessionStorage. The refs are justified on the pointer
-hot path but leak into the UI layer, causing the known bugs below.
+> `nginx add_header` inheritance trap: a `location` with its own `add_header` drops **all**
+> inherited ones. That's why `security-headers.conf` is `include`d in the server block *and*
+> in the cache locations. CSP needs `style-src 'unsafe-inline'` for the app's inline
+> `style={{}}`; scripts stay `'self'`.
 
 ---
 
-## 9. Bugs — ALL FIXED 2026-07-16 (kept for the reasoning)
-
-Every item below is fixed and verified. The entries stay because _why_ each one
-existed is the useful part, and several encode invariants that are easy to
-reintroduce.
-
-### 9-security. Untrusted socket input (fixed)
-
-`RoomManager.parseMessage` still does `JSON.parse(...) as ClientSocketMessage` —
-an `as` cast is a compile-time assertion, **not** a runtime check. Nothing
-validated the wire format.
-
-The severe case was a **hang, not corruption**: Bresenham in `setPixelLine` is a
-`while (true)` stepping one pixel at a time, so `nextPos: [1e9, 1e9]` spun for a
-billion iterations. Node is single-threaded → one message froze **every room**.
-And being synchronous it is uninterruptible: it hung Vitest's worker straight
-through the test timeout, which is how it was found.
-
-Now `shared/utils/validateInstruction.ts` guards `applyDrawInstructionToCanvas`
-— the single fan-in point for every network instruction (server broadcast path
-_and_ client receive path). Invalid → `null` → no canvas mutation, no revision
-bump, no broadcast. Verified live: the hostile payload is dropped and a
-legitimate stroke sent immediately after still round-trips.
-
-`isValidVec` uses `Number.isInteger`, which rejects NaN/Infinity/fractions in one
-go. A patch `idx` must also be 4-byte aligned, or one color would smear across
-two pixels' channels. A patch is rejected **wholesale** if any entry is bad —
-half-applying it would desync the sender's undo stack from the canvas.
-
-> Zod at the socket boundary would still be worth adding for the message
-> _envelope_ (`type`/`roomId` shape). This covers the instruction payload, which
-> is the part that reaches the pixel writers.
-
-### The rest (all fixed)
-
-1. **Hamburger cannot open the toolbar (mobile is broken).** `App.tsx:97` sets
-   `isToolbarOpen(true)`; the click bubbles to `.app-wrapper`'s `onClick` at `App.tsx:90`
-   which sets it `false`. Same render batch → last write wins → `false`. Masked on desktop
-   because `ToolMenu/styles.css` forces the menu visible ≥1024px. **The README advertises
-   mobile support; mobile toolbar is unreachable.**
-2. **Secondary color edits the wrong color.** `App.tsx:120` hardcodes
-   `currentColor={colorPallet.current["primary"]}` while `onApply` writes to
-   `selectedColor`. Open secondary → shown primary's values → Apply → writes primary's
-   values into secondary. Fix: `colorPallet.current[selectedColor]`.
-3. **Color swap isn't persisted.** `ColorSelector.swapHandler` mutates the ref in place,
-   bypassing `useColorPalette.swapColors()` (which persists to sessionStorage and is
-   **never imported — dead code**). Swap survives until reload, then reverts.
-4. **No active-tool indicator.** `drawAction` is a ref → selecting a tool triggers no
-   re-render → the toolbar physically cannot show selection. There is no `.active` style.
-   Direct cost of ref-as-state. (README lists this as a wanted feature.)
-5. **Closed popups/toolbar stay tab-focusable.** Hidden via `opacity: 0` /
-   `translateX(-100%)`, which do **not** remove elements from the a11y tree or tab order.
-   Keyboard users tab into invisible controls. No `inert`/`aria-hidden`/`display:none`.
-6. **`RoomPopup` never re-syncs its input.** `useState(roomId)` only seeds at mount, and
-   `PopupBase` never unmounts children (`isOpen` only toggles a class). Latent today
-   because `roomId` is seeded synchronously from sessionStorage.
-7. **`useSessionID` listens for the wrong key.** Guards `e.key === "client_uuid"` but
-   writes `"online-whiteboard-session-id"`. Cross-tab sync never fires.
-8. **`useDrawActions` captures `canvasRef.current` at first render** (`useCanvasDrawing`
-   passes `canvasRef.current`, not the ref). Works only because the handler array is
-   stashed in a ref on first render, when the canvas is already mounted. Fragile.
-9. **Accessibility, broadly.** `HamburgerButton`, `ColorSelector`'s buttons, and `<canvas>`
-   have **no accessible names**. No dialog role / Escape / focus trap in `PopupBase`.
-   `ColorPopup`'s `<label>` wraps two inputs so the number field is unnamed. `ToolMenu` is
-   the one good citizen — copy its pattern.
-10. **`console.log` left in `useColorPalette.ts:62`.**
-11. **Dead code:** `onColorChange` (`App.tsx:115`, no-op), `useColorPalette.swapColors`,
-    `setRoomId` (returned, unused), `backend/src/sockets/staging/*` (errorHandler.ts +
-    settupConnection.ts — 23 lines, **imported by nothing**), `database/Dockerfile` copies
-    `notes_table.sql` **twice** (2nd COPY is redundant).
-    ~~`routes/index.ts` stub~~ and ~~`express.json()` applied twice~~ — fixed 2026-07-16.
-
-**Security / robustness (no auth by design, but worth noting):**
-
-- **No input validation on socket messages.** `parseMessage` does `JSON.parse` and casts —
-  `as ClientSocketMessage` is a compile-time lie. A malformed `instruction` reaches the
-  pixel writers directly. `getIdxFromVec` does no bounds check, so a crafted `bucket`/
-  `patch` idx can read/write outside the intended region of the buffer (Uint8ClampedArray
-  writes OOB are silently dropped, so it's not memory-unsafe — but it's not _validated_
-  either). **Add a Zod schema at the socket boundary — highest-value security fix.**
-- **No rate limiting.** One client can pin a room's CPU with bucket fills.
-- **Unbounded room growth.** Any `roomId` string creates a room + a DB row forever.
-- `saveCanvas` runs `ensureCanvasTable()` on **every** call — a redundant DDL round-trip
-  per save (the schema is already created by `notes_table.sql` at init).
-
----
-
-## 10. Naming / spelling quirks (systemic — don't fix piecemeal)
-
-- **`Pallet`** (a shipping platform) is used throughout for **`Palette`**: `ColorPallet`,
-  `colorPallet`, `DEFAULT_COLOR_PALLET`.
-- **`Protocall`** for **`Protocol`**: `handleLineProtocall.ts`, `handleFillProtocall.ts`,
-  `helperProtocallMethods.ts` — but `handleCanvasProtocol.ts` and `handlePatchProtocol.ts`
-  are spelled correctly. **Inconsistent.**
-- `settupConnection.ts`, `Settup App & Sever` (server.ts) — "Setup"/"Server".
-- `compairColors` → `compareColors`. `Summery Types` → `Summary`.
-- Code uses `//#region` / `//#endregion` folding markers everywhere. **Match this style.**
-- Style: no semicolons, double quotes, 2-space indent.
-
-A rename sweep is a good early PR (mechanical, low-risk, visible) — but must be done in
-one atomic pass across all three packages since `shared/` has no build boundary.
-
----
-
-## 11. The loadtest harness (`loadtest/`)
-
-Standalone `ws` client that speaks the real protocol. **Gitignored** (`loadtest/` in
-`.gitignore`) — so it isn't part of the portfolio surface unless that changes.
+## 9. Running it
 
 ```bash
-cd loadtest && npm install
-npm run run  -- --clients 50 --room demo --durationMs 30000
-npm run ramp -- --room demo --levels 5,10,25,50,100,200
-```
-
-Genuinely smart: one process, one clock → measures **fan-out latency** (sender→receiver)
-with no clock-skew problem, keyed by `JSON.stringify(instruction)` in a shared pending map.
-`--sameRoom false` separates _total server capacity_ from _single-room fan-out capacity_.
-Ramp mode writes CSV after each level and fail-fasts on the knee.
-
-**Problems:**
-
-- **`npm run run` is a silent no-op on Windows.** The guard
-  `import.meta.url === \`file://${process.argv[1]}\`` never matches on win32
-(`C:\...`vs`file:///C:/...`). Exits 0 having done nothing. Fix:
-`pathToFileURL(process.argv[1]).href`. (`ramp`is unaffected — it calls`main()`
-  unconditionally.)
-- **Doesn't typecheck.** `randomInstruction()` omits `instructionId`/`sessionId`, now
-  required by `BaseInstruction`. `tsx` strips types without checking, so it works by
-  accident. No `typecheck` script.
-- **README documents the old snapshot-broadcast behavior** — its headline finding no
-  longer reproduces (§4.3), and the harness never exercises the current `resync` path.
-- Single event loop → **coordinated omission** at high client counts; no warmup discard;
-  always exits 0 so it can't gate CI.
-- **Writes to real room state** — pointing it at a real room permanently scribbles on it.
-
----
-
-## 12. Improvement backlog (portfolio-oriented, roughly by value)
-
-**Tier 1 — the ones that change how the project reads to an interviewer**
-
-1. ~~**Production build path.**~~ ✅ **DONE 2026-07-16.** See §7.4 and the Changelog.
-2. ~~**Tests.**~~ ✅ **DONE 2026-07-16.** 51 Vitest tests over `shared/utils/*`
-   (62% stmts / 90% branches). The uncovered remainder is the DOM-driven gesture
-   handlers (`handleDrawLineStart`, `getCanvasState`, `getPos`) — they need jsdom
-   plus a canvas polyfill, which is the natural next coverage step.
-3. ~~**Validate socket input**~~ ✅ **DONE** for the instruction payload — see
-   §9-security. Zod for the message _envelope_ is still open.
-4. **CI (GitHub Actions):** typecheck all 4 packages + lint + `npm test` on PR.
-   Everything it needs now exists and passes; nothing runs it automatically.
-   **This is the highest-value remaining item.**
-5. **Graceful shutdown.** On SIGTERM, flush every dirty room before exiting. The prod
-   image already runs `node` as PID 1 (not `npm`), so the signal _does_ reach the process —
-   nothing handles it yet. Currently `compose down` can lose up to 15s of drawing.
-
-**Tier 2 — correctness** 5. ~~Fix the UI bugs (hamburger, secondary color, swap persistence)~~ ✅ **DONE**. 6. Make `shared/` a real workspace package (npm workspaces) so it has one typecheck and
-the loadtest can't silently drift. (Mitigated for now: `typecheck:shared` +
-the loadtest's own `typecheck` script would both have caught the drift.) 7. ~~Active-tool indicator~~ ✅ **DONE** — see §4.7. 8. Backend graceful shutdown: on SIGTERM, flush all dirty rooms. Currently `docker compose
-   down` can lose up to 15s of drawing. The prod image already runs `node` as PID 1,
-so the signal arrives — nothing handles it.
-
-**Tier 3 — depth** 9. Rate-limit draw instructions per socket. 10. Binary protocol for snapshots — base64 costs +33% (57600B → 76800 chars **[verified]**).
-`ws` supports binary frames natively; would cut join cost meaningfully. 11. Redis pub/sub for the room registry → lets the backend scale past one process. Right
-now `rooms` is an in-process `Map`, so **the backend cannot be horizontally scaled at
-all**. Good architecture talking point. 12. Accessibility pass (§9.9) — model everything on `ToolMenu`. 13. Repo-wide spelling sweep (§10).
-
----
-
-## 13. Working agreements for this repo
-
-- **Do not implement anything without explicit go-ahead.** Analysis and proposals only.
-- **Changes must be incremental and testable** — one concern per change, with a stated way
-  to verify it.
-- **Explain every change**: what, why, and how the underlying mechanism works — the goal is
-  interview-readiness, not just working code.
-- Match existing style: no semicolons, double quotes, `//#region` markers, folder-per-
-  component with `index.tsx` + `styles.css`.
-- `shared/` has **no build boundary** — a change there hits frontend, backend, and loadtest
-  simultaneously. Always check all three.
-- Ask before: changing `CANVAS_WIDTH`/`HEIGHT` (silently wipes every stored canvas via the
-  dimension check in `loadCanvas`), or altering the DB schema.
-
-### Verifying a change
-
-```bash
-# DEV — Vite HMR + tsx watch
-docker compose up --build                                   # http://localhost:5173
+# DEV — Vite HMR + tsx watch.  http://localhost:5173
+docker compose up --build
 docker compose logs -f frontend
-docker compose down                                         # 'down -v' also nukes the DB volume
+docker compose down            # 'down -v' ALSO deletes the database volume
 
-# PROD — nginx + compiled backend. ALWAYS check a change against this too:
-# dev and prod are different pipelines and can disagree.
-docker compose -f docker-compose.prod.yaml up --build -d     # http://localhost:8080
-docker compose -f docker-compose.prod.yaml logs -f backend
+# PROD — nginx + compiled backend.  http://localhost:8080
+docker compose -f docker-compose.prod.yaml up --build -d
 docker compose -f docker-compose.prod.yaml down
 ```
 
-Run one stack at a time — they'd fight over host ports, and they use separate DB volumes.
+Run **one stack at a time** — they contend for host ports and use separate DB volumes.
+Dev publishes 5173/3000/5432; prod publishes **only** `PROD_PORT` (8080).
 
-Typecheck locally (the prod image build now does this too, so a type error fails the
-build): `cd frontend && npx tsc -b --force`; `cd backend && npm run typecheck`.
-
-Quick prod smoke test, no browser needed:
+Quick prod checks:
 
 ```bash
-curl http://localhost:8080/api/health           # {"status":"ok",...}
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8080/any/route   # 200 (SPA fallback)
-curl -s -m 3 http://localhost:3000/api/health   # MUST fail — backend is unpublished in prod
+curl http://127.0.0.1:8080/api/health                                    # {"status":"ok",...}
+curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8080/any/route   # 200 (SPA fallback)
+node scripts/smoke-test.mjs http://127.0.0.1:8080                        # full protocol probe
+node scripts/security-probe.mjs http://127.0.0.1:8080                    # adversarial probe
 ```
 
-Fast protocol probe without a browser — run a `ws` script inside the backend container
-(it already has `ws` installed):
+> **Use `127.0.0.1`, not `localhost`, when probing from a Windows host.** Docker publishes
+> the port on both `0.0.0.0` and `[::]`, but `localhost` can resolve to IPv6 `::1` where the
+> binding intermittently refuses connections — while `127.0.0.1` works. The symptom is
+> maximally misleading: every container reports **healthy**, nginx serves fine *inside* the
+> container, and yet the smoke test dies with a bare `fetch failed`, which reads exactly like
+> the app is broken. It isn't. CI runs on Linux and is unaffected.
+
+> **Windows/Git Bash:** prefix docker commands taking container paths with
+> `MSYS_NO_PATHCONV=1` and use a leading `//`, or paths get mangled to `C:/Program Files/Git/...`.
+
+### Docker specifics worth knowing
+
+- **Postgres 18 changed `PGDATA`** to `/var/lib/postgresql/18/docker`. Both compose files
+  therefore mount the **parent** `/var/lib/postgresql`. "Correcting" this to
+  `/var/lib/postgresql/data` looks right, matches every pre-18 tutorial, and **silently
+  persists nothing**.
+- **`container_name` vs service name**: `pool.ts` dials `POSTGRES_HOST` (`postgres-c`). Dev
+  gets that free from `container_name`; prod deliberately omits it (so both stacks can
+  coexist) and supplies a **network alias** instead. Removing that alias breaks prod DNS.
+- **Anonymous `/app/node_modules` volume** in both services masks the host's `node_modules`
+  so the container keeps its own installed deps.
+- **`CHOKIDAR_USEPOLLING=true`** — file-watch events don't cross the Windows/WSL2 boundary
+  reliably.
+
+---
+
+## 10. Vite specifics
+
+- **Dev and prod are different engines**: dev serves native ESM (no bundling); `vite build`
+  uses Rollup. Something can work in dev and break in the build — always check both.
+- **Aliases**: `@` → `./src`, `@shared` → `../shared`. The `@shared` alias is what makes the
+  shared-protocol architecture work on the frontend.
+- **`/@fs/` escape hatch**: `shared/` is *outside* the Vite root, and Vite serves it via
+  `/@fs/`. This is load-bearing — tightening `server.fs.allow` or changing the root breaks
+  the app instantly.
+- **The dev proxy is the most load-bearing 8 lines**: `/api` and `/ws` (with `ws: true`)
+  proxy to the backend, so the browser only ever talks to its own origin — no CORS, no
+  hardcoded backend URL. `frontend/nginx.conf.template` re-implements exactly this for prod;
+  **the two must be kept in agreement.**
+- **The invariant that makes one artifact run anywhere**: the client requests a *relative*
+  `/ws`, and `toWebSocketUrl` resolves it against `window.location`, upgrading
+  `http:`→`ws:` / `https:`→`wss:`. Do **not** "fix" this into a `VITE_WS_URL` env var —
+  that reintroduces a per-environment rebuild for no benefit.
+- `vite build` does **not** typecheck. `tsc -b` is what enforces types.
+
+---
+
+## 11. Tests and CI
+
+Three suites, each matched to what it is good at:
+
+| Suite | Command | Count | Needs |
+| --- | --- | --- | --- |
+| Shared protocol (unit) | `npm test` (root) | **162** in 15 files | nothing |
+| Frontend | `cd frontend && npm test` | **90** in 20 files (two projects) | nothing |
+| Backend | `cd backend && npm test` | **128** in 15 files (DB tests gated on `POSTGRES_PASSWORD`) | Postgres for the DB-gated ones |
+
+The shared suite is the highest-value code in the repo to test: pure, deterministic, no DOM
+/ network / database, and **both sides execute it** — a bug there desynchronises every
+client from the server's canvas.
+
+The **frontend** suite splits into two Vitest projects by file extension
+(`frontend/vitest.config.ts`): a `node` project for pure DOM-free logic (`*.test.ts`:
+colour maths, `localHold`, `reanchor`) and a `jsdom` project for React component tests
+(`*.test.tsx`, via Testing Library + `vitest.setup.ts` — added in Phase 5). Name the file
+for the environment you need.
+
+The backend's DB suites gate themselves on `POSTGRES_PASSWORD` so `npm test` stays green
+with no database. The pure ones (password hashing, input validation, origin allowlist) run
+everywhere.
+
+**CI** (`.github/workflows/ci.yml`) has two jobs:
+
+1. **verify** — shared tests + typecheck, frontend typecheck + lint + tests, backend
+   typecheck + integration tests against a `services: postgres` container, loadtest
+   typecheck (which is what catches the harness drifting off the protocol).
+2. **e2e** — builds the **production** images, brings the whole stack up with `--wait`, and
+   drives it over HTTP and WebSocket via `scripts/smoke-test.mjs`. This is what proves the
+   pieces agree, which unit tests cannot.
+
+> **Typecheck with `--noEmit`, never `tsc -b`.** Every package's `typecheck` script is
+> `tsc --noEmit` for a reason: `tsc -b` **emits** `.js` next to the `.ts` sources, and Vitest
+> then resolves the stale JavaScript in preference to the TypeScript. The symptom is
+> `Cannot find module '@shared/...'` from a `.js` file you never wrote, in tests that
+> passed a minute ago — it reads like the alias config broke, and *every* suite fails at
+> once, which by §12.1's own rule means "suspect the harness". Clean up with
+> `find <pkg>/src -name '*.js' -delete`, but scope it: `backend/src/types/ClientSocket.d.ts`
+> is a real tracked source file, and a broad `-name '*.d.ts' -delete` will eat it.
+
+Local integration tests: a native Windows Postgres on `:5432` **shadows** the Docker one for
+host connections — use a throwaway on a free port
+(`docker run -p 55432:5432 postgres:18-alpine`) and point `POSTGRES_PORT` at it.
+
+---
+
+## 12. Working agreements — READ BEFORE CHANGING ANYTHING
+
+These are enforced where they can be (see the gate below) and expected where they can't.
+
+### 12.1 Verify every change — typecheck is not verification
+
+`tsc` and `eslint` prove the code *compiles*, not that it *works*. Every feature needs
+evidence it does what it claims, at the cheapest level that actually demonstrates it:
+
+| Change | Minimum acceptable verification |
+| --- | --- |
+| Pure logic (`shared/`, utils, validation) | A unit test that fails before the change |
+| Repository / SQL | Integration test against a real Postgres |
+| Protocol change | Both sides updated + `scripts/smoke-test.mjs`, or a live socket probe |
+| UI behaviour / a11y | **Drive it.** Run the app and observe the actual behaviour |
+| Security control | A test asserting both the allow AND the deny path |
+
+State in the commit message *how* it was verified, with observed values where possible.
+"Typechecks" is not an answer for anything with runtime behaviour.
+
+#### Trust the failure signal before you trust the failure
+
+Two separate incidents in this repo produced the *same* misleading symptom — a test
+reporting `fetch failed` while the application was fine — and both cost a wrong diagnosis:
+
+1. **A masked exit code.** `docker compose up --wait -d | tail -2 && node smoke-test.mjs`
+   does not do what it looks like. A pipeline's exit status is the status of its **last**
+   command, so `&&` saw `tail` succeed. Compose had failed, the stack was never up, and the
+   smoke test ran against nothing — reporting what looked exactly like a broken app.
+2. **A host resolution quirk.** `localhost` resolving to IPv6 `::1`, where the published
+   port refused, while `127.0.0.1` worked (see §9).
+
+The rules that follow from this:
+
+- **Never pipe a command whose exit code you are about to branch on.** Either drop the
+  pipe, or `set -o pipefail` first, or capture the status explicitly:
+  ```bash
+  set -o pipefail                       # simplest fix; failure propagates through pipes
+  docker compose ... up --wait -d; rc=$? # or capture it before trimming output
+  ```
+- **When a probe fails, confirm the harness before blaming the code.** Is the stack up
+  (`docker compose ps`)? Is the port answering (`curl`)? A green container list and a
+  failing probe is a *contradiction*, and the contradiction is the clue.
+- **Suspicion is proportional to symptom breadth.** One assertion failing is usually the
+  code. *Everything* failing at once — especially the very first network call — is usually
+  the harness.
+
+### 12.2 Commit after each verified feature
+
+One concern per commit, on the **`dev`** branch, **after** it is verified. `dev` is the
+integration branch — all work lands here directly (not on scattered feature branches), and
+`dev` is **squash-merged to `main` via a PR as a versioned release** (`V1.x.0`). So `main`
+carries one clean commit per release while `dev` keeps the granular, per-concern history
+this repo treats as documentation. Commit messages explain *why*, not just what.
+
+> **Squash-divergence gotcha when opening the dev→main PR.** Because each release
+> squash-merges `dev` into `main`, `main` becomes an older *subset snapshot* of `dev`'s
+> work whose commits are **not ancestors** of `dev` — a naive merge then conflicts and
+> duplicates code. Before opening the PR, record `main` as an ancestor without changing
+> `dev`'s tree: `git merge -s ours origin/main` on `dev` (verify the tree sha is unchanged),
+> then push. Confirm clean with `git rev-list origin/main ^origin/dev` (empty = main is an
+> ancestor). This is why `dev`'s history carries periodic "Merge main into dev" commits.
+
+**Never push, open a PR, or merge without explicit approval.** Committing locally is
+pre-authorised; publishing is not.
+
+### 12.3 The pre-commit gate
+
+`.githooks/pre-commit` runs on every commit. Enable it once per clone:
 
 ```bash
-docker compose exec -T backend node //app/probe.cjs   # note: // for Git Bash on Windows
+git config core.hooksPath .githooks
 ```
 
-On Windows/Git Bash, prefix docker commands that take container paths with
-`MSYS_NO_PATHCONV=1` or paths get mangled to `C:/Program Files/Git/...`.
+It runs the shared tests + typecheck always, and the frontend/backend checks when those
+packages are touched. **Because `shared/` has no build boundary, a change there re-verifies
+both consumers.** Backend integration tests are deliberately excluded — they need a live
+database, and a hook that needs a database is a hook people disable; CI covers those.
 
-### Key files, ranked by how often you'll need them
+`git commit --no-verify` exists. Use it only for a throwaway WIP commit on a scratch branch,
+never for anything intended to merge.
+
+### 12.4 Prevent scope creep
+
+- **One concern per change.** If you find an adjacent problem while working, *write it down*
+  (§14) — do not fix it in the same commit.
+- A refactor and a behaviour change never share a commit. If a "cleanup" changes what the
+  user sees, it is not a cleanup.
+- Mechanical repo-wide renames get their **own** commit with nothing else in it, so review
+  and `git bisect` can trust them.
+- Don't delete deliberately-provisioned scaffolding (e.g. `rooms.title`, which is
+  schema+read-path groundwork for a future feature) just because it has no caller yet. Ask.
+
+### 12.5 Respect feature dependencies
+
+Before you change one of these, check the others:
+
+- **`shared/*`** → verify frontend **and** backend **and** loadtest. No build boundary.
+- **A migration** → update `backend/src/db/schema.ts` by hand. Nothing enforces that they
+  agree; if they disagree, queries typecheck against a schema the database doesn't have and
+  fail at runtime.
+- **The wire protocol** (`shared/types/socketProtocol.ts`) → update the server handler, the
+  client dispatcher, and `scripts/smoke-test.mjs`.
+- **`vite.config.ts` proxy** → mirror it in `frontend/nginx.conf.template`, or it works in
+  dev and 404s in prod.
+- **An authorisation rule** → change the shared helper, not a call site.
+
+### 12.6 Ask before
+
+- Changing `CANVAS_WIDTH`/`CANVAS_HEIGHT` — `loadCanvas` blanks any stored canvas whose
+  dimensions don't match, so this **silently destroys every saved drawing**.
+- Altering the DB schema, or editing an already-applied migration (write a new one).
+- Anything that changes the wire protocol in a way old clients can't handle.
+- Adding a dependency. Prefer the platform (this repo uses built-in `crypto` for scrypt and
+  the browser's native `WebSocket` for exactly this reason).
+
+### 12.7 Match the existing style
+
+No semicolons, double quotes, 2-space indent, `//#region` / `//#endregion` folding markers,
+folder-per-component with `index.tsx` + `styles.css`. Comments explain **why**, not what —
+and if you change behaviour, fix the comment above it in the same commit. Stale comments are
+worse than none; readers stop trusting all of them.
+
+### 12.8 Naming — one concept, one name, everywhere
+
+The repo has already paid for getting this wrong: `Pallet` (a shipping platform) meant
+`Palette` for months, and `Protocall` vs `Protocol` split the draw handlers into two
+spellings that both had to be imported side by side. Renaming later cost an atomic
+cross-package sweep, because `shared/` has no build boundary.
+
+- **Spell it correctly, in full, in English.** No invented words, no phonetic guesses. If
+  you are unsure of a spelling, look it up before it reaches three packages.
+- **Identifiers use `color`, prose may use "colour".** `color` matches the DOM, CSS and the
+  existing `ColorType`/`colorsEqual` API. Do not introduce `colour` as an identifier.
+- **One concept = one name across frontend, backend and shared.** Never rename a thing as it
+  crosses a package boundary; the wire protocol and the type that models it share names.
+- **Booleans read as predicates:** `isOpen`, `hasEditAuthority`, `canDraw`, `shouldRetry`.
+- **Handlers:** `onThing` for the prop a component accepts, `handleThing` for the
+  implementation that satisfies it. Don't use `onThing` for a local function.
+- **Hooks are `useThing`** and return a named object once there is more than one value —
+  positional tuples stop being readable at three.
+- **Don't abbreviate new identifiers.** `instruction`, not `inst`; `revision`, not `rev`.
+  (Existing `inst`/`da` params predate this rule; match locally, don't spread it.)
+- **Module-scope constants are `SCREAMING_SNAKE`** and carry a comment saying *why that
+  value* — `MAX_STROKE_SIZE = 32` is a security bound, not a taste preference.
+
+### 12.9 Rules that exist because something broke
+
+Each of these encodes a real defect. They are cheap to follow and expensive to relearn.
+
+- **Never trust network data through an `as` cast.** `as` is a compile-time assertion, not a
+  runtime check. Validate at the fan-in point (§13.2). A crafted `nextPos` once froze the
+  event loop for every room because Bresenham is a synchronous `while (true)`.
+- **Never loop over a network-supplied number without a bound.** Every such value needs a
+  cap in `validateInstruction`, and the cap needs a comment explaining the abuse it stops.
+- **An authorisation rule lives in exactly one shared helper.** Use `canDraw` /
+  `hasEditAuthority` / `canManageRoom` — never re-inline `role === "owner"` at a call site.
+  The client and server must grey out and enforce with the *same* predicate, or the UI will
+  eventually lie about what the server will accept.
+- **Duplicate logic moves to `shared/` the second time it appears, not the third.** Colour
+  equality reached three implementations (fill, undo CAS, frontend) before anyone noticed.
+  If the fill and the undo CAS had ever disagreed on "same colour", clients would have
+  silently drifted from the server's canvas.
+- **A magic number used on both sides is a shared constant.** Checkpoint-name length and the
+  role list were each hardcoded twice and could drift independently.
+- **Check `utils/` before writing a helper.** Relative-time formatting, byte clamping and
+  localStorage array access each got reimplemented because the original wasn't exported.
+  If you need a private helper elsewhere, export it — don't retype it.
+- **Don't `export` until there are two callers.** Unused exports read as public API, so
+  nobody dares delete them. Several accumulated exactly this way.
+- **Prefer exhaustive `switch` over a discriminated union with no `default`.** That way
+  adding a variant to the union is a *compile* error at every site that must handle it.
+  `applyDrawInstructionToCanvas` relies on this; keep it.
+- **One modal pattern.** Route dialogs through `PopupBase` so `role="dialog"`, `aria-modal`,
+  Escape-to-close and `inert` are handled once. Two components bypassed it and each lost a
+  different piece of that.
+- **Interactive means keyboard-operable.** Anything with `role="slider"`/`"button"` or a
+  `tabIndex` needs key handling and ARIA state. A focusable control that ignores the
+  keyboard is *worse* than a plain `<div>`: it advertises support it doesn't have.
+
+### 12.10 Definition of done
+
+A change is finished when **all** of these are true — not when it compiles:
+
+1. It does what was asked, and nothing that wasn't (§12.4).
+2. It was **driven**, not just typechecked (§12.1). Name the observation in the commit.
+3. Tests cover the new behaviour, and you watched a relevant one **fail** before it passed.
+4. Comments touching the changed behaviour are updated in the same commit.
+5. Every consumer named in §12.5 was checked.
+6. The pre-commit gate passes without `--no-verify`.
+7. Anything you noticed but deliberately did not fix is written down in §14.
+
+---
+
+## 13. Invariants — subtle things that will bite you
+
+### 13.1 Socket listeners attach **before** any await
+
+`RoomManager.addClient` registers `message`/`close`/`error` synchronously, then awaits the
+room load, buffering anything that arrives meanwhile. Moving a listener after the await
+reintroduces a real bug: clients ping the instant the socket opens, and a room only loads
+from the DB when it is *not* cached — i.e. for the first client into any room, every time.
+The dropped ping caused a pong timeout → close 4000 → reconnect → and that client leaving
+evicted the room, so the retry was cold too. A reconnect loop that silently dropped a user's
+first strokes.
+
+### 13.2 `applyDrawInstructionToCanvas` is the single fan-in point
+
+Every network instruction — server broadcast path *and* client receive path — goes through
+it, which is why validation lives there. Returning `null` means: no canvas mutation, no
+revision bump, no broadcast.
+
+The severe case validation prevents is a **hang, not corruption**: Bresenham is a
+`while (true)` stepping one pixel at a time, so `nextPos: [1e9, 1e9]` spins for a billion
+iterations. Node is single-threaded, so one message freezes **every room**, and being
+synchronous it is uninterruptible. A patch `idx` must also be 4-byte aligned or one colour
+smears across two pixels' channels, and a patch is rejected **wholesale** if any entry is
+bad — half-applying it would desync the sender's undo stack from the canvas.
+
+### 13.3 Off-canvas strokes: raw positions + clipping (don't "simplify")
+
+`LineAction.prevPos/nextPos` hold **raw, possibly off-canvas** pointer positions;
+`handleDraw` clips with `clipSegmentToCanvas` (Liang–Barsky) and sends only the clipped part.
+
+- **Clipping ≠ clamping.** Clamping each axis independently sends (200,60) → (119,60), but
+  the segment from (50,50) actually leaves the canvas at (119,55). Clamping *bends* the line.
+  There is a test asserting exactly this.
+- **Re-entry needs the raw value.** Coming back on-screen, the segment must start where the
+  real line crosses the edge — uncomputable from a clamped position.
+- **`handleDrawLineLeave` is the wrong place to fix edge behaviour.** `useDrag` calls
+  `setPointerCapture`, and while a pointer is captured the browser does **not** fire
+  `pointerleave` — so that handler never runs mid-drag. The fix must live on `pointermove`.
+
+`getPosCorrected` still exists and is still right for the **bucket**: a fill clicked outside
+the canvas should be ignored, not clipped.
+
+### 13.4 A room always has exactly one owner
+
+Enforced structurally, not by counting: the `room_one_owner` **partial unique index**
+(`WHERE role = 'owner'`), plus `ensureMembership` catching the resulting `23505` and falling
+back to editor, `setRole` doing ownership changes as an atomic **transfer** in one
+transaction, and `removeMember` refusing to remove an owner. The room can never end up
+ownerless or two-owned. (`countOwners` exists only so tests can assert this.)
+
+### 13.5 The ref-vs-state splits are deliberate
+
+Selected tool, brush size, colour palette and cursor positions live in **refs** read by
+pointer handlers on every event, with parallel **state** only where the UI must re-render.
+The alternative is re-rendering React on every pointer move. Know the trade-off before
+"fixing" it: `ColorSelector`'s swatch freshness is currently incidental to an unrelated
+re-render, which is the cost.
+
+### 13.6 node-postgres JSONB asymmetry
+
+node-postgres does **not** serialise a JS object for a JSONB column on INSERT (hand it
+`JSON.stringify`) but **does** parse it on SELECT. That asymmetry is encoded in
+`draw_events.instruction`'s three-arm `ColumnType` in `schema.ts`. Get it wrong and it's a
+runtime error, not a type error. Also: `db.destroy()` ends the pool — don't also call
+`pool.end()`.
+
+### 13.7 `.env` must be LF
+
+CRLF line endings made Compose store the Postgres password **with a trailing `\r`**. The app
+worked only because the backend read the same CRLF file; any clean client (host test, CI)
+failed auth. `.gitattributes` now forces LF — don't undo it.
+
+---
+
+## 14. Known gaps and backlog
+
+**Architectural**
+- **No horizontal scaling.** `rooms` is an in-process `Map`, so presence, cursors, votes and
+  broadcasts are all per-process. Multi-instance needs Redis pub/sub. This is the single
+  biggest architectural limitation and a good interview topic.
+- Rate limiting and sessions are likewise per-process/in-memory.
+
+**Naming — done**
+- The long-standing `Pallet`→`Palette` and `Protocall`→`Protocol` misspellings were
+  corrected in one atomic pass (plus `Settup`→`Setup`, `Summery`→`Summary`). Files
+  `handleFillProtocol.ts`, `handleLineProtocol.ts` and `helperProtocolMethods.ts` are now
+  spelled consistently with `handleCanvasProtocol`/`handlePatchProtocol`.
+- **One deliberate leftover:** `COLOR_PALETTE_STORAGE_KEY`'s *value* is still
+  `"online-whiteboard-color-pallet"`. It is a live sessionStorage key — renaming the string
+  would orphan every existing user's saved colours. Identifiers are free to rename;
+  persisted data needs a migration. Don't "finish" this one.
+
+**Smaller**
+- **A full page reload into a DIFFERENT room may leave the client not joined to it.**
+  Found while browser-testing Phase 4. `roomId` comes from `useSessionStorage`; the suspicion
+  is that on mount the hook briefly yields the default (`testRoom`) before hydrating the stored
+  value, so the socket connects to `testRoom`, then `roomId` changes and it reconnects — and
+  the reconnect does not reliably land the client in the intended room (a fresh peer joining
+  the same room id saw presence 1, and the client rendered none of that peer's draws). A
+  fresh TAB load (no reload) is unaffected, and the in-app room switch may be too — reproduced
+  only via reload with a pre-seeded different `sessionStorage` room. Not chased down because it
+  is unrelated to the resize/undo work it surfaced under; Phase 5 reworks the room UI and is
+  the natural place to fix it. Verify with two clients + a presence assertion after a reload.
+- `rooms.title` is provisioned but never written (deliberate — see §12.4).
+- Email verification and password reset. (The breached-password **HIBP** check is **done** —
+  it shipped in Phase 1; see §7/§8/§17. Only verification and reset remain.)
+- The loadtest only exercises `ping` + a `pencil` draw — it doesn't touch presence, cursors,
+  votes, checkpoints, playback, spray or brush size, and never sends `resync`, so it does
+  not exercise the snapshot path.
+- **Modal semantics — done (Phase 5).** Every dialog now routes through `PopupBase`, so the
+  dialog role, `aria-modal`, Escape-to-close and `inert`-when-closed are handled once. The
+  `Dashboard`'s hand-rolled Escape and the `PlaybackViewer`'s missing Escape/`inert` are gone.
+- **Stale CSS var names in two dialog stylesheets.** `Dashboard/styles.css` and
+  `PlaybackViewer/styles.css` still reference `var(--border,#ccc)` / `var(--card-bg,…)` /
+  `var(--popup-fg,…)` on their inner controls (buttons, cards) — names that don't exist, so
+  they fall through to the hardcoded fallbacks and ignore the theme, the same bug fixed on
+  the top-right buttons in Phase 5. Left out of the `PopupBase`-routing commit deliberately
+  (§12.4): fixing them means choosing real theme colours for those surfaces and re-driving
+  the appearance, which is a separate concern from the modal-semantics change.
+- `.env` lacks `PROD_PORT` (documented in `.env.example`; compose defaults it to 8080).
+
+---
+
+## 15. Key files, ranked by how often you'll need them
 
 1. `backend/src/sockets/roomManager/index.ts` — all server realtime logic
-2. `shared/types/socketProtocol.ts` + `shared/types/drawProtocol.ts` — the contracts
+2. `shared/types/socketProtocol.ts` + `shared/types/drawProtocol.ts` — the wire contracts
 3. `frontend/src/hooks/useRoomConnection.ts` — client message dispatch
-4. `frontend/src/app/App.tsx` — composition root
-5. `frontend/vite.config.ts` — aliases + proxy
-6. `docker-compose.yaml` + `.env` — how it all runs
-7. `shared/utils/handleCanvasProtocol.ts` — the apply-instruction fan-in point
-8. `frontend/src/hooks/useUndoRedo.ts` + `shared/utils/handlePatchProtocol.ts` — CAS undo
+4. `shared/types/identity.ts` — roles + the authorisation rules both sides call
+5. `frontend/src/app/App.tsx` — composition root
+6. `shared/utils/handleCanvasProtocol.ts` — the apply-instruction fan-in point
+7. `backend/src/db/schema.ts` + `backend/src/db/migrations/` — the data model
+8. `frontend/vite.config.ts` + `frontend/nginx.conf.template` — aliases + the two proxies
+9. `docker-compose*.yaml` + `.env` — how it all runs
+10. `frontend/src/hooks/useUndoRedo.ts` + `shared/utils/handlePatchProtocol.ts` — CAS undo
+
+---
+
+## 16. Decision record
+
+Decisions taken deliberately, with the alternative that was **rejected and why**. The rejected
+option usually looks like an obvious improvement to someone reading the code cold — that is
+exactly why it is written down. Do not "fix" one of these without revisiting the reasoning.
+
+| Decision | Rejected alternative | Why |
+| --- | --- | --- |
+| **Email: blind index + encrypted at rest.** Store a **slow-KDF (scrypt) blind index** of the email for lookup, and the address encrypted (AES-256-GCM, AAD = user id) with a key held outside the database. | Plaintext email column. | A database-only leak then reveals no addresses. Plaintext is the single most commonly breached PII field. |
+| | **HMAC-SHA256** blind index (the usual choice for a blind index). | Email is low-entropy and enumerable, so a *fast* keyed hash lets anyone holding the DB + pepper brute-force the whole address space offline. A deliberately slow KDF makes each guess cost real time. (The code explicitly rejects HMAC here.) |
+| | Hash-only, unrecoverable. | Loses the address forever: no password reset, no verification, no way to contact a user. |
+| **Passwords: scrypt**, salted and memory-hard. | Anything faster (SHA-256, bcrypt-with-low-cost). | A fast hash is exactly what makes a leaked table brute-forceable. Memory-hardness is the point. |
+| **100 ms responsiveness is PERCEPTUAL.** Your own action renders instantly and is held ≥100 ms against a colliding remote instruction; final pixels still converge byte-identically. | "First writer actually wins." | Real conflict resolution would change the authoritative-server model and risk divergence. The goal is that input never *feels* eaten — not that collaborators can't paint over each other. |
+| **Ownership: persistent, opt-in.** You claim an unowned room and keep it across sessions. | Session-only ownership released on disconnect. | Every room setting (guest-editing toggle, assigned roles) would reset whenever the last owner left. |
+| **Resize: crop/pad from top-left.** | Scale/resample. | Resampling rewrites every pixel, so the undo stack and event log no longer describe the canvas. Crop/pad is lossless for the kept region. |
+| **Snapshots: binary frames + deflate; `draw_events` stays raw JSON.** | Compressing the event log too. | Instructions are tiny and on the latency-critical path; compressing them trades the thing we care about (speed) for the thing we don't (a few bytes). |
+| **Compression is APPLICATION-level: deflate the snapshot payload ourselves.** `perMessageDeflate: false` is set explicitly in `server.ts`. | Transport-level `permessage-deflate` on the `ws` server (which is what was originally asked for). | OWASP advises against transport compression: when attacker-influenced data shares a compression context with secrets, the compressed **size** leaks content — the CRIME/BREACH class. Compressing only the snapshot payload means the compressed buffer holds pixel bytes and nothing else, so no oracle exists. Same bandwidth win, and far more predictable memory, which `permessage-deflate` is notoriously not. **Do not "simplify" this by turning the flag back on.** |
+| **History: uniform decimation.** | Keep the ends sharp, thin only the middle. | Chosen so the *whole* timeline stays scrubbable at even fidelity. Accepted cost: recent history is thinned too. |
+| **UI tests: Testing Library + jsdom, plus the two-client Node harness.** | Playwright E2E. | Avoids a browser-automation toolchain and CI browser downloads. Accepted cost: hover tooltips are asserted via ARIA attributes, not real hover. |
+| **Undo is `Ctrl+Z` / `Ctrl+Shift+Z`.** | `Ctrl+V`. | `Ctrl+V` is paste; shadowing a universal shortcut confuses every user. |
+| **Display names cap at 24 chars**, ellipsised, full value in `title` + `aria-label`. | Hard truncation. | Truncating without the full value in an accessible attribute hides information from screen readers. |
+| **No vote system.** Destructive actions are owner-only. | Consensus voting among recent editors (previously implemented, now removed). | A single accountable owner is simpler to reason about and to explain, and removes a whole class of stuck-vote edge cases. |
+
+---
+
+## 17. Roadmap — where the project is
+
+Seven phases, ordered by dependency and by the stated priority: **security → speed →
+memory**. Each lands as its own verified commit (§12.2). Phases 1–2 are done.
+
+### ✅ Phase 1 — Security
+
+Socket envelope validation (replacing an `as` cast that checked nothing at runtime); a
+patch entry-count bound and an explicit `maxPayload` (`ws` defaults to 100 MiB);
+weighted-cost flood control and per-identity connection caps; email encrypted at rest
+behind a slow-KDF blind index; breached-password screening via HIBP k-anonymity; and a
+session lifecycle that actually disconnects sockets on logout.
+
+### ✅ Phase 2 — Ownership, roles and permissions
+
+Voting removed entirely. Everyone joins as a **viewer**; ownership is claimed, released,
+and transferable, never automatic. `open_editing` decides whether anyone below editor may
+draw. Editor requests round-trip to the owner.
+
+### ✅ Phase 3 — Protocol, compression, and the 100 ms guarantee
+
+- Snapshots moved from a base64 JSON field to **binary WebSocket frames** — a versioned
+  envelope (`shared/utils/binaryFrame.ts`): a small JSON header plus the raw payload.
+- The snapshot payload is **application-level deflated** (`deflate-raw`), never
+  `permessage-deflate` (§16, and it stays off). Blank canvas: ~57 KB → ~70 B on the wire.
+- Snapshot/checkpoint `BYTEA` columns are **gzipped** (`pixelStorage.ts`); the CRC catches
+  silent corruption that the wire's raw-deflate does not need to. `draw_events` stays JSON.
+- Patches travel as **packed binary frames** (12 B/entry, `shared/utils/patchCodec.ts`), so
+  `maxPayload` came down honestly from 4 MiB to **256 KiB**.
+- **The 100 ms guarantee** is a display-only overlay (`frontend/src/utils/localHold.ts`):
+  remote instructions apply to the authoritative buffer immediately (never diverges), while
+  a locally-painted pixel is *shown* on top for 100 ms. Driven live: a colliding remote
+  colour stayed suppressed through 60 ms, revealed at ~123 ms, and converged byte-identical
+  to the server.
+- **A convergence harness** (`shared/utils/__tests__/convergence.test.ts`) now asserts N
+  clients end byte-identical to the server — and found a pre-existing patch-replay divergence
+  that was fixed as part of the phase.
+
+Sync-model risk called out below was real: the patch-replay fix and the cold-room join race
+both surfaced here. Convergence is tested explicitly (unit harness + a byte-compare in the
+smoke test + a live browser drive), not just delivery.
+
+### ✅ Phase 4 — Per-room canvas resize
+
+Canvas dimensions moved from compile-time constants to a per-room `CanvasDims`
+(`shared/constants/canvas`), threaded through every index/bounds/validation/apply function
+in `shared/`. New rooms default to **256×256**; a room may be resized within **[16, 512]**
+(owner-only, `resize` socket message, crop/pad from top-left per §16, forcing a resync).
+The snapshot row is authoritative for a room's size; `resizePixels` does the crop/pad; a
+migration adds CHECK constraints on every stored dimension. `maxPayload` rose to 4 MiB to
+fit the largest full-canvas undo. The client adopts a live resize from the snapshot header
+and resets its undo stacks (stale byte indices) via `canvasResetKey`. Landed in three
+commits: the mechanical parameterisation, the per-room wiring, and the resize operation.
+
+### ✅ Phase 5 — UI redesign (**large**)
+
+Retractable **right** sidebar, desktop and mobile, with three tabs:
+
+- **Drawing** — square icon dropdown of tools (tooltips carry name + shortcut), undo/redo,
+  primary/secondary colour inputs with a swap button (the primary sits raised), then a
+  contextual panel per tool (e.g. stroke width for pencil/eraser).
+- **Room** — connected count, collapsible name list, claim/**release** ownership button
+  (one transforms into the other), guest-draw toggle, clear and resize icon buttons greyed
+  for non-owners, editor-request accept/deny, download icon bottom-right.
+- **Timeline** — checkpoints for the owner, scrubbing for everyone.
+
+Also: keyboard shortcuts active while open, a full ARIA pass, merge the two `relativeTime`
+formatters, and route every dialog through `PopupBase`. The canvas stays pan/zoomable.
+
+**Done.** The jsdom + Testing Library stack (§11) and the retractable sidebar shell
+(roving-tabindex tablist, `inert` when collapsed) landed first, then all three tabs as
+thin compositions:
+
+- **Drawing** — a `ToolPicker` listbox (icon dropdown), undo/redo, `ColorControls`
+  (primary/secondary swatches + swap), and a contextual `StrokePanel` shown only for
+  stroke tools.
+- **Room** — `MemberList`, `OwnershipButton`, the open-editing `Toggle`, `EditorRequests`,
+  `CursorControls`, `ResizeControl` (which also finished Phase 4's resize UI), and
+  clear + download. Reads permissions through the shared predicates the server enforces.
+- **Timeline** — `CheckpointList` + the `PlaybackViewer` overlay.
+
+The superseded floating components were deleted (`ToolMenu`, `ColorSelector`,
+`HamburgerButton`, `PresenceRoster`, `CheckpointsPopup`); reusable primitives (`Toggle`,
+`IconButton`, `LabelledSlider`) live once.
+
+The closing refactor + a11y/cleanup pass: `App.tsx` became a thin composition root — the
+tool/stroke/eyedropper, sidebar and colour-popup state clusters moved into
+`useDrawingTools` / `useSidebar` / `useColorPopup` (plus a `useDisclosure` primitive),
+preserving the §13.5 ref-vs-state splits. A central `useKeymap` binds the tool shortcuts
+(P/E/F/S/I) while the sidebar is open plus Ctrl/Cmd+Z and Ctrl+Shift+Z; the `ToolPicker`
+listbox was made genuinely keyboard-operable (arrow/Home/End/Enter/Escape + focus
+management); the two `relativeTime` formatters merged into `utils/relativeTime.ts`; the
+Dashboard and `PlaybackViewer` were routed through `PopupBase` so every dialog shares the
+role / aria-modal / Escape / inert contract; and the floating top-right account/room
+buttons became a real flex layout. The canvas stays pan/zoomable. (The Testing Library +
+jsdom choice is recorded in §16.)
+
+### Phase 6 — Timeline scrubbing + uniform decimation
+
+Start-to-end scrub for everyone, checkpoint navigation for the owner, and uniform
+decimation once a room's history exceeds its cap (§16).
+
+### Phase 7 — Fundamentals writeup
+
+How every change works at a fundamental level: the crypto and what each part defends
+against, why the 100 ms hold preserves convergence, where the bytes go, the permission
+model, and the decimation maths. Written to be defensible in an interview.

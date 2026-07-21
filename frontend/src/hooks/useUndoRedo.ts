@@ -2,10 +2,17 @@
 import { useCallback, useRef, useState, type RefObject } from "react"
 
 import useSessionID from "./useSessionID"
+import { holdLocalPixels } from "@/utils/localHold"
+import { reanchorEntries } from "@/utils/reanchor"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
-import { getCanvasState, updateCanvas } from "@shared/utils/helperProtocallMethods"
+import {
+  canvasDimsOf,
+  getCanvasState,
+  updateCanvas,
+} from "@shared/utils/helperProtocolMethods"
 
+import type { CanvasDims } from "@shared/constants/canvas"
 import type {
   DrawInstruction,
   PatchEntry,
@@ -36,6 +43,7 @@ export type UseUndoRedoResult = {
   canUndo: boolean
   canRedo: boolean
   notice: string | null
+  reanchorHistory: (from: CanvasDims, to: CanvasDims) => void
 }
 //#endregion
 
@@ -114,7 +122,8 @@ export default function useUndoRedo(
       if (!canvas) {
         return null
       }
-      const canvasState = getCanvasState(canvas)
+      const dims = canvasDimsOf(canvas)
+      const canvasState = getCanvasState(canvas, dims)
       if (!canvasState) {
         return null
       }
@@ -129,13 +138,17 @@ export default function useUndoRedo(
       const applied = applyDrawInstructionToCanvas(
         canvasState.imageData,
         instruction,
+        dims,
       )
       if (!applied) {
         return null
       }
-      updateCanvas(canvas)
+      updateCanvas(canvas, dims)
 
       const appliedPatch = applied as PatchInstruction
+      // An undo/redo is a local action too — hold the pixels it just changed so a
+      // colliding remote instruction cannot visibly undo the undo for 100 ms.
+      holdLocalPixels(appliedPatch.entries, Date.now())
       sendDrawInstruction(appliedPatch)
       return appliedPatch
     },
@@ -196,6 +209,29 @@ export default function useUndoRedo(
     setCanUndo(true)
   }, [applyLocally, showNotice])
 
-  return { pushAction, undo, redo, canUndo, canRedo, notice }
+  // Re-anchors both stacks to a resized canvas rather than discarding them. Each
+  // stored entry's byte index encodes the OLD stride, so after a width change it
+  // would point at the wrong pixel (in-range) or out of range — neither of which
+  // is safe: an in-range wrong index corrupts, and an out-of-range one fails the
+  // WHOLE undo action, because a patch is validated all-or-nothing. Re-indexing
+  // top-left (matching how the pixels themselves are cropped/padded) keeps every
+  // entry whose pixel still exists and drops only those a shrink cut away, so a
+  // partly-cropped stroke still undoes its surviving part. See @/utils/reanchor.
+  const reanchorHistory = useCallback((from: CanvasDims, to: CanvasDims) => {
+    const remap = (action: Action): Action | null => {
+      const entries = reanchorEntries(action.entries, from, to)
+      return entries.length > 0 ? { ...action, entries } : null
+    }
+    undoStack.current = undoStack.current
+      .map(remap)
+      .filter((action): action is Action => action !== null)
+    redoStack.current = redoStack.current
+      .map(remap)
+      .filter((action): action is Action => action !== null)
+    setCanUndo(undoStack.current.length > 0)
+    setCanRedo(redoStack.current.length > 0)
+  }, [])
+
+  return { pushAction, undo, redo, canUndo, canRedo, notice, reanchorHistory }
 }
 //#endregion

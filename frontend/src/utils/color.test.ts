@@ -3,11 +3,30 @@ import { describe, expect, it } from "vitest"
 import {
   colorToHex,
   colorToHex8,
-  colorsEqual,
   hexToColor,
   hsvToRgb,
+  readableTextColor,
   rgbToHsv,
 } from "./color"
+
+describe("readableTextColor", () => {
+  it("uses dark text on light backgrounds", () => {
+    expect(readableTextColor("#ffffff")).toBe("#000000")
+    expect(readableTextColor("#bfef45")).toBe("#000000") // pale green
+    expect(readableTextColor("#fabed4")).toBe("#000000") // pink
+    expect(readableTextColor("#dcbeff")).toBe("#000000") // lavender
+  })
+
+  it("uses light text on dark backgrounds", () => {
+    expect(readableTextColor("#000000")).toBe("#ffffff")
+    expect(readableTextColor("#4363d8")).toBe("#ffffff") // blue
+    expect(readableTextColor("#800000")).toBe("#ffffff") // maroon
+  })
+
+  it("falls back to black for malformed input", () => {
+    expect(readableTextColor("not-a-color")).toBe("#000000")
+  })
+})
 
 describe("rgbToHsv / hsvToRgb", () => {
   it("maps the primary colors to the expected hues", () => {
@@ -65,12 +84,5 @@ describe("hex conversion", () => {
   it("round-trips color -> hex8 -> color", () => {
     const color = { r: 12, g: 200, b: 44, a: 130 }
     expect(hexToColor(colorToHex8(color))).toEqual(color)
-  })
-})
-
-describe("colorsEqual", () => {
-  it("compares every channel including alpha", () => {
-    expect(colorsEqual({ r: 1, g: 2, b: 3, a: 4 }, { r: 1, g: 2, b: 3, a: 4 })).toBe(true)
-    expect(colorsEqual({ r: 1, g: 2, b: 3, a: 4 }, { r: 1, g: 2, b: 3, a: 5 })).toBe(false)
   })
 })
