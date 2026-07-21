@@ -33,7 +33,7 @@
 
   border-radius: 1rem;
 
-  background-color: var(--sub-text-color);
+  background-color: var(--muted-text-color);
   transition: background-color 0.15s ease;
 }
 
@@ -43,7 +43,7 @@
 
 /* The focus ring rides on the track since the input itself is visually hidden. */
 .toggle-input:focus-visible + .toggle-track {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 

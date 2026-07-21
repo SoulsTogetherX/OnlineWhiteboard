@@ -3,7 +3,7 @@
   flex-shrink: 0;
 
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--toolbar-background);
+  background-color: var(--panel-background);
 }
 
 .tab-bar-button {
@@ -41,7 +41,7 @@
 }
 
 .tab-bar-button:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
 }
 
@@ -49,6 +49,6 @@
    toolbar tint so it visually joins the panel below it. */
 .tab-bar-button-active {
   border-bottom-color: var(--accent-color);
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   font-weight: 600;
 }

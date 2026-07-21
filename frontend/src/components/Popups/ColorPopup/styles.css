@@ -24,7 +24,7 @@
 
   margin: 4px 0 0;
 
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 }
 
 .color-preview {
@@ -72,7 +72,7 @@
   border: 1px solid hsl(from var(--border-color) h s l / 0.2);
   border-radius: 8px;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
 }
 
 .rgba-grid {
@@ -105,7 +105,7 @@
 .color-picker-heading p {
   margin: 4px 0 0;
 
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.86em;
 }
@@ -117,7 +117,7 @@
 }
 
 .swatch-row-label {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.72em;
   font-weight: 600;
@@ -126,7 +126,7 @@
 }
 
 .swatch-row-empty {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.82em;
 }
@@ -185,7 +185,7 @@
   border-radius: 50%;
 
   background: var(--text-color);
-  color: var(--popup-background);
+  color: var(--surface-background);
 
   font-size: 12px;
   line-height: 1;
@@ -217,7 +217,7 @@
   border-radius: 8px;
 
   color: var(--text-color);
-  background: var(--popup-background);
+  background: var(--surface-background);
 
   cursor: pointer;
 }
@@ -236,7 +236,7 @@
   border-radius: 8px;
 
   color: var(--text-color);
-  background: var(--popup-background);
+  background: var(--surface-background);
 
   text-align: center;
 
@@ -247,5 +247,5 @@
   border-color: var(--accent-color);
   background: var(--accent-color);
 
-  color: var(--popup-background);
+  color: var(--surface-background);
 }

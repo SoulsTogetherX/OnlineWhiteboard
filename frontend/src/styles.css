@@ -1,46 +1,96 @@
-/* Light theme (default). A cohesive cool-grey palette — the old bisque/burlywood
-   room + toolbar and pure-black text/borders read as "brown" and harsh. */
+/* The palette.
+ *
+ * Every name says WHERE the colour is used, not what it looks like, so a
+ * stylesheet reads as "the panel background" rather than "the toolbar colour
+ * that also happens to be behind the tab bar". The previous names had drifted
+ * away from their use — --normal-color was only ever a tooltip background, and
+ * --popup-background was painting inputs and buttons as much as popups.
+ *
+ * The scheme itself stays where it was, warm amber, but is built as a
+ * COMPLEMENTARY pair rather than an analogous one. It used to be an orange
+ * accent on a yellow ground with a yellow focus ring: neighbours on the wheel,
+ * so the accent had nothing to push against and the focus ring disappeared into
+ * the page. Now the surfaces are warm neutrals carrying a trace of the accent's
+ * hue, and the two colours that must be SEEN against them — the focus ring and
+ * the live/among-us markers — come from the opposite side of the wheel (teal).
+ */
 :root {
-  --normal-color: #1f2933;
-  --focus-color: #dfbe00;
-  --accent-color: #f28900;
+  /* Surfaces, from furthest back to nearest front. */
+  --app-background: #f3ecdd;
+  --grid-color: #e5d9c1;
+  --panel-background: #fbf6ec;
+  --surface-background: #fffdf8;
 
-  --text-color: #1a1d21;
-  --sub-text-color: #5b6570;
+  /* Interaction states shared by every control, so hover/press feel the same
+     everywhere instead of each component inventing its own shade. */
+  --hover-background: #efe6d3;
+  --active-background: #e4d7bd;
 
-  --popup-background: #ededed;
+  --text-color: #26221b;
+  --muted-text-color: #6d6456;
 
-  --room-background: #fff2c1;
-  --toolbar-background: #aaaaaa;
+  /* The accent, plus the two states it needs to react to a pointer. */
+  --accent-color: #d97d16;
+  --accent-hover-color: #c26c0d;
+  --accent-active-color: #a55a07;
+  --on-accent-color: #fffaf3;
 
-  --border-color: #9a9ea3;
-  --shadow-color: rgba(15, 23, 32, 0.18);
+  /* Teal: the accent's complement. Reserved for "look here" — it cannot be
+     mistaken for an accent-coloured control. */
+  --focus-ring-color: #17788c;
+
+  /* Tooltips are the one deliberately inverted surface, in both themes. */
+  --tooltip-background: #2b271f;
+  --tooltip-text-color: #f7f2e7;
+
+  --border-color: #d8cbb2;
+  --shadow-color: rgba(70, 52, 22, 0.18);
+
+  --grid-size: 32px;
 }
 
-/* Dark theme — applied when useTheme stamps data-theme="dark" on <html>. The
-   same variable names, so every var-driven surface (room, sidebar, popups,
-   controls) flips together. */
+/* Dark theme — applied when useTheme stamps data-theme="dark" on <html>. Same
+   names, same roles, so every var-driven surface flips together. */
 :root[data-theme="dark"] {
-  /* A tooltip/chip surface (white text sits on it), so it stays DARK in dark
-     mode rather than flipping light. */
-  --normal-color: #3a414b;
-  --focus-color: #4c9dff;
-  --accent-color: #4c9dff;
+  --app-background: #191712;
+  --grid-color: #252119;
+  --panel-background: #221f18;
+  --surface-background: #2b271f;
 
-  --text-color: #e8eaed;
-  --sub-text-color: #9aa2ac;
+  --hover-background: #35301f;
+  --active-background: #423a27;
 
-  --popup-background: #262b33;
+  --text-color: #ece5d6;
+  --muted-text-color: #a49a86;
 
-  --room-background: #14171c;
-  --toolbar-background: #1d222a;
+  --accent-color: #eda23f;
+  --accent-hover-color: #f5b257;
+  --accent-active-color: #d78c26;
+  --on-accent-color: #241a09;
 
-  --border-color: #506179;
+  --focus-ring-color: #4dbcd2;
+
+  /* Stays dark rather than flipping light: white text sits on it either way. */
+  --tooltip-background: #454033;
+  --tooltip-text-color: #f7f2e7;
+
+  --border-color: #453f33;
   --shadow-color: rgba(0, 0, 0, 0.55);
 }
 
+/* Tie the UA's own widgets (range thumbs, scrollbars, the caret) to OUR theme
+   rather than the operating system's.
+ *
+ * This was `light dark` on :root, which tells the browser "either is fine, use
+ * the OS preference". On a machine set to dark mode that rendered every native
+ * control dark WHILE the app was in light mode — which is exactly why the
+ * sliders and inputs looked wrong in the light theme. */
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* Border-box everywhere so width includes padding + border. Without this a
@@ -59,6 +109,24 @@ body {
 
   margin: 0;
   padding: 0;
+
+  /* The grid lives on the body, behind everything — the canvas, the sidebar and
+     every popup — so it reads as the surface the app sits on rather than as
+     part of any one panel. Two repeating gradients rather than an image keeps it
+     theme-aware for free: both the ground and the rule colour are variables, so
+     it flips with the theme like everything else. */
+  background-color: var(--app-background);
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-color) 0 1px,
+      transparent 1px var(--grid-size)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-color) 0 1px,
+      transparent 1px var(--grid-size)
+    );
 }
 button {
   all: unset;

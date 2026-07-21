@@ -48,7 +48,7 @@
   border: 1px solid var(--border-color);
 
   /* Var-driven so dialogs follow the theme (was a hardcoded near-white). */
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   box-shadow: 0 18px 60px rgb(23 33 43 / 24%);
 }

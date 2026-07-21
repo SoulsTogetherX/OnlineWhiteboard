@@ -36,7 +36,7 @@
 .room-header-conn {
   flex-shrink: 0;
   font-size: 0.8rem;
-  color: var(--sub-text-color, var(--text-color));
+  color: var(--muted-text-color, var(--text-color));
   opacity: 0.75;
 }
 
@@ -60,7 +60,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.35rem;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
   color: var(--text-color);
 }
 
@@ -77,7 +77,7 @@
   border-radius: 0.35rem;
 
   background: var(--accent-color);
-  color: var(--popup-background);
+  color: var(--on-accent-color);
 
   cursor: pointer;
 }
@@ -86,7 +86,7 @@
 .room-change-row button:focus-visible,
 .room-account-button:focus-visible,
 .room-leave:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -139,7 +139,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.35rem;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
   color: var(--text-color);
 
   text-align: center;
@@ -160,7 +160,7 @@
   border: 1px solid var(--accent-color);
   border-radius: 0.4rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--accent-color);
   font-size: 0.85rem;
 
@@ -168,7 +168,7 @@
 }
 
 .room-request-editor:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 

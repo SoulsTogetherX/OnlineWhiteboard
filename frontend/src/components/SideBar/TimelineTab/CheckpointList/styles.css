@@ -28,7 +28,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.3rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   font-size: 0.85rem;
 
@@ -48,7 +48,7 @@
 
 .checkpoint-empty {
   margin: 0;
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-size: 0.8rem;
 }
 
@@ -89,7 +89,7 @@
 }
 
 .checkpoint-meta {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-size: 0.72rem;
 }
 
@@ -105,7 +105,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.25rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   font-size: 0.72rem;
 
@@ -120,6 +120,6 @@
 .checkpoint-create button:focus-visible,
 .checkpoint-create input:focus-visible,
 .checkpoint-replay-recent:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

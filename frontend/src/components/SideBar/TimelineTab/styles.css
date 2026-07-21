@@ -6,7 +6,7 @@
 
 .timeline-hint {
   margin: 0;
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-size: 0.78rem;
   line-height: 1.4;
 }

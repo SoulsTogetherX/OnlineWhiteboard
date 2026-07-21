@@ -5,7 +5,9 @@
   z-index: 0;
 
   pointer-events: all;
-  background-color: var(--room-background);
+  /* Transparent so the body's grid shows through. This used to paint the room
+     background itself, which covered the grid completely. */
+  background-color: transparent;
 }
 
 .undo-notice {
@@ -22,7 +24,7 @@
   border-radius: 8px;
   border: var(--border-color) solid 1px;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   font-size: 0.9em;
 
@@ -47,15 +49,29 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background: var(--popup-background);
-  font-size: 1rem;
+  background: var(--surface-background);
+  color: var(--text-color);
   line-height: 1;
 
   cursor: pointer;
 }
 
+/* Outline-only, in currentColor, like every other icon in the app. The sun/moon
+   used to be emoji, which carried their own colours and read as decoration
+   sitting in the corner rather than as a control. */
+.theme-toggle svg {
+  width: 1.05rem;
+  height: 1.05rem;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
 .theme-toggle:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -81,7 +97,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.35rem;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
   color: var(--text-color);
 
   font-size: 0.8rem;
@@ -89,6 +105,6 @@
 }
 
 .app-action-button:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

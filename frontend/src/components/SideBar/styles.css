@@ -42,12 +42,12 @@
   border-right: none;
   border-radius: 0.4rem 0 0 0.4rem;
 
-  background-color: var(--toolbar-background);
+  background-color: var(--panel-background);
   cursor: pointer;
 }
 
 .sidebar-handle:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -76,7 +76,7 @@
 
   border-left: 1px solid var(--border-color);
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   box-shadow: -2px 0 8px rgba(0, 0, 0, 0.15);
 }
 
@@ -91,6 +91,6 @@
 }
 
 .sidebar-panel:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
 }

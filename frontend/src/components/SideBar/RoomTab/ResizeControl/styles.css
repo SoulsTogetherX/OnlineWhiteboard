@@ -11,7 +11,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   font-size: 0.9rem;
   text-align: center;
@@ -24,7 +24,7 @@
 }
 
 .resize-toggle:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -56,7 +56,7 @@
 
 .resize-field label {
   font-size: 0.75rem;
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 }
 
 .resize-field input {
@@ -83,6 +83,6 @@
 }
 
 .resize-apply:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

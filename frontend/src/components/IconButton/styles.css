@@ -11,7 +11,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
   cursor: pointer;
 }
@@ -21,7 +21,7 @@
 }
 
 .icon-button:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
 
@@ -57,8 +57,8 @@
 
   border-radius: 0.3rem;
 
-  background-color: var(--normal-color);
-  color: white;
+  background-color: var(--tooltip-background);
+  color: var(--tooltip-text-color);
   font-size: 0.75rem;
 
   pointer-events: none;

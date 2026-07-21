@@ -25,7 +25,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.75rem;
 
-  background: var(--toolbar-background);
+  background: var(--panel-background);
   box-shadow: 0 8px 30px var(--shadow-color);
 }
 
@@ -83,7 +83,7 @@
 }
 
 .lobby-guest {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-size: 0.85rem;
 }
 
@@ -94,7 +94,7 @@
 }
 
 .lobby-label {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-size: 0.8rem;
 }
 
@@ -105,7 +105,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
   color: var(--text-color);
   font: inherit;
   font-size: 0.95rem;
@@ -113,7 +113,7 @@
 
 .lobby-input:focus-visible {
   border-color: var(--accent-color);
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 1px;
 }
 
@@ -140,12 +140,12 @@
 .lobby-button-primary {
   border-color: var(--accent-color);
   background: var(--accent-color);
-  color: var(--popup-background);
+  color: var(--on-accent-color);
   font-weight: 600;
 }
 
 .lobby-button-quiet {
-  background: var(--popup-background);
+  background: var(--surface-background);
 }
 
 .lobby-button:disabled {
@@ -154,6 +154,6 @@
 }
 
 .lobby-button:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

@@ -64,12 +64,12 @@
 }
 
 .editor-request-deny {
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   color: var(--text-color);
 }
 
 .editor-request-approve:focus-visible,
 .editor-request-deny:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
