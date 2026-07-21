@@ -1,24 +1,11 @@
 //#region Imports
 import { useState } from "react"
 
+import { relativeTime } from "@/utils/relativeTime"
+
 import type { CheckpointInfo } from "@shared/types/socketProtocol"
 
 import "./styles.css"
-//#endregion
-
-//#region Helpers
-// Coarse relative time for a checkpoint's age. (One of two relativeTime copies
-// in the app; the Phase 5 a11y commit merges them into a shared util.)
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) return ""
-  const mins = Math.max(0, Math.round((Date.now() - then) / 60000))
-  if (mins < 1) return "just now"
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.round(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.round(hrs / 24)}d ago`
-}
 //#endregion
 
 //#region Component Def

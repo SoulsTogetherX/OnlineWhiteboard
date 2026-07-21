@@ -2,38 +2,10 @@
 import { useEffect } from "react"
 
 import useMyRooms from "@/hooks/useMyRooms"
+import { relativeTime } from "@/utils/relativeTime"
 import RoomThumbnail from "./RoomThumbnail"
 
 import "./styles.css"
-//#endregion
-
-//#region Helpers
-// "3 days ago" style relative time from an ISO timestamp.
-function relativeTime(iso: string): string {
-  const then = new Date(iso).getTime()
-  if (Number.isNaN(then)) {
-    return ""
-  }
-  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000))
-  const units: [number, string][] = [
-    [60, "second"],
-    [60, "minute"],
-    [24, "hour"],
-    [7, "day"],
-    [4.35, "week"],
-    [12, "month"],
-    [Number.POSITIVE_INFINITY, "year"],
-  ]
-  let value = seconds
-  for (const [size, name] of units) {
-    if (value < size) {
-      const rounded = Math.round(value)
-      return `${rounded} ${name}${rounded === 1 ? "" : "s"} ago`
-    }
-    value /= size
-  }
-  return ""
-}
 //#endregion
 
 //#region Component
