@@ -16,7 +16,6 @@ import {
   deleteCheckpoint,
   listCheckpoints,
   loadCheckpoint,
-  oldestCheckpointRevision,
 } from "../checkpointRepository"
 import { runMigrations } from "../migrate"
 import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
@@ -101,16 +100,6 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
     expect(await loadCheckpoint(roomId, a.id)).toBeNull()
   })
 
-  it("reports the oldest checkpoint revision (the compaction floor)", async () => {
-    const roomId = await makeRoom()
-    expect(await oldestCheckpointRevision(roomId)).toBeNull()
-
-    await createCheckpoint({ roomId, name: "x", revision: 9, pixels: patterned(1), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
-    await createCheckpoint({ roomId, name: "y", revision: 4, pixels: patterned(2), dims: DEFAULT_CANVAS_DIMS, createdBy: null })
-
-    expect(await oldestCheckpointRevision(roomId)).toBe(4)
-  })
-
   it("won't load a checkpoint from a different room", async () => {
     const roomA = await makeRoom()
     const roomB = await makeRoom()
@@ -128,26 +117,29 @@ describe.skipIf(!DB_CONFIGURED)("checkpointRepository (integration)", () => {
     expect(await loadCheckpoint(roomId, cp.id)).toBeNull()
   })
 
-  it("COMPACTION retains events newer than the retain floor", async () => {
+  it("retains every event after the genesis base", async () => {
     const roomId = await makeRoom()
-    await appendDrawEvents(
-      roomId,
-      [1, 2, 3, 4, 5, 6, 7, 8].map(ev),
-    )
+    // Seed the genesis base snapshot at revision 0 (what loadRoom does for a new
+    // room), then draw and roll a snapshot on top.
+    await saveCanvas(roomId, patterned(0), 0, DEFAULT_CANVAS_DIMS)
+    await appendDrawEvents(roomId, [1, 2, 3, 4, 5, 6, 7, 8].map(ev))
 
-    // Snapshot at revision 8, but retain events after revision 5 (as if the
-    // oldest checkpoint were at 5). Events 1..5 pruned; 6..8 kept for playback.
-    await saveCanvas(roomId, patterned(9), 8, DEFAULT_CANVAS_DIMS, 5)
+    // A rolling save keeps the base + head snapshots and prunes nothing above the
+    // base, so the whole span survives for start-to-end replay.
+    await saveCanvas(roomId, patterned(9), 8, DEFAULT_CANVAS_DIMS)
 
     const remaining = await loadEventsSince(roomId, 0)
-    expect(remaining.map((e) => e.revision)).toEqual([6, 7, 8])
+    expect(remaining.map((e) => e.revision)).toEqual([1, 2, 3, 4, 5, 6, 7, 8])
   })
 
-  it("COMPACTION with no retain floor prunes everything the snapshot covers", async () => {
+  it("a resetBase save (resize) drops all prior snapshots and events", async () => {
     const roomId = await makeRoom()
+    await saveCanvas(roomId, patterned(0), 0, DEFAULT_CANVAS_DIMS)
     await appendDrawEvents(roomId, [1, 2, 3].map(ev))
 
-    await saveCanvas(roomId, patterned(1), 3, DEFAULT_CANVAS_DIMS, null)
+    // resetBase makes this snapshot the sole base+head and prunes everything it
+    // supersedes — the resize hard boundary.
+    await saveCanvas(roomId, patterned(1), 4, DEFAULT_CANVAS_DIMS, true)
 
     expect(await loadEventsSince(roomId, 0)).toHaveLength(0)
   })

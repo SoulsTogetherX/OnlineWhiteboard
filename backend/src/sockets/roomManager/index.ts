@@ -3,9 +3,9 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
-import { isValidCanvasDims } from "@shared/constants/canvas"
+import { canvasBytes, isValidCanvasDims } from "@shared/constants/canvas"
 import type { CanvasDims } from "@shared/constants/canvas"
-import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
+import { loadBaseCanvas, loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
   appendDrawEvents,
   ensureRoom,
@@ -33,7 +33,6 @@ import {
   listCheckpoints,
   loadCheckpoint,
   maxCheckpointsPerRoom,
-  oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { resizePixels } from "@shared/utils/helperProtocolMethods"
@@ -396,6 +395,15 @@ export default class RoomManager {
     // Guarantee the FK target for draw_events exists before the first flush,
     // created at the room's dimensions.
     await ensureRoom(roomId, dims)
+
+    // Seed a genesis BASE snapshot (blank @ revision 0) for a brand-new room, so
+    // start-to-end playback always has a base to replay forward from. saveRoom
+    // only runs when the room is dirty, and by then the revision has advanced
+    // past 0 — so the base has to be written here, before any drawing, not on the
+    // first timed save. Idempotent: existing rooms already have one.
+    if ((await loadBaseCanvas(roomId)) === null) {
+      await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(dims)), 0, dims)
+    }
 
     // Permission state is read ONCE here and mirrored in memory for the room's
     // lifetime. Every draw message asks "may this connection draw?", so querying
@@ -868,10 +876,11 @@ export default class RoomManager {
       room.revision += 1
       room.isDirty = false
 
-      // retainEventsAfter = null prunes every event this snapshot supersedes,
-      // regardless of checkpoints — the new-dimensioned snapshot is a clean base
-      // that recovery replays nothing stale on top of.
-      await saveCanvas(room.roomId, room.pixels, room.revision, dims, null)
+      // resetBase makes the new-dimensioned snapshot the sole snapshot AND the
+      // new playback base: it prunes every prior snapshot and every event this
+      // one supersedes, so recovery replays nothing stale on top and the timeline
+      // restarts here (a resize is a hard history boundary).
+      await saveCanvas(room.roomId, room.pixels, room.revision, dims, true)
       this.broadcastSnapshot(room)
     } catch (error) {
       console.error(`Failed to resize ${room.roomId}:`, error)
@@ -1380,16 +1389,11 @@ export default class RoomManager {
     }
 
     try {
-      // Keep events newer than the oldest checkpoint so history stays replayable
-      // from it; with no checkpoints this is null and compaction is fully bounded.
-      const retainAfter = await oldestCheckpointRevision(room.roomId)
-      await saveCanvas(
-        room.roomId,
-        room.pixels,
-        room.revision,
-        this.dimsOf(room),
-        retainAfter,
-      )
+      // Retain the whole event log after the genesis base so the timeline replays
+      // start-to-end; saveCanvas keeps the base + head snapshots and prunes only
+      // what the base already bakes in. (Stage 3 will bound the retained span with
+      // uniform decimation here.)
+      await saveCanvas(room.roomId, room.pixels, room.revision, this.dimsOf(room))
       room.isDirty = false
     } catch (error) {
       console.error(`Failed to save room ${room.roomId}:`, error)
