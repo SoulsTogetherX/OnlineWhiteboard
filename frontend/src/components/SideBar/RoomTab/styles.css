@@ -215,3 +215,32 @@
   right: 0;
   transform: none;
 }
+
+.room-account-button:hover,
+.room-leave:hover,
+.room-request-editor:hover {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.room-account-button:active,
+.room-leave:active,
+.room-request-editor:active {
+  background: var(--active-background);
+  transform: translateY(1px);
+}
+
+.room-change-row button:hover {
+  border-color: var(--accent-hover-color);
+  background: var(--accent-hover-color);
+}
+
+.room-change-row button:active {
+  border-color: var(--accent-active-color);
+  background: var(--accent-active-color);
+  transform: translateY(1px);
+}
+
+.room-change-row input:hover {
+  border-color: var(--accent-color);
+}

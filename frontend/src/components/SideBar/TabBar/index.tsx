@@ -81,37 +81,62 @@ export default function TabBar({ tabs, activeTab, onTabChange }: TabBarProps) {
     }
   }
 
+  const activeIndex = Math.max(
+    0,
+    tabs.findIndex((tab) => tab.id === activeTab),
+  )
+
   return (
-    <div
-      ref={listRef}
-      className="tab-bar"
-      role="tablist"
-      aria-label="Sidebar sections"
-      onKeyDown={onKeyDown}
-    >
-      {tabs.map((tab) => {
-        const isActive = tab.id === activeTab
-        return (
-          <button
-            key={tab.id}
-            id={tabButtonId(tab.id)}
-            type="button"
-            role="tab"
-            className={`tab-bar-button${isActive ? " tab-bar-button-active" : ""}`}
-            aria-selected={isActive}
-            aria-controls={tabPanelId(tab.id)}
-            // Roving tabindex: the inactive tabs are removed from the Tab order
-            // so a keyboard user tabs into the bar once, then arrows between tabs.
-            tabIndex={isActive ? 0 : -1}
-            onClick={() => onTabChange(tab.id)}
-          >
-            <span className="tab-bar-icon" aria-hidden="true">
-              {TAB_ICONS[tab.id]}
-            </span>
-            <span className="tab-bar-label">{tab.label}</span>
-          </button>
-        )
-      })}
+    <div className="tab-bar">
+      <div
+        ref={listRef}
+        className="tab-bar-list"
+        role="tablist"
+        aria-label="Sidebar sections"
+        onKeyDown={onKeyDown}
+      >
+        {tabs.map((tab) => {
+          const isActive = tab.id === activeTab
+          return (
+            <button
+              key={tab.id}
+              id={tabButtonId(tab.id)}
+              type="button"
+              role="tab"
+              className={`tab-bar-button${isActive ? " tab-bar-button-active" : ""}`}
+              aria-selected={isActive}
+              aria-controls={tabPanelId(tab.id)}
+              // Roving tabindex: the inactive tabs are removed from the Tab order
+              // so a keyboard user tabs into the bar once, then arrows between
+              // tabs.
+              tabIndex={isActive ? 0 : -1}
+              onClick={() => onTabChange(tab.id)}
+            >
+              <span className="tab-bar-icon" aria-hidden="true">
+                {TAB_ICONS[tab.id]}
+              </span>
+              <span className="tab-bar-label">{tab.label}</span>
+            </button>
+          )
+        })}
+      </div>
+
+      {/* One underline for the whole bar that SLIDES, rather than a border that
+          blinks off one tab and on to another.
+
+          It is a flex row with a margin-offset child rather than an absolutely
+          positioned bar, so the offset is ordinary layout — and it sits OUTSIDE
+          the tablist, because a tablist's children should be tabs. Decorative:
+          aria-selected already announces the selection. */}
+      <div className="tab-bar-underline" aria-hidden="true">
+        <span
+          className="tab-bar-indicator"
+          style={{
+            width: `${100 / tabs.length}%`,
+            marginInlineStart: `${(activeIndex * 100) / tabs.length}%`,
+          }}
+        />
+      </div>
     </div>
   )
 }

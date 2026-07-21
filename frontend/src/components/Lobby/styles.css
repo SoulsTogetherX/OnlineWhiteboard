@@ -157,3 +157,26 @@
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
+
+.lobby-button-quiet:hover {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.lobby-button-quiet:active {
+  background: var(--active-background);
+}
+
+.lobby-button-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover-color);
+  background: var(--accent-hover-color);
+}
+
+.lobby-button-primary:active:not(:disabled) {
+  border-color: var(--accent-active-color);
+  background: var(--accent-active-color);
+}
+
+.lobby-button:active:not(:disabled) {
+  transform: translateY(1px);
+}

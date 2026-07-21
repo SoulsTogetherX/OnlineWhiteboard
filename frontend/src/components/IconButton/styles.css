@@ -17,7 +17,7 @@
 }
 
 .icon-button:hover:not(:disabled) {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: var(--hover-background);
 }
 
 .icon-button:focus-visible {
@@ -77,4 +77,9 @@
 
   font-size: 0.7rem;
   font-family: monospace;
+}
+
+.icon-button:active:not(:disabled) {
+  background-color: var(--active-background);
+  transform: translateY(1px);
 }

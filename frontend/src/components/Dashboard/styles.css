@@ -1,9 +1,9 @@
 /* The overlay/card chrome now comes from PopupBase's .popup-front; this panel is
    just the sized, scrollable content container inside it. */
 .dashboard-panel {
-  width: min(60rem, 82vw);
-  max-height: 80vh;
-  overflow-y: auto;
+  /* The dialog around this now bounds and scrolls itself (PopupBase), so this
+     only needs a comfortable width. */
+  width: min(60rem, 100%);
 }
 
 .dashboard-header {
@@ -19,15 +19,19 @@
 }
 
 .dashboard-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   padding: 0.35rem 0.85rem;
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--border-color);
   background: transparent;
+  color: var(--text-color);
   cursor: pointer;
 }
 
 .dashboard-error {
-  color: #c62828;
+  color: var(--danger-color);
 }
 .dashboard-empty {
   opacity: 0.7;
@@ -50,15 +54,20 @@
   text-align: left;
   padding: 0.6rem;
   border-radius: 0.5rem;
-  border: 1px solid var(--border, #ddd);
-  background: var(--card-bg, #fafafa);
+  border: 1px solid var(--border-color);
+  background: var(--panel-background);
+  color: var(--text-color);
   cursor: pointer;
 }
 .dashboard-card:hover {
-  border-color: #888;
+  border-color: var(--accent-color);
+  background: var(--hover-background);
+}
+.dashboard-card:active {
+  background: var(--active-background);
 }
 .dashboard-card-current {
-  outline: 2px solid #2e7d32;
+  outline: 2px solid var(--accent-color);
 }
 
 .dashboard-card-body {
@@ -85,16 +94,37 @@
 .dashboard-role {
   padding: 0.1rem 0.4rem;
   border-radius: 0.25rem;
-  background: #eee;
+  /* Role chips read off the theme instead of three fixed pastels that only
+     worked on a light background. */
+  border: 1px solid var(--border-color);
+  background: var(--hover-background);
+  color: var(--muted-text-color);
   text-transform: capitalize;
 }
 .dashboard-role.role-owner {
-  background: #ffe082;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-accent-color);
 }
 .dashboard-role.role-viewer {
-  background: #cfd8dc;
+  background: var(--surface-background);
 }
 
 .dashboard-when {
   opacity: 0.6;
+}
+
+.dashboard-close:hover {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.dashboard-close:active {
+  background: var(--active-background);
+}
+
+.dashboard-close:focus-visible,
+.dashboard-card:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
 }

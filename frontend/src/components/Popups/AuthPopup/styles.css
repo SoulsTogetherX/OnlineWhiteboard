@@ -109,3 +109,22 @@
 
   cursor: pointer;
 }
+
+.auth-submit:hover:not(:disabled) {
+  border-color: var(--accent-hover-color);
+  background: var(--accent-hover-color);
+}
+
+.auth-submit:active:not(:disabled) {
+  border-color: var(--accent-active-color);
+  background: var(--accent-active-color);
+  transform: translateY(1px);
+}
+
+.auth-field input:hover {
+  border-color: var(--accent-color);
+}
+
+.auth-switch button:hover {
+  color: var(--accent-hover-color);
+}

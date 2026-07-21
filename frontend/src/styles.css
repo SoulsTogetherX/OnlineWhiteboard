@@ -18,13 +18,15 @@
   /* Surfaces, from furthest back to nearest front. */
   --app-background: #f3ecdd;
   --grid-color: #e5d9c1;
-  --panel-background: #fbf6ec;
+  --panel-background: #f5efe2;
   --surface-background: #fffdf8;
 
-  /* Interaction states shared by every control, so hover/press feel the same
-     everywhere instead of each component inventing its own shade. */
-  --hover-background: #efe6d3;
-  --active-background: #e4d7bd;
+  /* Interaction states, shared so hover and press feel the same everywhere
+     instead of each component inventing its own shade.
+     Hover LIGHTENS — a control coming toward you — and press moves the other
+     way, so the two states can never be mistaken for each other. */
+  --hover-background: #fdfaf3;
+  --active-background: #ebe1cd;
 
   --text-color: #26221b;
   --muted-text-color: #6d6456;
@@ -43,6 +45,7 @@
   --tooltip-background: #2b271f;
   --tooltip-text-color: #f7f2e7;
 
+  --danger-color: #b42318;
   --border-color: #d8cbb2;
   --shadow-color: rgba(70, 52, 22, 0.18);
 
@@ -57,8 +60,9 @@
   --panel-background: #221f18;
   --surface-background: #2b271f;
 
-  --hover-background: #35301f;
-  --active-background: #423a27;
+  /* Same rule in the dark theme: hover lightens, press separates from it. */
+  --hover-background: #2e2a20;
+  --active-background: #3d3628;
 
   --text-color: #ece5d6;
   --muted-text-color: #a49a86;
@@ -74,6 +78,7 @@
   --tooltip-background: #454033;
   --tooltip-text-color: #f7f2e7;
 
+  --danger-color: #f27166;
   --border-color: #453f33;
   --shadow-color: rgba(0, 0, 0, 0.55);
 }
@@ -132,6 +137,37 @@ body {
       transparent 1px var(--grid-size)
     );
 }
+/* One motion rule for everything interactive, so a control that gains a hover
+   or press colour animates it without each component remembering to say so.
+   Colour and shadow only — never layout properties, which would animate reflow. */
+button,
+input,
+select,
+textarea,
+a,
+.tab-bar-button,
+.swatch-chip {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+/* Motion is a preference, not a decoration. Anyone who has asked their system to
+   reduce it gets the same interface with the movement taken out. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 button {
   all: unset;
   /* `all: unset` resets box-sizing back to content-box (it doesn't inherit), so

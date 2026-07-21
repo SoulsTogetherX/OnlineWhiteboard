@@ -108,3 +108,16 @@
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }
+
+/* Both corner controls react the same way: lighten on hover, settle on press. */
+.theme-toggle:hover,
+.app-action-button:hover {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.theme-toggle:active,
+.app-action-button:active {
+  background: var(--active-background);
+  transform: translateY(1px);
+}

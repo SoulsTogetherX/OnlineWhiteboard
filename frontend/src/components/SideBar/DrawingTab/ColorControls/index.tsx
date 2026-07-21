@@ -33,12 +33,25 @@ export default function ColorControls({
   // to re-read the ref and reflect the new swatch colours.
   const [, forceRender] = useReducer((count: number) => count + 1, 0)
 
+  // Counts swaps rather than holding a boolean. Used as the animated element's
+  // `key`, so React replaces the nodes and the CSS animation restarts from the
+  // beginning even if you swap again mid-flight — a boolean would need a timer
+  // to clear, and would skip the animation on a fast second click.
+  const [swapCount, countSwap] = useReducer((count: number) => count + 1, 0)
+
   const primary = colorTypeToString(colorPalette.current.primary)
   const secondary = colorTypeToString(colorPalette.current.secondary)
 
   return (
     <div className="color-controls">
-      <div className="color-swatches">
+      {/* The swatches animate FROM each other's positions to their own. By the
+          time this renders the colours have already exchanged, so each swatch
+          travelling home from where the other one was reads as the two colours
+          trading places. */}
+      <div
+        key={swapCount}
+        className={swapCount > 0 ? "color-swatches color-swatches-swapping" : "color-swatches"}
+      >
         <button
           type="button"
           className="color-swatch color-swatch-secondary"
@@ -61,6 +74,7 @@ export default function ColorControls({
         aria-label="Swap primary and secondary colors"
         onClick={() => {
           onSwap()
+          countSwap()
           forceRender()
         }}
       >

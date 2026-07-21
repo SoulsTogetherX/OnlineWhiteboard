@@ -1,9 +1,33 @@
 .tab-bar {
   display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 
   border-bottom: 1px solid var(--border-color);
   background-color: var(--panel-background);
+}
+
+.tab-bar-list {
+  display: flex;
+}
+
+/* The track the sliding underline runs along. Both the indicator's width and its
+   offset are shares of this row, so the maths stays right if a tab is ever added
+   or removed. */
+.tab-bar-underline {
+  display: flex;
+
+  height: 2px;
+}
+
+.tab-bar-indicator {
+  height: 100%;
+
+  background-color: var(--accent-color);
+
+  /* Width and offset come from the component as percentages. */
+  transition: margin-inline-start 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
 }
 
 .tab-bar-button {
@@ -36,8 +60,15 @@
   fill: currentColor;
 }
 
+/* Hover LIGHTENS the tab. It used to be a translucent grey overlay, which
+   darkens on a light theme — so hovering made a tab recede exactly where it
+   should have come forward. */
 .tab-bar-button:hover {
-  background-color: rgba(127, 127, 127, 0.12);
+  background-color: var(--hover-background);
+}
+
+.tab-bar-button:active {
+  background-color: var(--active-background);
 }
 
 .tab-bar-button:focus-visible {
@@ -45,10 +76,10 @@
   outline-offset: -2px;
 }
 
-/* The active tab reads as raised: it carries the accent underline and drops the
-   toolbar tint so it visually joins the panel below it. */
+/* The active tab reads as raised: it drops the toolbar tint so it visually joins
+   the panel below it. The underline is the sliding indicator above, not a border
+   here, so switching tabs moves one line instead of swapping two. */
 .tab-bar-button-active {
-  border-bottom-color: var(--accent-color);
   background-color: var(--surface-background);
   font-weight: 600;
 }

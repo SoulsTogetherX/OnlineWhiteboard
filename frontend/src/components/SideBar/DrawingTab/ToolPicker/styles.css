@@ -25,7 +25,7 @@
 
 .tool-picker-trigger:hover,
 .tool-picker-option:hover {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: var(--hover-background);
 }
 
 .tool-picker-trigger:focus-visible,
@@ -109,4 +109,9 @@
   font-size: 0.7rem;
   font-family: monospace;
   color: var(--muted-text-color);
+}
+
+.tool-picker-trigger:active,
+.tool-picker-option:active {
+  background-color: var(--active-background);
 }
