@@ -171,6 +171,15 @@ jobs:
         run: |
           cp .env.example .env
           sed -i 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-throwaway-password/' .env
+          # The prod stack fails CLOSED on email-at-rest secrets: .env.example
+          # ships "<generate me>" placeholders, and a placeholder is non-empty so
+          # the server boots — but it isn't a valid 32-byte base64 key, so the
+          # first /api/auth/register call throws and returns 500 (which the
+          # permissions probe hits on its very first step). Generate valid
+          # throwaway keys per run — the stack is ephemeral and unreachable from
+          # outside the runner. node (not sed) because base64 contains + / = that
+          # sed would treat specially.
+          node -e "const c=require('crypto'),fs=require('fs');let e=fs.readFileSync('.env','utf8');for(const k of ['EMAIL_INDEX_PEPPER','EMAIL_ENCRYPTION_KEY'])e=e.replace(new RegExp('^'+k+'=.*','m'),k+'='+c.randomBytes(32).toString('base64'));fs.writeFileSync('.env',e)"
 
       # Reuse layers across runs. Without this every run re-downloads and
       # re-installs node_modules inside the image.
