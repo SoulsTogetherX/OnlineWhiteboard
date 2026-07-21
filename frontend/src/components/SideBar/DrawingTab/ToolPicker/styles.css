@@ -68,7 +68,9 @@
 
 .tool-picker-menu {
   position: absolute;
-  z-index: 1;
+  /* Above the colour swatches below it (z-index 2 in the same sidebar stacking
+     context) — a dropdown must paint over sibling controls. */
+  z-index: 10;
   top: calc(100% + 0.25rem);
   left: 0;
   right: 0;

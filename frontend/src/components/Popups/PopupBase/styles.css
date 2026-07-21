@@ -1,6 +1,8 @@
 .popup-wrapper {
   isolation: isolate;
-  z-index: 10;
+  /* Modal dialogs sit above EVERYTHING, including the sidebar (z-index 25). This
+     was 10 — below the sidebar — so the change-room popup opened behind it. */
+  z-index: 100;
 
   display: grid;
   place-items: center;
