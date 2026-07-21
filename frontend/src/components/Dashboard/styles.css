@@ -1,22 +1,9 @@
-.dashboard-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: rgb(0 0 0 / 0.55);
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding: 2rem 1rem;
-  overflow-y: auto;
-}
-
+/* The overlay/card chrome now comes from PopupBase's .popup-front; this panel is
+   just the sized, scrollable content container inside it. */
 .dashboard-panel {
-  width: min(60rem, 100%);
-  background: var(--popup-bg, #fff);
-  color: var(--popup-fg, #222);
-  border-radius: 0.6rem;
-  padding: 1.25rem;
-  box-shadow: 0 8px 32px rgb(0 0 0 / 0.35);
+  width: min(60rem, 82vw);
+  max-height: 80vh;
+  overflow-y: auto;
 }
 
 .dashboard-header {
