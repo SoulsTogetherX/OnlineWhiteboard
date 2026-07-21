@@ -32,10 +32,18 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     editorRequests: [],
     onRequestEditor: vi.fn(),
     onRespondEditor: vi.fn(),
+    showCursors: true,
+    showCursorNames: true,
+    onShowCursorsChange: vi.fn(),
+    onShowCursorNamesChange: vi.fn(),
     ...overrides,
   }
   return { props, ...render(<RoomTab {...props} />) }
 }
+
+// The open-editing toggle is now one of several checkboxes (the cursor
+// preferences add more), so it must be queried by its accessible name.
+const OPEN_EDITING = "Let guests & viewers draw"
 
 describe("RoomTab permission gating", () => {
   it("shows an owner the enabled management controls", () => {
@@ -43,14 +51,14 @@ describe("RoomTab permission gating", () => {
     expect(
       screen.getByRole("button", { name: "Release ownership" }),
     ).toBeInTheDocument()
-    expect(screen.getByRole("checkbox")).toBeEnabled()
+    expect(screen.getByRole("checkbox", { name: OPEN_EDITING })).toBeEnabled()
     expect(screen.getByRole("button", { name: "Clear canvas" })).toBeEnabled()
     expect(screen.getByRole("button", { name: /Resize canvas/ })).toBeEnabled()
   })
 
   it("greys the owner-only controls for a viewer and offers the editor request", () => {
     renderTab({ self: participant("viewer"), hasOwner: true })
-    expect(screen.getByRole("checkbox")).toBeDisabled()
+    expect(screen.getByRole("checkbox", { name: OPEN_EDITING })).toBeDisabled()
     expect(screen.getByRole("button", { name: "Clear canvas" })).toBeDisabled()
     expect(
       screen.getByRole("button", { name: /Resize canvas/ }),

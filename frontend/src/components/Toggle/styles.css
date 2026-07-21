@@ -1,4 +1,4 @@
-.open-editing-toggle {
+.toggle {
   display: flex;
   align-items: center;
   gap: 0.6rem;
@@ -6,13 +6,13 @@
   cursor: pointer;
 }
 
-.open-editing-toggle.is-disabled {
+.toggle-disabled {
   cursor: not-allowed;
   opacity: 0.6;
 }
 
-/* Visually-hidden but still the real focusable, keyboard-operable control. */
-.open-editing-input {
+/* Visually hidden but still the real focusable, keyboard-operable control. */
+.toggle-input {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -24,7 +24,7 @@
   border: 0;
 }
 
-.open-editing-track {
+.toggle-track {
   position: relative;
   flex-shrink: 0;
 
@@ -37,17 +37,17 @@
   transition: background-color 0.15s ease;
 }
 
-.open-editing-input:checked + .open-editing-track {
+.toggle-input:checked + .toggle-track {
   background-color: var(--accent-color);
 }
 
 /* The focus ring rides on the track since the input itself is visually hidden. */
-.open-editing-input:focus-visible + .open-editing-track {
+.toggle-input:focus-visible + .toggle-track {
   outline: 2px solid var(--focus-color);
   outline-offset: 2px;
 }
 
-.open-editing-thumb {
+.toggle-thumb {
   position: absolute;
   top: 0.15rem;
   left: 0.15rem;
@@ -61,11 +61,11 @@
   transition: transform 0.15s ease;
 }
 
-.open-editing-input:checked + .open-editing-track .open-editing-thumb {
+.toggle-input:checked + .toggle-track .toggle-thumb {
   transform: translateX(1.1rem);
 }
 
-.open-editing-label {
+.toggle-label {
   color: var(--text-color);
   font-size: 0.85rem;
 }

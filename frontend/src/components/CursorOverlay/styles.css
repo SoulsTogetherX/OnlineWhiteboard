@@ -37,14 +37,11 @@
 
   border-radius: 6px;
 
-  color: white;
-
+  /* Text colour is set inline per cursor via readableTextColor, so a pale
+     identity colour gets dark text and a dark one gets light text. */
   font-size: 11px;
   line-height: 1.5;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-
-  /* Keep light-coloured identity labels legible. */
-  text-shadow: 0 1px 1px rgb(0 0 0 / 35%);
 }

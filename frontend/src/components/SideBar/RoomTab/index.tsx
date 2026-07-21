@@ -1,9 +1,10 @@
 //#region Imports
 import IconButton from "@/components/IconButton"
+import Toggle from "@/components/Toggle"
 
 import MemberList from "./MemberList"
 import OwnershipButton from "./OwnershipButton"
-import OpenEditingToggle from "./OpenEditingToggle"
+import CursorControls from "./CursorControls"
 import ResizeControl from "./ResizeControl"
 import EditorRequests from "./EditorRequests"
 
@@ -55,6 +56,11 @@ export interface RoomTabProps {
   editorRequests: EditorRequest[]
   onRequestEditor: () => void
   onRespondEditor: (userId: string, approve: boolean) => void
+  // Viewer cursor display preferences (useCursorPreferences).
+  showCursors: boolean
+  showCursorNames: boolean
+  onShowCursorsChange: (value: boolean) => void
+  onShowCursorNamesChange: (value: boolean) => void
 }
 
 // The Room tab: a thin composition of small controls, each fed data + callbacks.
@@ -77,6 +83,10 @@ export default function RoomTab({
   editorRequests,
   onRequestEditor,
   onRespondEditor,
+  showCursors,
+  showCursorNames,
+  onShowCursorsChange,
+  onShowCursorNamesChange,
 }: RoomTabProps) {
   const role = self?.role ?? "guest"
   const isOwner = canManageRoom(role)
@@ -98,10 +108,11 @@ export default function RoomTab({
         onRelease={onReleaseOwnership}
       />
 
-      <OpenEditingToggle
-        enabled={openEditing}
+      <Toggle
+        checked={openEditing}
         disabled={!isOwner}
         onChange={onSetOpenEditing}
+        label="Let guests &amp; viewers draw"
       />
 
       {mayRequestEditor && (
@@ -120,6 +131,13 @@ export default function RoomTab({
           onRespond={onRespondEditor}
         />
       )}
+
+      <CursorControls
+        showCursors={showCursors}
+        showNames={showCursorNames}
+        onShowCursorsChange={onShowCursorsChange}
+        onShowNamesChange={onShowCursorNamesChange}
+      />
 
       <ResizeControl
         width={canvasWidth}

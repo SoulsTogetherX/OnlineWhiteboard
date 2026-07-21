@@ -2,6 +2,8 @@
 import { useEffect, useMemo, useRef } from "react"
 
 
+import { readableTextColor } from "@/utils/color"
+
 import type { Participant } from "@shared/types/identity"
 import type { Vec } from "@shared/types/primitive"
 
@@ -17,6 +19,11 @@ export interface CursorOverlayProps {
   cursorIds: string[]
   // Source of each cursor's colour and name.
   participants: Participant[]
+  // Viewer display preferences (useCursorPreferences). When showCursors is off
+  // nothing renders; when showNames is off the arrows stay but the name labels
+  // are dropped.
+  showCursors: boolean
+  showNames: boolean
 }
 
 // Renders other people's cursors over the canvas. The set of cursor NODES is
@@ -30,6 +37,8 @@ export default function CursorOverlay({
   cursorsRef,
   cursorIds,
   participants,
+  showCursors,
+  showNames,
 }: CursorOverlayProps) {
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map())
 
@@ -38,7 +47,9 @@ export default function CursorOverlay({
     [participants],
   )
 
-  const hasCursors = cursorIds.length > 0
+  // No nodes are rendered while cursors are hidden, so the rAF loop has nothing
+  // to position — gate it on the preference too so it doesn't spin doing nothing.
+  const hasCursors = showCursors && cursorIds.length > 0
 
   useEffect(() => {
     if (!hasCursors) {
@@ -75,6 +86,12 @@ export default function CursorOverlay({
     return () => cancelAnimationFrame(raf)
   }, [canvasRef, cursorsRef, hasCursors])
 
+  // Cursors hidden by preference: render an empty overlay so no arrows or labels
+  // appear (effectively transparent).
+  if (!showCursors) {
+    return <div className="cursor-overlay" aria-hidden="true" />
+  }
+
   return (
     <div className="cursor-overlay" aria-hidden="true">
       {cursorIds.map((id) => {
@@ -109,12 +126,19 @@ export default function CursorOverlay({
                 strokeWidth="1"
               />
             </svg>
-            <span
-              className="remote-cursor-label"
-              style={{ backgroundColor: participant.color }}
-            >
-              {participant.name}
-            </span>
+            {showNames && (
+              <span
+                className="remote-cursor-label"
+                // Dark or light text chosen for contrast against the identity
+                // colour, so a pale cursor colour stays readable.
+                style={{
+                  backgroundColor: participant.color,
+                  color: readableTextColor(participant.color),
+                }}
+              >
+                {participant.name}
+              </span>
+            )}
           </div>
         )
       })}

@@ -1,0 +1,10 @@
+.cursor-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.cursor-controls-heading {
+  margin: 0;
+  font-size: 0.85rem;
+}

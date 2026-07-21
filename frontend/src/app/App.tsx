@@ -29,6 +29,7 @@ import useUndoRedo from "@/hooks/useUndoRedo"
 import useMediaQuery from "@/hooks/useMediaQuery"
 import useAuth from "@/hooks/useAuth"
 import useCursorBroadcast from "@/hooks/useCursorBroadcast"
+import useCursorPreferences from "@/hooks/useCursorPreferences"
 import useRecentColors from "@/hooks/useRecentColors"
 import useSavedColors from "@/hooks/useSavedColors"
 import useEyedropper from "@/hooks/useEyedropper"
@@ -119,6 +120,15 @@ export default function App() {
   const [isColorOpen, setIsColorOpen] = useState<boolean>(false)
   const [selectedColor, setSelectedColor] = useState<ColorPaletteKeys>("primary")
   const { colorPalette, setColor, swapColors } = useColorPalette()
+
+  // Viewer cursor display preferences (hide cursors / hide names), persisted
+  // client-side. Read by CursorOverlay and toggled from the Room tab.
+  const {
+    showCursors,
+    showNames: showCursorNames,
+    setShowCursors,
+    setShowNames: setShowCursorNames,
+  } = useCursorPreferences()
   const { recent, addRecent } = useRecentColors()
   const { saved, addSaved, removeSaved } = useSavedColors(user)
 
@@ -306,6 +316,8 @@ export default function App() {
         cursorsRef={cursorsRef}
         cursorIds={cursorIds}
         participants={participants}
+        showCursors={showCursors}
+        showNames={showCursorNames}
       />
       {notice && <div className="undo-notice">{notice}</div>}
       <ColorSelector
@@ -398,6 +410,10 @@ export default function App() {
             editorRequests={editorRequests}
             onRequestEditor={requestEditor}
             onRespondEditor={respondEditor}
+            showCursors={showCursors}
+            showCursorNames={showCursorNames}
+            onShowCursorsChange={setShowCursors}
+            onShowCursorNamesChange={setShowCursorNames}
           />
         ) : (
           <p className="sidebar-placeholder">

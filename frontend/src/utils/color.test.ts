@@ -5,8 +5,28 @@ import {
   colorToHex8,
   hexToColor,
   hsvToRgb,
+  readableTextColor,
   rgbToHsv,
 } from "./color"
+
+describe("readableTextColor", () => {
+  it("uses dark text on light backgrounds", () => {
+    expect(readableTextColor("#ffffff")).toBe("#000000")
+    expect(readableTextColor("#bfef45")).toBe("#000000") // pale green
+    expect(readableTextColor("#fabed4")).toBe("#000000") // pink
+    expect(readableTextColor("#dcbeff")).toBe("#000000") // lavender
+  })
+
+  it("uses light text on dark backgrounds", () => {
+    expect(readableTextColor("#000000")).toBe("#ffffff")
+    expect(readableTextColor("#4363d8")).toBe("#ffffff") // blue
+    expect(readableTextColor("#800000")).toBe("#ffffff") // maroon
+  })
+
+  it("falls back to black for malformed input", () => {
+    expect(readableTextColor("not-a-color")).toBe("#000000")
+  })
+})
 
 describe("rgbToHsv / hsvToRgb", () => {
   it("maps the primary colors to the expected hues", () => {
