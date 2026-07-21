@@ -9,20 +9,35 @@
 .tab-bar-button {
   flex: 1 1 0;
 
-  padding: 0.6rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+
+  padding: 0.5rem 0.4rem;
 
   border-bottom: 2px solid transparent;
 
   color: var(--text-color);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   text-align: center;
 
   cursor: pointer;
   user-select: none;
 }
 
+.tab-bar-icon {
+  display: inline-flex;
+}
+
+.tab-bar-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: currentColor;
+}
+
 .tab-bar-button:hover {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: rgba(127, 127, 127, 0.12);
 }
 
 .tab-bar-button:focus-visible {

@@ -45,8 +45,10 @@
   margin: auto;
 
   border-radius: 8px;
-  border: 1px solid hsl(from var(--border-color) h s l / 0.2);
+  border: 1px solid var(--border-color);
 
-  background-color: #f8fafc;
+  /* Var-driven so dialogs follow the theme (was a hardcoded near-white). */
+  background-color: var(--popup-background);
+  color: var(--text-color);
   box-shadow: 0 18px 60px rgb(23 33 43 / 24%);
 }

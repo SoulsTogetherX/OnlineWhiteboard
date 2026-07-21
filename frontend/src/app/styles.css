@@ -30,6 +30,35 @@
   pointer-events: none;
 }
 
+/* Top-left: the light/dark theme toggle. */
+.theme-toggle {
+  position: fixed;
+  top: 12px;
+  left: 12px;
+  z-index: 20;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 2rem;
+  height: 2rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background: var(--popup-background);
+  font-size: 1rem;
+  line-height: 1;
+
+  cursor: pointer;
+}
+
+.theme-toggle:focus-visible {
+  outline: 2px solid var(--focus-color);
+  outline-offset: 2px;
+}
+
 /* Top-right cluster: the account control plus (when logged in) the "My Rooms"
    and "Members" buttons. One fixed flex row so the buttons lay out with a gap
    instead of each being independently fixed-positioned with a magic right

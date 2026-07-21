@@ -1,18 +1,46 @@
+/* Light theme (default). A cohesive cool-grey palette — the old bisque/burlywood
+   room + toolbar and pure-black text/borders read as "brown" and harsh. */
 :root {
   --normal-color: #1f2933;
   --focus-color: #1677ff;
   --accent-color: #1677ff;
 
-  --text-color: black;
-  --sub-text-color: #373737;
+  --text-color: #1a1d21;
+  --sub-text-color: #5b6570;
 
   --popup-background: #ffffff;
 
-  --room-background: bisque;
-  --toolbar-background: burlywood;
+  --room-background: #e9edf2;
+  --toolbar-background: #f4f6f9;
 
-  --border-color: black;
-  --shadow-color: black;
+  --border-color: #cdd4dc;
+  --shadow-color: rgba(15, 23, 32, 0.18);
+}
+
+/* Dark theme — applied when useTheme stamps data-theme="dark" on <html>. The
+   same variable names, so every var-driven surface (room, sidebar, popups,
+   controls) flips together. */
+:root[data-theme="dark"] {
+  /* A tooltip/chip surface (white text sits on it), so it stays DARK in dark
+     mode rather than flipping light. */
+  --normal-color: #3a414b;
+  --focus-color: #4c9dff;
+  --accent-color: #4c9dff;
+
+  --text-color: #e8eaed;
+  --sub-text-color: #9aa2ac;
+
+  --popup-background: #262b33;
+
+  --room-background: #14171c;
+  --toolbar-background: #1d222a;
+
+  --border-color: #3a414b;
+  --shadow-color: rgba(0, 0, 0, 0.55);
+}
+
+:root {
+  color-scheme: light dark;
 }
 
 /* Border-box everywhere so width includes padding + border. Without this a

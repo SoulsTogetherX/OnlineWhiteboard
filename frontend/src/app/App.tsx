@@ -30,6 +30,7 @@ import useSidebar from "@/hooks/useSidebar"
 import useColorPopup from "@/hooks/useColorPopup"
 import useDisclosure from "@/hooks/useDisclosure"
 import useKeymap from "@/hooks/useKeymap"
+import useTheme from "@/hooks/useTheme"
 
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
@@ -68,6 +69,9 @@ export default function App() {
   // The right sidebar (Phase 5) is the only tool surface now — the old floating
   // toolbar is gone. It starts open on desktop and collapsed on a phone.
   const sidebar = useSidebar()
+
+  // Light/dark theme, toggled from the top-left button.
+  const { theme, toggle: toggleTheme } = useTheme()
 
   // View-only lock, read by the pointer handlers. A viewer's drawing is blocked
   // client-side (the server enforces it too) so strokes don't flash and revert.
@@ -200,6 +204,16 @@ export default function App() {
   // Frontend
   return (
     <div ref={frameRef} className="app-wrapper">
+      {/* Top-left: light/dark theme toggle. */}
+      <button
+        type="button"
+        className="theme-toggle"
+        onClick={toggleTheme}
+        aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+        title={theme === "dark" ? "Light mode" : "Dark mode"}
+      >
+        {theme === "dark" ? "☀️" : "🌙"}
+      </button>
       {/* Top-right cluster: the logged-in user's room actions plus the auth
           control, laid out as one flex row instead of three independently
           fixed-positioned elements with magic right offsets. */}
