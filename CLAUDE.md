@@ -248,11 +248,16 @@ in the protocol any more.
 - **Restore** sets the live pixels, bumps the revision, persists, and broadcasts a fresh
   snapshot to everyone. It is *not* logged as an instruction — the new snapshot **is** the
   state, and recovery reads the latest snapshot.
-- **Playback** is read-only, so anyone (including viewers) may watch. The server sends a
-  base canvas + the ordered events after it; the client animates by applying them.
+- **Playback** is read-only, so anyone (including viewers) may watch. With no checkpoint the
+  server sends the **genesis base** (earliest snapshot) + the ordered events after it, so the
+  scrub covers the room **start-to-end** (Phase 6); from a checkpoint it sends that checkpoint
+  + events after it. The client animates by applying them, and the scrubber shows checkpoint
+  tick-marks + prev/next jump.
 
-Checkpoints interact with compaction: `saveRoom` keeps events newer than the **oldest
-checkpoint** so history stays replayable from it.
+Retention (Phase 6, §6): each room keeps **two snapshots** — a genesis base and the head —
+and retains every event after the base so the timeline replays start-to-end, bounded by
+**uniform decimation** at `MAX_HISTORY_EVENTS`. Decimation only ever deletes events already
+baked into the head snapshot, so it never affects recovery.
 
 ---
 
@@ -275,8 +280,14 @@ use.
 | ws ping              | 30 s     | Dead-socket reaping                              |
 | Stale-room + session sweep | 24 h | Bounds the only unbounded tables (90-day room retention) |
 
-**Compaction**: writing a snapshot also deletes the `draw_events` it supersedes, in the
-**same transaction** — so events are only trimmed once their replacement is committed.
+**Retention (Phase 6)**: writing a snapshot keeps **two** snapshots — the genesis base and
+the head — and, in the **same transaction**, prunes only the events at or below the base (all
+baked into the base snapshot). Everything after the base is retained so the timeline replays
+start-to-end; that span is bounded by **uniform decimation** (`historyDecimation.ts`,
+`MAX_HISTORY_EVENTS`) run from `saveRoom` right after the snapshot. A **resize** collapses to
+a single snapshot and prunes every event it supersedes (`resetBase`) — the hard boundary.
+Decimation and pruning only ever touch events already in a snapshot, so recovery (head +
+events after it) is unaffected.
 
 **Graceful shutdown**: `SIGTERM`/`SIGINT` → flush every room's buffer + write a final
 snapshot before exit. Works only because the Dockerfile runs `node` as PID 1, not `npm`.
@@ -411,8 +422,8 @@ Three suites, each matched to what it is good at:
 | Suite | Command | Count | Needs |
 | --- | --- | --- | --- |
 | Shared protocol (unit) | `npm test` (root) | **162** in 15 files | nothing |
-| Frontend | `cd frontend && npm test` | **90** in 20 files (two projects) | nothing |
-| Backend | `cd backend && npm test` | **128** in 15 files (DB tests gated on `POSTGRES_PASSWORD`) | Postgres for the DB-gated ones |
+| Frontend | `cd frontend && npm test` | **95** in 21 files (two projects) | nothing |
+| Backend | `cd backend && npm test` | **135** in 16 files (DB tests gated on `POSTGRES_PASSWORD`) | Postgres for the DB-gated ones |
 
 The shared suite is the highest-value code in the repo to test: pure, deterministic, no DOM
 / network / database, and **both sides execute it** — a bug there desynchronises every
@@ -765,6 +776,13 @@ failed auth. `.gitattributes` now forces LF — don't undo it.
   the top-right buttons in Phase 5. Left out of the `PopupBase`-routing commit deliberately
   (§12.4): fixing them means choosing real theme colours for those surfaces and re-driving
   the appearance, which is a separate concern from the modal-semantics change.
+- **Playback's final frame is approximate for decimated or restored rooms.** Start-to-end
+  replay = genesis base + retained events. Once a room's history has been uniformly decimated
+  (Phase 6), or a checkpoint *restore* has jumped the canvas without logging an instruction,
+  replaying those events no longer reconstructs the exact current canvas — so the scrubber's
+  last frame (and intermediate frames) drift from reality. Deliberate (§16 accepts thinned
+  fidelity), and the live board is always exact. A follow-up could send the true head canvas
+  on the `playback` message to make the end frame exact (§16 records why it wasn't).
 - `.env` lacks `PROD_PORT` (documented in `.env.example`; compose defaults it to 8080).
 
 ---
@@ -802,6 +820,9 @@ exactly why it is written down. Do not "fix" one of these without revisiting the
 | **Snapshots: binary frames + deflate; `draw_events` stays raw JSON.** | Compressing the event log too. | Instructions are tiny and on the latency-critical path; compressing them trades the thing we care about (speed) for the thing we don't (a few bytes). |
 | **Compression is APPLICATION-level: deflate the snapshot payload ourselves.** `perMessageDeflate: false` is set explicitly in `server.ts`. | Transport-level `permessage-deflate` on the `ws` server (which is what was originally asked for). | OWASP advises against transport compression: when attacker-influenced data shares a compression context with secrets, the compressed **size** leaks content — the CRIME/BREACH class. Compressing only the snapshot payload means the compressed buffer holds pixel bytes and nothing else, so no oracle exists. Same bandwidth win, and far more predictable memory, which `permessage-deflate` is notoriously not. **Do not "simplify" this by turning the flag back on.** |
 | **History: uniform decimation.** | Keep the ends sharp, thin only the middle. | Chosen so the *whole* timeline stays scrubbable at even fidelity. Accepted cost: recent history is thinned too. |
+| **Two-snapshot retention (genesis base + head).** Retain the whole event log after the base; bound it with decimation (Phase 6). | Keep only the latest snapshot and prune everything below it (the pre-Phase-6 behaviour). | Recovery needs only the head, but start-to-end playback needs a genesis base to replay forward from. The base is ≤ every event, so decimation only ever touches events already baked into the head snapshot — recovery is provably unaffected, which is what lets storage be bounded without risking durability. |
+| **Playback final frame shown as the replay renders it** (approximate after decimation or a checkpoint restore). | Ship the true head canvas on the `playback` message and show it at the scrubber's max. | The timeline is a visualisation decoupled from durability; §16 already accepts thinned intermediate frames, so an approximate last frame for heavily-decimated / restored rooms is acceptable — and it avoids a wire-protocol change entirely. |
+| **Timeline navigation (markers + prev/next) is open to everyone; restore stays privileged.** | Owner-only timeline navigation (a literal reading of the Phase-6 note). | Playback is read-only, and checkpoint metadata is already broadcast to all; the *write* (restoring the board to a checkpoint) is what stays gated (`hasEditAuthority`, unchanged). |
 | **UI tests: Testing Library + jsdom, plus the two-client Node harness.** | Playwright E2E. | Avoids a browser-automation toolchain and CI browser downloads. Accepted cost: hover tooltips are asserted via ARIA attributes, not real hover. |
 | **Undo is `Ctrl+Z` / `Ctrl+Shift+Z`.** | `Ctrl+V`. | `Ctrl+V` is paste; shadowing a universal shortcut confuses every user. |
 | **Display names cap at 24 chars**, ellipsised, full value in `title` + `aria-label`. | Hard truncation. | Truncating without the full value in an accessible attribute hides information from screen readers. |
@@ -906,10 +927,29 @@ role / aria-modal / Escape / inert contract; and the floating top-right account/
 buttons became a real flex layout. The canvas stays pan/zoomable. (The Testing Library +
 jsdom choice is recorded in §16.)
 
-### Phase 6 — Timeline scrubbing + uniform decimation
+### ✅ Phase 6 — Timeline scrubbing + uniform decimation
 
-Start-to-end scrub for everyone, checkpoint navigation for the owner, and uniform
-decimation once a room's history exceeds its cap (§16).
+Start-to-end timeline scrub for everyone, checkpoint navigation, and uniform decimation
+once a room's history exceeds its cap.
+
+- **Retention** moved from "prune to the latest snapshot" to a **two-snapshot model**: a
+  genesis **base** (blank @ rev 0, seeded on room creation; the resize image after a resize)
+  and the **head** (latest snapshot). Recovery still reads the head + events after it;
+  playback reads the base + events after it, so the scrub covers the room start-to-end. A
+  resize resets the base (the Phase 4 hard boundary). See §5.8/§6.
+- **Uniform decimation** (`backend/src/db/historyDecimation.ts`) thins the retained event
+  log to `MAX_HISTORY_EVENTS = 20,000` once it grows past it — evenly, keeping the first and
+  last, so the whole timeline stays scrubbable at even fidelity (§16). It runs in `saveRoom`
+  after the snapshot and only ever deletes events already baked into the head snapshot, so it
+  **cannot affect crash-recovery** — decimation is decoupled from durability.
+- **Playback** with no checkpoint replays from the genesis base; the (already-present) client
+  scrubber gained **checkpoint tick-marks + prev/next-checkpoint jump for everyone**
+  (restoring the board to a checkpoint stays owner/editor-gated, unchanged).
+- **No wire-protocol change and no DB migration.** Verified: pure decimation + marker-math
+  unit tests (fail-first); backend integration tests against Postgres (retention keeps the
+  genesis base + full span, decimation bounds the count with recovery still byte-exact); a
+  `smoke-test.mjs` playback probe (`baseRevision 0`, full span); and a live browser drive
+  (markers at the right frames, prev/next jumps, step-0-blank-genesis → step-N-full scrub).
 
 ### Phase 7 — Fundamentals writeup
 
