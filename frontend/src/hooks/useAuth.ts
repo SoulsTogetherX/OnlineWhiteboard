@@ -1,5 +1,5 @@
 //#region Imports
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useEffect, useRef, useState } from "react"
 
 import type { AuthUser } from "@shared/types/identity"
 //#endregion
@@ -18,6 +18,14 @@ export interface UseAuthResult {
   ) => Promise<AuthResult>
   logout: () => Promise<void>
 }
+//#endregion
+
+//#region Constants
+// Same-browser tabs share ONE session cookie, so a login/logout in any tab
+// changes what every tab's socket resolves to on its next (re)connect. This
+// channel tells the other tabs to re-read the session so their UI and reconnect
+// key agree with the cookie (see the cross-tab effect below).
+const AUTH_CHANNEL = "whiteboard-auth"
 //#endregion
 
 //#region Helpers
@@ -49,8 +57,21 @@ async function postJson(
 export default function useAuth(): UseAuthResult {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
+  const channelRef = useRef<BroadcastChannel | null>(null)
 
-  // On load, ask the server whether this browser already has a live session.
+  // Re-read whether this browser has a live session. Shared by the initial load
+  // and by the cross-tab sync — always reflects the shared cookie's truth.
+  const refresh = useCallback(async (): Promise<void> => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "same-origin" })
+      const data = await res.json()
+      setUser(data?.user ?? null)
+    } catch {
+      setUser(null)
+    }
+  }, [])
+
+  // On load, resolve the current session.
   useEffect(() => {
     let cancelled = false
     fetch("/api/auth/me", { credentials: "same-origin" })
@@ -75,6 +96,33 @@ export default function useAuth(): UseAuthResult {
     }
   }, [])
 
+  // Cross-tab sync. Each tab's `user` is local React state, so before this a
+  // guest tab kept a stale guest UI while its socket silently flipped to the
+  // account on the next reconnect (the cookie is browser-wide). When ANY tab
+  // logs in/out it posts here; the others re-read /api/auth/me, which updates
+  // their UI AND (via user.id -> reconnectKey) reconnects their socket so the
+  // server re-resolves identity — keeping every tab consistent.
+  useEffect(() => {
+    if (typeof BroadcastChannel === "undefined") {
+      return
+    }
+    const channel = new BroadcastChannel(AUTH_CHANNEL)
+    channel.onmessage = () => {
+      void refresh()
+    }
+    channelRef.current = channel
+    return () => {
+      channelRef.current = null
+      channel.close()
+    }
+  }, [refresh])
+
+  // Tell the other tabs their session may have changed. The receiver re-reads
+  // and does NOT re-broadcast, so there is no echo loop.
+  const announce = useCallback(() => {
+    channelRef.current?.postMessage("auth-changed")
+  }, [])
+
   const login = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
       const { status, data } = await postJson("/api/auth/login", {
@@ -83,11 +131,12 @@ export default function useAuth(): UseAuthResult {
       })
       if (status === 200 && data?.user) {
         setUser(data.user)
+        announce()
         return { ok: true }
       }
       return { ok: false, error: data?.error ?? "Could not log in." }
     },
-    [],
+    [announce],
   )
 
   const register = useCallback(
@@ -103,11 +152,12 @@ export default function useAuth(): UseAuthResult {
       })
       if (status === 201 && data?.user) {
         setUser(data.user)
+        announce()
         return { ok: true }
       }
       return { ok: false, error: data?.error ?? "Could not create account." }
     },
-    [],
+    [announce],
   )
 
   const logout = useCallback(async (): Promise<void> => {
@@ -116,7 +166,8 @@ export default function useAuth(): UseAuthResult {
       credentials: "same-origin",
     })
     setUser(null)
-  }, [])
+    announce()
+  }, [announce])
 
   return { user, isLoading, login, register, logout }
 }

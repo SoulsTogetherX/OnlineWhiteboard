@@ -1439,6 +1439,13 @@ export default class RoomManager {
       roomId: room.roomId,
       revision: room.revision,
     })
+    // Re-broadcast the roster too. Presence is otherwise push-only (join/leave/
+    // role change), so a client that was mid-reconnect when an update went out
+    // would keep a stale roster forever — the cause of tabs disagreeing on who
+    // is present. This heartbeat lets a missed roster self-heal within the
+    // interval, mirroring how revision_check heals canvas state (§5.3). The
+    // roster is a few dozen bytes, so re-sending it is cheap.
+    this.broadcastPresence(room)
   }
 
   // Snapshots go out as a BINARY frame: a small JSON header plus the raw RGBA
