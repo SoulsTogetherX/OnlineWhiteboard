@@ -262,7 +262,18 @@ export default function Whiteboard({
   )
   // The dotted outline of what the current tool would change. Fed the same refs
   // the pointer handlers read, so it always describes the live tool and size.
-  useBrushPreview(canvasRef, previewRef, selectedToolRef, strokeSizeRef, viewOnlyRef)
+  useBrushPreview(
+    canvasRef,
+    previewRef,
+    selectedToolRef,
+    strokeSizeRef,
+    // The value pair alongside the refs: they are what makes the preview redraw
+    // the instant the slider (or the wheel over it) changes the size, instead of
+    // waiting for the next pointer move.
+    strokeSize,
+    selectedTool,
+    viewOnlyRef,
+  )
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   // The tool rides along with every cursor update, so other people see what this
   // pointer is holding. A ref, read at send time: the tool changes often and the

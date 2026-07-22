@@ -1,5 +1,5 @@
 //#region Imports
-import { useEffect } from "react"
+import { useCallback, useEffect, useLayoutEffect, useRef } from "react"
 
 import {
   canvasDimsOf,
@@ -8,6 +8,7 @@ import {
 } from "@shared/utils/helperProtocolMethods"
 import { blurRadiusFor } from "@shared/utils/handleBlurProtocol"
 
+import type { Vec } from "@shared/types/primitive"
 import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 //#endregion
 
@@ -37,56 +38,76 @@ export default function useBrushPreview(
   previewRef: React.RefObject<HTMLCanvasElement | null>,
   toolRef: React.RefObject<AppTool>,
   strokeSizeRef: React.RefObject<number>,
+  // The size and tool are ALSO passed as plain values, not only through the refs
+  // above. The refs are what the pointer handlers read on every move (a ref so
+  // moving the pointer never re-subscribes them); the values are what tell the
+  // redraw effect below that the footprint changed while the pointer was NOT
+  // moving — dragging the size slider, or scrolling it with the wheel. Without
+  // them the outline only updated on the next pointer event, so it lagged the
+  // slider until you nudged the mouse.
+  strokeSize: number,
+  tool: AppTool,
   // While this reads true the preview stays hidden: a viewer cannot draw, so
   // promising them a brush footprint would be a lie.
   disabledRef?: React.RefObject<boolean>,
 ): void {
-  useEffect(() => {
-    const canvas = canvasRef.current
-    const preview = previewRef.current
-    if (!canvas || !preview) {
-      return
-    }
+  // The last position the pointer was seen at, in canvas pixel coordinates, kept
+  // across renders so a size or tool change can redraw the footprint exactly
+  // where the pointer already is. Null while the pointer is off the canvas, so
+  // an off-canvas size change draws nothing rather than a stray outline.
+  const lastPosRef = useRef<Vec | null>(null)
 
-    const clear = () => {
-      const ctx = preview.getContext("2d")
-      ctx?.clearRect(0, 0, preview.width, preview.height)
-    }
-
-    const render = (ev: PointerEvent) => {
+  // Draws the footprint at a KNOWN canvas position, independent of any pointer
+  // event, so both the pointer handlers and the size/tool redraw effect can call
+  // it. Everything it reads comes from stable refs, so the callback identity is
+  // stable — which is what lets the listener effect subscribe exactly once.
+  //
+  // `navigating` is passed in because only a real pointer event carries the
+  // shift state; the value-change redraw is never a navigate gesture.
+  const draw = useCallback(
+    (pos: Vec, navigating: boolean) => {
+      const canvas = canvasRef.current
+      const preview = previewRef.current
+      if (!canvas || !preview) {
+        return
+      }
       const ctx = preview.getContext("2d")
       if (!ctx) {
         return
       }
       ctx.clearRect(0, 0, preview.width, preview.height)
 
-      const tool = toolRef.current
+      const activeTool = toolRef.current
 
       // Nothing to preview when the pointer is not going to paint: shift is the
-      // navigate modifier, and the grabber is that modifier latched on. Showing
-      // a footprint then promises a mark that dragging will not make.
-      if (ev.shiftKey || tool === "grabber" || disabledRef?.current === true) {
+      // navigate modifier, and the grabber is that modifier latched on. Showing a
+      // footprint then promises a mark that dragging will not make.
+      if (
+        navigating ||
+        activeTool === "grabber" ||
+        disabledRef?.current === true
+      ) {
         return
       }
 
       const dims = canvasDimsOf(canvas)
-      const [pos] = getPosCorrected(ev, canvas)
 
       // Which pixels this tool would touch at this position. Bucket and
       // eyedropper both act on a single pixel from the pointer's point of view
       // (the fill's SPREAD depends on canvas contents, which is not something to
       // recompute on every pointer move), so they preview as one pixel.
       //
-      // The blur was missing here and previewed as that single pixel, which was
-      // wrong rather than absent — it covers a disc like the brushes do. Its
-      // footprint is a RADIUS of `size` (see blurRadiusFor), and forEachDiscPixel
-      // takes a diameter, so it is twice what the stroke tools pass. Getting that
-      // factor wrong would draw an outline that does not match what the tool
-      // actually changes, which is worse than showing nothing.
-      const usesBrush = tool === "pencil" || tool === "eraser" || tool === "spray"
+      // The blur covers a disc like the brushes do. Its footprint is a RADIUS of
+      // `size` (see blurRadiusFor), and forEachDiscPixel takes a diameter, so it
+      // is twice what the stroke tools pass. Getting that factor wrong would draw
+      // an outline that does not match what the tool actually changes.
+      const usesBrush =
+        activeTool === "pencil" ||
+        activeTool === "eraser" ||
+        activeTool === "spray"
       const size = usesBrush
         ? strokeSizeRef.current
-        : tool === "blur"
+        : activeTool === "blur"
           ? blurRadiusFor(strokeSizeRef.current) * 2
           : 1
 
@@ -121,22 +142,71 @@ export default function useBrushPreview(
         ctx.fillStyle = (x + y) % 2 === 0 ? DOT_DARK : DOT_LIGHT
         ctx.fillRect(x, y, 1, 1)
       }
+    },
+    [canvasRef, previewRef, toolRef, strokeSizeRef, disabledRef],
+  )
+
+  // Pointer wiring. Subscribes once — `draw` is stable, so nothing here re-runs
+  // when the size changes.
+  useEffect(() => {
+    const canvas = canvasRef.current
+    const preview = previewRef.current
+    if (!canvas || !preview) {
+      return
+    }
+
+    const clear = () => {
+      preview.getContext("2d")?.clearRect(0, 0, preview.width, preview.height)
+    }
+
+    const render = (ev: PointerEvent) => {
+      const [pos] = getPosCorrected(ev, canvas)
+      lastPosRef.current = pos
+      draw(pos, ev.shiftKey)
+    }
+
+    const onLeave = () => {
+      // Forget the position too, so a size change with the pointer off the canvas
+      // does not paint a footprint into empty space.
+      lastPosRef.current = null
+      clear()
+    }
+
+    // Releasing a key ends a possible navigate gesture (shift), so bring the
+    // footprint back at the last position rather than waiting for a move.
+    const onKeyUp = () => {
+      if (lastPosRef.current) {
+        draw(lastPosRef.current, false)
+      }
     }
 
     canvas.addEventListener("pointermove", render)
     canvas.addEventListener("pointerdown", render)
-    canvas.addEventListener("pointerleave", clear)
-    // A tool or size change while the pointer sits still would otherwise leave
-    // the old footprint on screen until the next move.
-    window.addEventListener("keyup", clear)
+    canvas.addEventListener("pointerleave", onLeave)
+    window.addEventListener("keyup", onKeyUp)
 
     return () => {
       canvas.removeEventListener("pointermove", render)
       canvas.removeEventListener("pointerdown", render)
-      canvas.removeEventListener("pointerleave", clear)
-      window.removeEventListener("keyup", clear)
+      canvas.removeEventListener("pointerleave", onLeave)
+      window.removeEventListener("keyup", onKeyUp)
       clear()
     }
-  }, [canvasRef, previewRef, toolRef, strokeSizeRef, disabledRef])
+  }, [canvasRef, previewRef, draw])
+
+  // The live redraw. Repaints the footprint at the last-known pointer position
+  // whenever the size or tool VALUE changes, which is what makes the outline
+  // track the slider (and the wheel over it) without waiting for a pointer move.
+  //
+  // useLayoutEffect, not useEffect: it fires synchronously at commit, before the
+  // browser paints, so the resized outline lands in the same frame as the number
+  // it reflects instead of trailing it. strokeSizeRef is already current here —
+  // setStrokeSize writes the ref synchronously before the state update that runs
+  // this — so `draw` reads the new size.
+  useLayoutEffect(() => {
+    if (lastPosRef.current) {
+      draw(lastPosRef.current, false)
+    }
+  }, [strokeSize, tool, draw])
 }
 //#endregion
