@@ -21,6 +21,7 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     socketLabel: "Connected",
     onLoadRoom: vi.fn(),
     onLeaveRoom: vi.fn(),
+    onOpenDashboard: vi.fn(),
     participants: [participant("owner")],
     self: participant("owner"),
     openEditing: true,

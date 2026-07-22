@@ -1,8 +1,12 @@
 /* A small checkerboard-backed frame so transparent pixels read as "empty"
    rather than blending into the card. */
 .room-thumb-frame {
-  width: 96px;
-  height: 96px;
+  /* 72, not 96. At three-across the card is wide, but the preview is a HINT of
+     which board this is, not the board itself — at 96 it was claiming more than
+     half the card's width and squeezing the title and timestamp it sits beside
+     into a couple of characters. */
+  width: 72px;
+  height: 72px;
   flex: 0 0 auto;
   border-radius: 0.35rem;
   overflow: hidden;

@@ -46,6 +46,8 @@ export interface RoomTabProps {
   // Back to the lobby. Account controls live in the Account tab; this tab is
   // only about the room you are in.
   onLeaveRoom: () => void
+  // Opens the "My rooms" dashboard.
+  onOpenDashboard: () => void
   participants: Participant[]
   self: Participant | null
   openEditing: boolean
@@ -86,6 +88,7 @@ export default function RoomTab({
   socketLabel,
   onLoadRoom,
   onLeaveRoom,
+  onOpenDashboard,
   participants,
   self,
   openEditing,
@@ -229,6 +232,18 @@ export default function RoomTab({
         title="Rooms"
         storageKey="online-whiteboard-room-section-navigation"
       >
+        {/* The dashboard is reachable from the top-right corner too, but that
+            button only appears while signed in and sits at the far side of the
+            screen — and this is the section you are already in when you are
+            thinking about which room to be in. */}
+        <button
+          type="button"
+          className="room-open-dashboard"
+          onClick={onOpenDashboard}
+        >
+          Browse my rooms
+        </button>
+
         <form
           className="room-change"
           onSubmit={(event) => {

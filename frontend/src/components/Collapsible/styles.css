@@ -3,6 +3,13 @@
   border-radius: 0.45rem;
 
   background: var(--panel-background);
+
+  /* Clips the summary's hover fill to the rounded corners. The summary is a
+     square-cornered child, so its background painted past the curve and the
+     highlight showed square corners inside a rounded box. Doing it here rather
+     than re-declaring the radius on the summary also keeps it correct in both
+     states — open, only the top corners are curved, and the clip follows. */
+  overflow: hidden;
 }
 
 .collapsible-summary {

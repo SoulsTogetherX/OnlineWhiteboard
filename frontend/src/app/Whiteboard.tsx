@@ -380,6 +380,7 @@ export default function Whiteboard({
             socketLabel={socketLabel}
             onLoadRoom={loadRoom}
             onLeaveRoom={onLeaveRoom}
+            onOpenDashboard={dashboard.open}
             participants={participants}
             self={self}
             openEditing={settings.openEditing}

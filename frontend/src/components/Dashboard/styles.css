@@ -8,8 +8,9 @@
      nothing to resolve against, both settled on the cards' min-content and the
      dialog rendered ~310px wide on a 1400px screen.
      A vw basis breaks the cycle; the calc leaves room for the dialog's own
-     padding and the overlay's margin so it never overflows the screen. */
-  width: min(76rem, calc(100vw - 5rem));
+     padding and the overlay's margin so it never overflows the screen.
+     Sized for THREE columns rather than as many as fit — see the grid. */
+  width: min(58rem, calc(100vw - 5rem));
 }
 
 /* Pinned while the list scrolls under it. The negative margins let the bar span
@@ -120,41 +121,80 @@
 .dashboard-error {
   color: var(--danger-color);
 }
+/* Centred on both axes in the space the grid would have occupied, rather than
+   sitting as a stray line of text under the header. The min-height is what gives
+   it something to be vertically centred WITHIN — without it the paragraph is
+   only as tall as its own text, and centring in that is a no-op. */
 .dashboard-empty {
-  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  min-height: 12rem;
+  margin: 0;
+  padding: 0 1rem;
+
+  color: var(--muted-text-color);
+  text-align: center;
+  text-wrap: balance;
 }
 
-/* auto-fill + minmax means the COLUMN COUNT is decided by the available width
-   rather than hard-coded: the browser fits as many 12rem tracks as it can and
-   stretches them to fill. Narrowing the minimum from 14rem is what buys the
-   extra columns, and it still collapses to one column on a phone with no
-   media query. */
+/* Responsive, but capped at THREE columns.
+   `auto-fill` alone fits as many tracks as it can, which at six across left each
+   card too narrow for its own title. The `max()` sets each track's floor to a
+   THIRD of the row (minus the two gaps between three tracks), so the browser can
+   never fit a fourth; on a narrower screen the 15rem floor takes over instead and
+   it drops to two, then one. Still no media query — the two floors express
+   "at most three" and "never thinner than readable", and whichever binds, wins. */
 .dashboard-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(15rem, calc((100% - 1.5rem) / 3)), 1fr)
+  );
   gap: 0.75rem;
 }
 
-/* Positioning context for the checkbox that overlays each card's corner. */
+/* The card and its checkbox are SIBLINGS in a row: the tick sits outside the
+   button entirely.
+   It used to be absolutely positioned over the card's corner, which put a
+   1rem target on top of a large button whose action is "leave this room and
+   open that one" — miss the tick and you are somewhere else entirely. Out here
+   the two targets cannot overlap at all. */
 .dashboard-item {
-  position: relative;
   display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* A label, not a bare input, so the whole padded area is a hit target rather
+   than just the 1rem box the browser draws. */
+.dashboard-select-label {
+  display: flex;
+  align-items: center;
+  flex: none;
+
+  padding: 0 0.35rem;
+
+  border-radius: 0.4rem;
+
+  cursor: pointer;
+}
+
+.dashboard-select-label:hover {
+  background: var(--hover-background);
 }
 
 .dashboard-select {
-  position: absolute;
-  top: 0.45rem;
-  left: 0.45rem;
-  z-index: 1;
-
   width: 1.05rem;
   height: 1.05rem;
 
   cursor: pointer;
-  /* The card underneath is themed, so the native tick must be too, or it renders
+  /* The card beside it is themed, so the native tick must be too, or it renders
      in the OS accent and reads as something the page does not own. */
   accent-color: var(--accent-color);
 }
@@ -175,7 +215,12 @@
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  width: 100%;
+  /* flex:1 + min-width:0 is the pair that makes truncation work. Without the
+     min-width a flex item refuses to shrink below its CONTENT's intrinsic size,
+     so a long room name pushed the card wider than its grid track instead of
+     ellipsing — the text overflowed rather than being contained. */
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: left;
   padding: 0.6rem;
   border-radius: 0.5rem;
@@ -199,6 +244,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  /* Same reason as the card: this is the item that must give way, so the
+     thumbnail keeps its size and the TEXT is what ellipses. */
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -213,7 +261,16 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   font-size: 0.75rem;
+}
+
+/* The role chip keeps its size; the timestamp is what gives way, because
+   "owner" truncated to "own…" is worse than "3 hours…". */
+.dashboard-when {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-role {

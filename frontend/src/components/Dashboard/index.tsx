@@ -161,16 +161,6 @@ export default function Dashboard({
                     isSelected ? " dashboard-item-selected" : ""
                   }`}
                 >
-                  {/* A SIBLING of the card, not a child of it: a checkbox inside
-                      a button is nested interactive content, which browsers and
-                      screen readers both handle badly. */}
-                  <input
-                    type="checkbox"
-                    className="dashboard-select"
-                    checked={isSelected}
-                    onChange={() => toggle(room.roomId)}
-                    aria-label={`Select ${name}`}
-                  />
                   <button
                     type="button"
                     className={`dashboard-card${
@@ -193,6 +183,27 @@ export default function Dashboard({
                       </span>
                     </span>
                   </button>
+
+                  {/* Outside the card, to its right. A SIBLING of the button
+                      rather than a child — a checkbox inside a button is nested
+                      interactive content, which browsers and screen readers both
+                      handle badly — and beside it rather than over it, because a
+                      tick overlaying the card meant a near miss opened the room
+                      instead of selecting it. Now the two targets cannot
+                      overlap. The label makes the whole padded strip clickable,
+                      not just the box the browser draws. */}
+                  <label
+                    className="dashboard-select-label"
+                    title={`Select ${name}`}
+                  >
+                    <input
+                      type="checkbox"
+                      className="dashboard-select"
+                      checked={isSelected}
+                      onChange={() => toggle(room.roomId)}
+                      aria-label={`Select ${name}`}
+                    />
+                  </label>
                 </li>
               )
             })}

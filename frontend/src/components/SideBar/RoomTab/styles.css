@@ -155,6 +155,40 @@
   width: 100%;
 }
 
+/* Opens the rooms dashboard. Shares the leave button's shape — both are "go
+   somewhere else" — but carries the accent so it does not read as the
+   destructive one sitting right below it. */
+.room-open-dashboard {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 100%;
+  padding: 0.35rem 0.75rem;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 0.35rem;
+
+  background: var(--surface-background);
+  color: var(--accent-color);
+
+  text-align: center;
+  cursor: pointer;
+}
+
+.room-open-dashboard:hover {
+  background: var(--hover-background);
+}
+
+.room-open-dashboard:active {
+  background: var(--active-background);
+}
+
+.room-open-dashboard:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
 .room-request-editor {
   /* Full width and centred, like the other stacked buttons in this tab. It was
      align-self:flex-start, which left it hugging the left edge at whatever width
