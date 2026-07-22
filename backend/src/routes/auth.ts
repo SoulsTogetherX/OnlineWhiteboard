@@ -12,7 +12,10 @@ import {
   resolveSessionUser,
   setSessionCookie,
 } from "@/auth/session"
-import { closeSocketsForSession } from "@/sockets/sessionRegistry"
+import {
+  closeSocketsForSession,
+  closeSocketsForUser,
+} from "@/sockets/sessionRegistry"
 import {
   validateEmail,
   validatePassword,
@@ -152,7 +155,11 @@ export default function configureAuthRoutes(app: Express): void {
     const invalid = () =>
       res.status(401).json({ error: "Incorrect email or password." })
 
-    if (!email.ok || typeof password !== "string") {
+    // Length-bound BEFORE hashing. Register caps at 200 with a comment calling a
+    // megabyte-long "password" a cheap denial of service; login had no bound, so
+    // with a 2 MB JSON limit that was a 2 MB input to scrypt on the endpoint an
+    // attacker actually hits. Same generic reply, so it stays non-enumerable.
+    if (!email.ok || typeof password !== "string" || password.length > 200) {
       return invalid()
     }
 
@@ -242,9 +249,11 @@ export default function configureAuthRoutes(app: Express): void {
       return res.status(401).json({ error: "Not signed in." })
     }
 
-    if (token) {
-      closeSocketsForSession(hashSessionToken(token))
-    }
+    // EVERY session's sockets, not just this one's. The other sessions' rows
+    // cascade away with the user below, but their sockets would otherwise stay
+    // open holding a userId for a row that no longer exists, until the 30-minute
+    // revalidation sweep noticed.
+    closeSocketsForUser(current.id)
 
     // Everything hanging off the id — sessions, saved colours, memberships
     // (ownership included) — goes with it via the schema's own ON DELETE rules.

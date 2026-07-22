@@ -6,6 +6,7 @@ import { WebSocketServer } from "ws"
 import configureRoutes from "./routes"
 import configureWebSockets from "./sockets"
 import { runMigrations } from "./db/migrate"
+import { assertEmailSecretsPresent } from "./auth/emailCrypto"
 import pool from "./db/pool"
 //#endregion
 
@@ -96,6 +97,13 @@ process.on("SIGINT", () => void shutdown("SIGINT"))
 // container's restart policy retries, which is the right behaviour when the
 // database is briefly unreachable at boot.
 async function start(): Promise<void> {
+  // Before ANYTHING else, and before the port opens: read the email secrets so a
+  // deploy missing them dies here instead of at the first person who signs up.
+  // The fail-closed check inside emailCrypto only fires when it is reached, and
+  // every other caller is lazy (register/login) — so without this, "refuses to
+  // start in production" was aspirational rather than true.
+  assertEmailSecretsPresent()
+
   await runMigrations()
 
   // Only now that the schema exists is it safe to start the cleanup sweep, which

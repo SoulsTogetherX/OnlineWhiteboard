@@ -17,7 +17,12 @@ export default function configure(app: Express) {
   // (default 100kb limit) and again here (2mb limit) — but express.json marks
   // the request as parsed, so the second registration was always a no-op and
   // the 2mb limit never actually took effect.
-  app.use(express.json({ limit: "2mb" }))
+  //
+  // 64kb, not 2mb: the largest legitimate body this API takes is a register
+  // form. Canvas data never travels over HTTP — it goes down the socket, which
+  // has its own derived 4 MiB ceiling — so a multi-megabyte JSON limit only ever
+  // sized the buffer an unauthenticated caller could make the server allocate.
+  app.use(express.json({ limit: "64kb" }))
 
   configureAuthRoutes(app)
   configureColorRoutes(app)

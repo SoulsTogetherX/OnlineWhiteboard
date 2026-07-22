@@ -129,6 +129,23 @@ function encryptionKey(): Buffer {
 }
 //#endregion
 
+// Forces both secrets to be read NOW rather than at first use.
+//
+// The fail-closed check above is only as good as when it runs, and every caller
+// of it is lazy: pepper() and encryptionKey() are reached from register, login
+// and nothing else. A production deploy missing EMAIL_INDEX_PEPPER therefore
+// booted cleanly, passed the health check (which deliberately touches nothing),
+// took traffic, and threw on the first person who tried to sign up — surfacing
+// as a generic 500 rather than as the refusal to start that was intended.
+//
+// server.ts calls this before listen(), which is what makes "refuses to boot"
+// true rather than aspirational.
+export function assertEmailSecretsPresent(): void {
+  pepper()
+  encryptionKey()
+}
+//#endregion
+
 //#region Blind index
 // Deterministic: the same address always produces the same index, which is what
 // makes lookup possible. Normalisation happens in validateEmail (trim +

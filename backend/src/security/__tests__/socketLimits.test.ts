@@ -15,7 +15,7 @@ import {
   MAX_VIOLATIONS_BEFORE_CLOSE,
   SUSTAINED_UNITS_PER_SEC,
   SocketRateLimiter,
-  connectionKey,
+  connectionKeys,
   messageCost,
 } from "../socketLimits"
 
@@ -337,31 +337,66 @@ describe("connection cap", () => {
   })
 })
 
-describe("connectionKey", () => {
+describe("connectionKeys", () => {
   const req = (headers: Record<string, string>) =>
     ({
       headers,
       socket: { remoteAddress: "10.0.0.1" },
     }) as never
 
-  it("keys a logged-in visitor by a HASH of their session cookie", () => {
+  it("keys a logged-in visitor by IP *and* by a HASH of their session cookie", () => {
     // Built from the constant, not a hardcoded "sid": the cookie name differs
     // between dev and production (__Host- prefix), and a hardcoded name would
     // make this test quietly environment-dependent.
-    const { key, isAuthenticated } = connectionKey(
+    const keys = connectionKeys(
       req({ cookie: `${SESSION_COOKIE}=super-secret-token` }),
     )
-    expect(isAuthenticated).toBe(true)
-    expect(key.startsWith("s:")).toBe(true)
+    expect(keys.ip).toBe("ip:10.0.0.1")
+    expect(keys.session?.startsWith("s:")).toBe(true)
     // The raw token must never end up as a map key.
-    expect(key).not.toContain("super-secret-token")
+    expect(keys.session).not.toContain("super-secret-token")
   })
 
-  it("falls back to IP for guests, preferring the proxy header", () => {
-    const viaProxy = connectionKey(req({ "x-real-ip": "203.0.113.9" }))
-    expect(viaProxy).toEqual({ key: "ip:203.0.113.9", isAuthenticated: false })
+  it("still keys by IP when there is no cookie at all", () => {
+    const viaProxy = connectionKeys(req({ "x-real-ip": "203.0.113.9" }))
+    expect(viaProxy).toEqual({ ip: "ip:203.0.113.9", session: null })
 
-    const direct = connectionKey(req({}))
-    expect(direct).toEqual({ key: "ip:10.0.0.1", isAuthenticated: false })
+    const direct = connectionKeys(req({}))
+    expect(direct.ip).toBe("ip:10.0.0.1")
+    expect(direct.session).toBeNull()
+  })
+
+  // The bug this closes: the key used to be the session hash INSTEAD of the IP
+  // whenever a cookie was present, and the cookie was never validated. Anyone
+  // could mint an unlimited number of private buckets by sending random tokens,
+  // and never touch the IP cap at all.
+  it("charges a forged session cookie against the IP cap anyway", () => {
+    const counter = new ConnectionCounter()
+    let accepted = 0
+    for (let i = 0; i < MAX_CONNECTIONS_PER_IP + 5; i += 1) {
+      const keys = connectionKeys(
+        req({ cookie: `${SESSION_COOKIE}=forged-token-${i}` }),
+      )
+      if (counter.tryAcquireAll(keys)) {
+        accepted += 1
+      }
+    }
+    // Every forgery looked like a different account, but they all came from one
+    // address, so the IP cap is what bounds them.
+    expect(accepted).toBe(MAX_CONNECTIONS_PER_IP)
+  })
+
+  it("never leaks an IP slot when the session cap is what refused", () => {
+    const counter = new ConnectionCounter()
+    const keys = connectionKeys(req({ cookie: `${SESSION_COOKIE}=one-real-token` }))
+
+    for (let i = 0; i < MAX_CONNECTIONS_PER_USER; i += 1) {
+      expect(counter.tryAcquireAll(keys)).toBe(true)
+    }
+    // Refused on the session cap...
+    expect(counter.tryAcquireAll(keys)).toBe(false)
+    // ...and the failed attempt must not have consumed an IP slot, or a client
+    // hitting its own cap would slowly starve everyone behind that address.
+    expect(counter.count("ip:10.0.0.1")).toBe(MAX_CONNECTIONS_PER_USER)
   })
 })

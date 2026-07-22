@@ -82,6 +82,12 @@ const FLUSH_INTERVAL_MS = 250
 // Flush early if the buffer grows past this between ticks, so a burst (e.g. a
 // fast scribble, or many users in one room) can't build an unbounded backlog or
 // stretch the loss window beyond one batch.
+// How much unsent data may pile up for one socket before further sends are
+// dropped. Sized above the largest single legitimate message — a compressed
+// full-canvas snapshot plus a playback payload — so a slow reader is only cut
+// off once it is genuinely failing to keep up, never mid-message.
+const MAX_BUFFERED_BYTES = 8 * 1024 * 1024
+
 const MAX_EVENT_BUFFER = 200
 
 // Cap on messages buffered while a room loads from Postgres (see addClient).
@@ -114,7 +120,7 @@ type RoomState = {
   revision: number
   isDirty: boolean
   saveTimer: NodeJS.Timeout
-  snapshotTimer: NodeJS.Timeout
+  revisionCheckTimer: NodeJS.Timeout
   flushTimer: NodeJS.Timeout
   // Applied instructions awaiting their batched write to draw_events.
   eventBuffer: DrawEvent[]
@@ -157,6 +163,9 @@ export default class RoomManager {
   // Per-socket flood control. Keyed by the socket object, so state disappears
   // with the connection.
   private rateLimiter = new SocketRateLimiter()
+  // Sockets with a playback being built. A WeakSet so a disconnect during one
+  // cannot leave an entry behind — there is no cleanup path to forget.
+  private playbackInFlight = new WeakSet<ClientSocket>()
 
   constructor(private readonly wss: WebSocketServer) {}
 
@@ -432,7 +441,7 @@ export default class RoomManager {
         () => void this.saveRoom(roomId),
         SAVE_INTERVAL_MS,
       ),
-      snapshotTimer: setInterval(
+      revisionCheckTimer: setInterval(
         () => this.broadcastRevisionCheck(roomId),
         SNAPSHOT_INTERVAL_MS,
       ),
@@ -1261,6 +1270,10 @@ export default class RoomManager {
     } catch (error) {
       console.error(`Failed to build playback for ${room.roomId}:`, error)
       this.send(socket, { type: "error", message: "Could not load history." })
+    } finally {
+      // Released whatever happened, or one failure would lock this socket out of
+      // playback for as long as it stayed connected.
+      this.playbackInFlight.delete(socket)
     }
   }
 
@@ -1366,7 +1379,7 @@ export default class RoomManager {
       return
     }
     clearInterval(room.saveTimer)
-    clearInterval(room.snapshotTimer)
+    clearInterval(room.revisionCheckTimer)
     clearInterval(room.flushTimer)
     this.rooms.delete(room.roomId)
   }
@@ -1382,7 +1395,7 @@ export default class RoomManager {
     clearInterval(this.cleanupTimer)
     for (const room of this.rooms.values()) {
       clearInterval(room.saveTimer)
-      clearInterval(room.snapshotTimer)
+      clearInterval(room.revisionCheckTimer)
       clearInterval(room.flushTimer)
     }
     // Drain all rooms concurrently — they write to independent rows.
@@ -1499,6 +1512,21 @@ export default class RoomManager {
     if (socket.readyState !== socket.OPEN) {
       return
     }
+
+    // Backpressure. `send` queues into a kernel/library buffer that the server
+    // owns; a client that reads slowly — or deliberately never reads — otherwise
+    // accumulates that buffer without limit across snapshots, playbacks and
+    // every broadcast, which is a memory exhaustion the message rate limiter
+    // cannot see, because the client need not send anything at all to cause it.
+    //
+    // Dropping is safe for exactly the reason the revision heartbeat exists: a
+    // client that misses a broadcast notices the revision gap and resyncs (§5.3).
+    // Closing outright would be worse — a brief network stall would evict an
+    // honest user mid-stroke.
+    if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      return
+    }
+
     socket.send(payload)
   }
 
