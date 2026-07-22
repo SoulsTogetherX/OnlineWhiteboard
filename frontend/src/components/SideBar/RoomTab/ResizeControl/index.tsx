@@ -7,6 +7,8 @@ import {
 } from "@shared/constants/canvas"
 
 import "./styles.css"
+
+import Button from "@/components/Button"
 //#endregion
 
 //#region Helpers
@@ -105,9 +107,9 @@ export default function ResizeControl({
               onChange={(event) => setHeightInput(event.target.value)}
             />
           </div>
-          <button type="submit" className="resize-apply">
+          <Button type="submit" variant="primary" size="sm">
             Apply
-          </button>
+          </Button>
         </form>
       )}
     </div>

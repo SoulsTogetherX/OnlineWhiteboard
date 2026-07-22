@@ -69,20 +69,3 @@
   font-size: 0.85rem;
 }
 
-.resize-apply {
-  padding: 0.4rem 0.75rem;
-
-  border: 1px solid var(--accent-color);
-  border-radius: 0.3rem;
-
-  background-color: var(--accent-color);
-  color: white;
-  font-size: 0.85rem;
-
-  cursor: pointer;
-}
-
-.resize-apply:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}

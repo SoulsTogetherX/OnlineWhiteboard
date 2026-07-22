@@ -1,6 +1,8 @@
 //#region Imports
 import { useState } from "react"
 
+import Button from "@/components/Button"
+
 import type { AuthUser } from "@shared/types/identity"
 
 import "./styles.css"
@@ -51,9 +53,9 @@ export default function AccountTab({
           You are drawing as a guest. Signing in keeps your name, your colour and
           your saved palette across devices.
         </p>
-        <button type="button" className="account-button account-button-primary" onClick={onOpenAuth}>
+        <Button variant="primary" fullWidth onClick={onOpenAuth}>
           Log in or register
-        </button>
+        </Button>
       </div>
     )
   }
@@ -119,9 +121,9 @@ export default function AccountTab({
             maxLength={32}
             autoComplete="off"
           />
-          <button type="submit" disabled={!nameChanged || busy}>
+          <Button type="submit" variant="primary" disabled={!nameChanged || busy}>
             Save
-          </button>
+          </Button>
         </div>
         <p className="account-hint">
           This is the name other people see on your cursor.
@@ -139,14 +141,9 @@ export default function AccountTab({
         </p>
       )}
 
-      <button
-        type="button"
-        className="account-button"
-        onClick={onLogout}
-        disabled={busy}
-      >
+      <Button fullWidth onClick={onLogout} disabled={busy}>
         Log out
-      </button>
+      </Button>
 
       <section className="account-danger" aria-label="Delete account">
         {confirmingDelete ? (
@@ -156,33 +153,32 @@ export default function AccountTab({
               drawings stay.
             </p>
             <div className="account-danger-row">
-              <button
-                type="button"
-                className="account-button"
+              <Button
+                fullWidth
                 onClick={() => setConfirmingDelete(false)}
                 disabled={busy}
               >
                 Cancel
-              </button>
-              <button
-                type="button"
-                className="account-button account-button-danger"
+              </Button>
+              <Button
+                variant="danger"
+                fullWidth
                 onClick={confirmDelete}
                 disabled={busy}
               >
                 Delete for good
-              </button>
+              </Button>
             </div>
           </>
         ) : (
-          <button
-            type="button"
-            className="account-button account-button-danger"
+          <Button
+            variant="danger"
+            fullWidth
             onClick={() => setConfirmingDelete(true)}
             disabled={busy}
           >
             Delete account
-          </button>
+          </Button>
         )}
       </section>
     </div>

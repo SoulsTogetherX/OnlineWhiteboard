@@ -90,38 +90,6 @@
   gap: 8px;
 }
 
-/* "My Rooms" opens the dashboard; "Members" opens the membership panel. */
-.app-action-button {
-  padding: 0.3rem 0.7rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.35rem;
-
-  background: var(--surface-background);
-  color: var(--text-color);
-
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.app-action-button:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
-/* Both corner controls react the same way: lighten on hover, settle on press. */
-.theme-toggle:hover,
-.app-action-button:hover {
-  background: var(--hover-background);
-  border-color: var(--accent-color);
-}
-
-.theme-toggle:active,
-.app-action-button:active {
-  background: var(--active-background);
-  transform: translateY(1px);
-}
-
 /* The navigate-mode cue. Directly under the theme toggle in the top-LEFT, so it
    sits with the other whole-app controls; the top-right corner belongs to the
    room actions, and a hint blinking in and out over those read as one of THEM

@@ -1,6 +1,8 @@
 //#region Imports
 import { useState } from "react"
 
+import Button from "@/components/Button"
+
 import { MAX_ROOM_NAME_INPUT_LENGTH } from "@shared/constants/protocol"
 
 import type { AuthUser } from "@shared/types/identity"
@@ -55,24 +57,12 @@ export default function Lobby({
                 />
                 <span className="lobby-username">{user.username}</span>
               </span>
-              <button
-                type="button"
-                className="lobby-button lobby-button-quiet"
-                onClick={onLogout}
-              >
-                Log out
-              </button>
+              <Button onClick={onLogout}>Log out</Button>
             </>
           ) : (
             <>
               <span className="lobby-guest">You are browsing as a guest.</span>
-              <button
-                type="button"
-                className="lobby-button lobby-button-quiet"
-                onClick={onOpenAuth}
-              >
-                Log in or register
-              </button>
+              <Button onClick={onOpenAuth}>Log in or register</Button>
             </>
           )}
         </section>
@@ -99,13 +89,14 @@ export default function Lobby({
             autoComplete="off"
             placeholder="e.g. design-review"
           />
-          <button
+          <Button
             type="submit"
-            className="lobby-button lobby-button-primary"
+            variant="primary"
+            fullWidth
             disabled={trimmed.length === 0}
           >
             Enter room
-          </button>
+          </Button>
         </form>
       </div>
     </main>

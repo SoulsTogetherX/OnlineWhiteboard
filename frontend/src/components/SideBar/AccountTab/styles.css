@@ -121,58 +121,6 @@
   font-size: 0.78rem;
 }
 
-.account-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  width: 100%;
-  padding: 0.4rem 0.75rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.35rem;
-
-  background: var(--surface-background);
-  color: var(--text-color);
-
-  text-align: center;
-  cursor: pointer;
-}
-
-.account-button:hover:not(:disabled) {
-  background: var(--hover-background);
-  border-color: var(--accent-color);
-}
-
-.account-button:active:not(:disabled) {
-  background: var(--active-background);
-  transform: translateY(1px);
-}
-
-.account-button:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.account-button:focus-visible,
-.account-rename-row input:focus-visible,
-.account-rename-row button:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
-.account-button-primary {
-  border-color: var(--accent-color);
-  background: var(--accent-color);
-  color: var(--on-accent-color);
-  font-weight: 600;
-}
-
-.account-button-primary:hover:not(:disabled) {
-  border-color: var(--accent-hover-color);
-  background: var(--accent-hover-color);
-}
-
 /* Destructive actions read red and sit at the very bottom, pushed there by the
    auto margin so they are never next to something you press routinely. */
 .account-danger {
@@ -199,14 +147,3 @@
   gap: 0.4rem;
 }
 
-.account-button-danger {
-  border-color: var(--danger-color);
-  color: var(--danger-color);
-  background: var(--surface-background);
-}
-
-.account-button-danger:hover:not(:disabled) {
-  border-color: var(--danger-color);
-  background: var(--danger-color);
-  color: var(--on-accent-color);
-}

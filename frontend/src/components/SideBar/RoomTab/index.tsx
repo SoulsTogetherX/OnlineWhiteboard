@@ -1,6 +1,7 @@
 //#region Imports
 import { useState } from "react"
 
+import Button from "@/components/Button"
 import Collapsible from "@/components/Collapsible"
 import IconButton from "@/components/IconButton"
 import Toggle from "@/components/Toggle"
@@ -176,13 +177,9 @@ export default function RoomTab({
         />
 
         {mayRequestEditor && (
-          <button
-            type="button"
-            className="room-request-editor"
-            onClick={onRequestEditor}
-          >
+          <Button variant="promoted" fullWidth onClick={onRequestEditor}>
             Request editor access
-          </button>
+          </Button>
         )}
 
         {isOwner && (
@@ -255,25 +252,21 @@ export default function RoomTab({
               maxLength={MAX_ROOM_NAME_INPUT_LENGTH}
               autoComplete="off"
             />
-            <button type="submit">Go</button>
+            <Button type="submit" variant="primary">Go</Button>
           </div>
         </form>
 
-        <button type="button" className="room-leave" onClick={onLeaveRoom}>
+        <Button fullWidth onClick={onLeaveRoom}>
           Leave room
-        </button>
+        </Button>
 
         {/* Last in the section, under Leave room. The dashboard is reachable
             from the top-right corner too, but that button only appears while
             signed in and sits at the far side of the screen — and this is the
             section you are already in when thinking about which room to be in. */}
-        <button
-          type="button"
-          className="room-open-dashboard"
-          onClick={onOpenDashboard}
-        >
+        <Button fullWidth onClick={onOpenDashboard}>
           Browse my rooms
-        </button>
+        </Button>
       </Collapsible>
 
       {/* Clear and download sit at the very bottom: one is destructive and the

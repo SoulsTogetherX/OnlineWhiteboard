@@ -1,6 +1,7 @@
 //#region Imports
 import { useCallback, useEffect, useRef } from "react"
 
+import Button from "@/components/Button"
 import CanvasBoard from "@/components/CanvasBoard"
 import CursorOverlay from "@/components/CursorOverlay"
 import MembersPopup from "@/components/Popups/MembersPopup"
@@ -272,20 +273,12 @@ export default function Whiteboard({
           in the lobby and at the foot of the Room tab. */}
       {user && (
         <div className="app-actions">
-          <button
-            type="button"
-            className="app-action-button"
-            onClick={dashboard.open}
-          >
+          <Button size="sm" onClick={dashboard.open}>
             My Rooms
-          </button>
-          <button
-            type="button"
-            className="app-action-button"
-            onClick={members.open}
-          >
+          </Button>
+          <Button size="sm" onClick={members.open}>
             Members
-          </button>
+          </Button>
         </div>
       )}
       {/* The local pointer wears the same glyph everyone else sees on it. */}

@@ -67,32 +67,6 @@
   color: var(--text-color);
 }
 
-.room-change-row button {
-  display: inline-flex;
-  /* Centre the label on both axes. Without this the text sits against the left
-     edge as soon as anything stretches the button. */
-  align-items: center;
-  justify-content: center;
-
-  padding: 0.35rem 0.75rem;
-
-  border: 1px solid var(--accent-color);
-  border-radius: 0.35rem;
-
-  background: var(--accent-color);
-  color: var(--on-accent-color);
-
-  cursor: pointer;
-}
-
-.room-change-row input:focus-visible,
-.room-change-row button:focus-visible,
-.room-account-button:focus-visible,
-.room-leave:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
 /* The account row at the foot of the tab: who you are, and the one control that
    changes it. */
 .room-account {
@@ -131,92 +105,6 @@
   white-space: nowrap;
 }
 
-.room-account-button,
-.room-leave {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  padding: 0.35rem 0.75rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.35rem;
-
-  background: var(--surface-background);
-  color: var(--text-color);
-
-  text-align: center;
-  cursor: pointer;
-}
-
-/* Full width so "Leave room" reads as the way out of the tab rather than one
-   more small control floating at the left edge. */
-.room-leave {
-  width: 100%;
-}
-
-/* Opens the rooms dashboard. Sits directly under "Leave room" and matches it
-   exactly — same border, same text colour — because the two are the same KIND of
-   control (go somewhere else), and giving one of them the accent made it read as
-   the primary action of the section when it is not. */
-.room-open-dashboard {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  width: 100%;
-  padding: 0.35rem 0.75rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.35rem;
-
-  background: var(--surface-background);
-  color: var(--text-color);
-
-  text-align: center;
-  cursor: pointer;
-}
-
-.room-open-dashboard:hover {
-  background: var(--hover-background);
-}
-
-.room-open-dashboard:active {
-  background: var(--active-background);
-}
-
-.room-open-dashboard:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
-.room-request-editor {
-  /* Full width and centred, like the other stacked buttons in this tab. It was
-     align-self:flex-start, which left it hugging the left edge at whatever width
-     its label happened to need. */
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-
-  width: 100%;
-
-  padding: 0.4rem 0.75rem;
-
-  border: 1px solid var(--accent-color);
-  border-radius: 0.4rem;
-
-  background-color: var(--surface-background);
-  color: var(--accent-color);
-  font-size: 0.85rem;
-
-  cursor: pointer;
-}
-
-.room-request-editor:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
 /* Clear sits at the left, download at the far right (bottom-right of the tab). */
 /* Pinned to the bottom of the panel, OVERLAYING the content that scrolls past
    beneath it, so clear and download are reachable without scrolling to the end
@@ -248,10 +136,12 @@
   background: var(--panel-background);
 }
 
-/* The destructive action reads red so it isn't fired absent-mindedly. */
+/* The destructive action reads red so it isn't fired absent-mindedly. Uses the
+   theme's danger colour rather than the hardcoded hex it used to carry, which
+   was the same red in both themes and too dark to read on the dark surface. */
 .room-clear:not(:disabled) {
-  border-color: #b42318;
-  color: #b42318;
+  border-color: var(--danger-color);
+  color: var(--danger-color);
 }
 
 /* The footer sits at the bottom-right of the sidebar, so its buttons' tooltips
@@ -271,31 +161,6 @@
   left: auto;
   right: 0;
   transform: none;
-}
-
-.room-account-button:hover,
-.room-leave:hover,
-.room-request-editor:hover {
-  background: var(--hover-background);
-  border-color: var(--accent-color);
-}
-
-.room-account-button:active,
-.room-leave:active,
-.room-request-editor:active {
-  background: var(--active-background);
-  transform: translateY(1px);
-}
-
-.room-change-row button:hover {
-  border-color: var(--accent-hover-color);
-  background: var(--accent-hover-color);
-}
-
-.room-change-row button:active {
-  border-color: var(--accent-active-color);
-  background: var(--accent-active-color);
-  transform: translateY(1px);
 }
 
 .room-change-row input:hover {

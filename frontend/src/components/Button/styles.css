@@ -1,0 +1,132 @@
+/* The one button.
+
+   Everything shared lives on .btn; a variant only ever states what makes it
+   different. That is deliberate — when the disabled treatment is written once,
+   there is no way for four of them to disagree, which is exactly what had
+   happened (opacity .5, .55, .6 and one with none at all). */
+.btn {
+  display: inline-flex;
+  /* Centre on BOTH axes. A stretched button whose label hugs the left edge is
+     what you get by default the moment anything stretches it. */
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+
+  padding: 0.4rem 0.75rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--surface-background);
+  color: var(--text-color);
+  font: inherit;
+  font-size: 0.85rem;
+  text-align: center;
+  /* A label that wraps mid-word turns a control into a paragraph. */
+  white-space: nowrap;
+
+  cursor: pointer;
+  /* Colour only. Transitioning transform would fight the pressed offset below,
+     which needs to feel instant to read as a press at all. */
+  transition:
+    background-color 120ms ease,
+    border-color 120ms ease,
+    color 120ms ease;
+}
+
+/* Hover LIGHTENS, press moves the other way — the pair is what makes the two
+   distinguishable rather than "some change happened". */
+.btn:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.btn:active:not(:disabled) {
+  background: var(--active-background);
+  /* 1px is enough to feel like a press and small enough not to reflow anything
+     around it. */
+  transform: translateY(1px);
+}
+
+.btn:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* :disabled carries no hover or press rules at all, rather than overriding them
+   afterwards. An unavailable control that still reacts to the pointer reads as
+   broken rather than as unavailable. */
+.btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/*#region Variants */
+.btn-primary {
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-accent-color);
+  font-weight: 600;
+}
+
+.btn-primary:hover:not(:disabled) {
+  border-color: var(--accent-hover-color);
+  background: var(--accent-hover-color);
+}
+
+.btn-primary:active:not(:disabled) {
+  border-color: var(--accent-active-color);
+  background: var(--accent-active-color);
+}
+
+/* .btn-secondary needs no rules: it IS the base. Named anyway so call sites can
+   say which they mean instead of relying on the absence of a class. */
+
+.btn-promoted {
+  border-color: var(--accent-color);
+  color: var(--accent-color);
+  font-weight: 600;
+}
+
+.btn-danger {
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+/* Both outlined variants keep their own colour on hover instead of picking up
+   the accent border the base rule applies — a danger button that turns accent-
+   coloured under the pointer is telling you the wrong thing at the moment you
+   are deciding whether to press it. */
+.btn-promoted:hover:not(:disabled) {
+  border-color: var(--accent-hover-color);
+  background: var(--hover-background);
+}
+
+.btn-danger:hover:not(:disabled) {
+  border-color: var(--danger-color);
+  background: var(--hover-background);
+}
+/*#endregion */
+
+/*#region Sizes */
+.btn-sm {
+  padding: 0.3rem 0.6rem;
+  font-size: 0.8rem;
+}
+/*#endregion */
+
+.btn-block {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn {
+    transition: none;
+  }
+
+  /* The press offset is motion too, and it is the one people who ask for less
+     of it notice most, because it fires on every single click. */
+  .btn:active:not(:disabled) {
+    transform: none;
+  }
+}

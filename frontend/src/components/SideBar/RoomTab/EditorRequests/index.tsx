@@ -1,4 +1,6 @@
 //#region Imports
+import Button from "@/components/Button"
+
 import type { EditorRequest } from "@shared/types/socketProtocol"
 
 import "./styles.css"
@@ -31,22 +33,21 @@ export default function EditorRequests({
           <li className="editor-request" key={request.userId}>
             <span className="editor-request-name">{request.name}</span>
             <span className="editor-request-actions">
-              <button
-                type="button"
-                className="editor-request-approve"
+              <Button
+                variant="promoted"
+                size="sm"
                 onClick={() => onRespond(request.userId, true)}
                 aria-label={`Approve ${request.name}`}
               >
                 Approve
-              </button>
-              <button
-                type="button"
-                className="editor-request-deny"
+              </Button>
+              <Button
+                size="sm"
                 onClick={() => onRespond(request.userId, false)}
                 aria-label={`Deny ${request.name}`}
               >
                 Deny
-              </button>
+              </Button>
             </span>
           </li>
         ))}

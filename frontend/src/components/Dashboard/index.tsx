@@ -2,6 +2,7 @@
 import { useState } from "react"
 
 import useMyRooms from "@/hooks/useMyRooms"
+import Button from "@/components/Button"
 import PopupBase from "@/components/Popups/PopupBase"
 import { relativeTime } from "@/utils/relativeTime"
 import RoomThumbnail from "./RoomThumbnail"
@@ -125,14 +126,13 @@ export default function Dashboard({
               <span className="dashboard-selection" aria-live="polite">
                 {count > 0 && `${count} selected`}
               </span>
-              <button
-                type="button"
-                className="dashboard-select-all"
+              <Button
+                size="sm"
                 onClick={toggleAll}
                 disabled={rooms.length === 0}
               >
                 {allChosen ? "Clear selection" : "Select all"}
-              </button>
+              </Button>
               {/* The tooltip sits on a wrapper, not on the button. A disabled
                   button fires no pointer events in most browsers, so a title on
                   it would hide the one explanation you need precisely when it is
@@ -148,13 +148,9 @@ export default function Dashboard({
                   <TrashIcon />
                 </button>
               </span>
-              <button
-                type="button"
-                className="dashboard-close"
-                onClick={onClose}
-              >
+              <Button size="sm" onClick={onClose}>
                 Close
-              </button>
+              </Button>
             </div>
           </header>
 

@@ -1,4 +1,6 @@
 //#region Imports
+import Button from "@/components/Button"
+
 import "./styles.css"
 //#endregion
 
@@ -30,13 +32,9 @@ export default function OwnershipButton({
 }: OwnershipButtonProps) {
   if (isOwner) {
     return (
-      <button
-        type="button"
-        className="ownership-button ownership-release"
-        onClick={onRelease}
-      >
+      <Button variant="promoted" fullWidth onClick={onRelease}>
         Release ownership
-      </button>
+      </Button>
     )
   }
 
@@ -47,9 +45,9 @@ export default function OwnershipButton({
   if (isGuest) {
     return (
       <div className="ownership-claim-wrap">
-        <button type="button" className="ownership-button ownership-claim" disabled>
+        <Button variant="promoted" fullWidth disabled>
           Claim ownership
-        </button>
+        </Button>
         <p className="ownership-hint">Log in to claim or manage this room.</p>
       </div>
     )
@@ -57,20 +55,16 @@ export default function OwnershipButton({
 
   if (hasOwner) {
     return (
-      <button type="button" className="ownership-button" disabled>
+      <Button fullWidth disabled>
         Owned by another user
-      </button>
+      </Button>
     )
   }
 
   return (
-    <button
-      type="button"
-      className="ownership-button ownership-claim"
-      onClick={onClaim}
-    >
+    <Button variant="promoted" fullWidth onClick={onClaim}>
       Claim ownership
-    </button>
+    </Button>
   )
 }
 //#endregion

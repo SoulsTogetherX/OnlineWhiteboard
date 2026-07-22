@@ -46,30 +46,3 @@
   gap: 0.3rem;
 }
 
-.editor-request-approve,
-.editor-request-deny {
-  padding: 0.2rem 0.5rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.3rem;
-
-  font-size: 0.75rem;
-  cursor: pointer;
-}
-
-.editor-request-approve {
-  border-color: var(--accent-color);
-  background-color: var(--accent-color);
-  color: white;
-}
-
-.editor-request-deny {
-  background-color: var(--surface-background);
-  color: var(--text-color);
-}
-
-.editor-request-approve:focus-visible,
-.editor-request-deny:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}

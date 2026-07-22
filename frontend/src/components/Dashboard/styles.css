@@ -110,24 +110,6 @@
   opacity: 0.45;
 }
 
-.dashboard-bin:focus-visible,
-.dashboard-close:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
-.dashboard-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0.35rem 0.85rem;
-  border-radius: 0.35rem;
-  border: 1px solid var(--border-color);
-  background: transparent;
-  color: var(--text-color);
-  cursor: pointer;
-}
-
 .dashboard-error {
   color: var(--danger-color);
 }
@@ -225,40 +207,6 @@
   outline-offset: 2px;
 }
 
-/* Quiet on purpose. It sits beside the bin, and the bin is the button with
-   consequences — this one only changes what is ticked. */
-.dashboard-select-all {
-  padding: 0.3rem 0.6rem;
-
-  border: 1px solid var(--border-color);
-  border-radius: 0.35rem;
-
-  background: var(--surface-background);
-  color: var(--text-color);
-  font-size: 0.8rem;
-
-  cursor: pointer;
-}
-
-.dashboard-select-all:hover:not(:disabled) {
-  background: var(--hover-background);
-  border-color: var(--accent-color);
-}
-
-.dashboard-select-all:active:not(:disabled) {
-  background: var(--active-background);
-}
-
-.dashboard-select-all:disabled {
-  cursor: not-allowed;
-  opacity: 0.5;
-}
-
-.dashboard-select-all:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}
-
 /* Selection has to be legible at a glance across a grid, so it changes the
    card's border and fill rather than relying on the small tick alone. */
 .dashboard-item-selected .dashboard-card {
@@ -351,17 +299,3 @@
   opacity: 0.6;
 }
 
-.dashboard-close:hover {
-  background: var(--hover-background);
-  border-color: var(--accent-color);
-}
-
-.dashboard-close:active {
-  background: var(--active-background);
-}
-
-.dashboard-close:focus-visible,
-.dashboard-card:focus-visible {
-  outline: 2px solid var(--focus-ring-color);
-  outline-offset: 2px;
-}

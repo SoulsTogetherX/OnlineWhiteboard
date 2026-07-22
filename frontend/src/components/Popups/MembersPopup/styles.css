@@ -60,16 +60,6 @@
   gap: 0.4rem;
 }
 
-.members-remove {
-  padding: 0.15rem 0.5rem;
-  font-size: 0.75rem;
-  border-radius: 0.25rem;
-  border: 1px solid var(--danger-color);
-  color: var(--danger-color);
-  background: transparent;
-  cursor: pointer;
-}
-
 .members-role-tag {
   font-size: 0.7rem;
   padding: 0.1rem 0.4rem;

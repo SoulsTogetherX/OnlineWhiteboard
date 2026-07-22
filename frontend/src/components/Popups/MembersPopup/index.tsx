@@ -1,4 +1,5 @@
 //#region Imports
+import Button from "@/components/Button"
 import PopupBase from "@/components/Popups/PopupBase"
 import useRoomMembers from "@/hooks/useRoomMembers"
 
@@ -76,14 +77,14 @@ export default function MembersPopup({
                       </select>
                     </label>
                     {member.role !== "owner" && (
-                      <button
-                        type="button"
-                        className="members-remove"
+                      <Button
+                        variant="danger"
+                        size="sm"
                         onClick={() => void removeMember(member.userId)}
                         title={`Remove ${member.username}`}
                       >
                         Remove
-                      </button>
+                      </Button>
                     )}
                   </span>
                 ) : (
