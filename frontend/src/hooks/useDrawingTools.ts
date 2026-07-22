@@ -3,7 +3,7 @@ import { useCallback, useRef, useState } from "react"
 
 import { DEFAULT_STABILIZATION } from "@/utils/stabilizer"
 
-import { DEFAULT_DRAW_ACTION } from "@/constants/ui"
+import { DEFAULT_DRAW_ACTION, DEFAULT_TOOL } from "@/constants/ui"
 
 import {
   DEFAULT_BLUR_BLEND,
@@ -80,9 +80,7 @@ export default function useDrawingTools(): UseDrawingToolsResult {
   //   - the ref is what the pointer handlers read on every event, so changing
   //     tools never re-subscribes the drag listeners;
   //   - the state is what lets the Drawing tab render which tool is active.
-  const [selectedTool, setSelectedTool] = useState<AppTool>(
-    DEFAULT_DRAW_ACTION.type,
-  )
+  const [selectedTool, setSelectedTool] = useState<AppTool>(DEFAULT_TOOL)
 
   // The eyedropper is a mode, not a draw action: while it's on, drawing is
   // suppressed (eyedropperActive gates useCanvasDrawing) and a click samples
@@ -99,7 +97,10 @@ export default function useDrawingTools(): UseDrawingToolsResult {
   // True while the grabber is held, read per-event by the canvas drag handlers.
   // Written in selectTool rather than derived during render, for the same reason
   // as the blur settings above.
-  const grabbingRef = useRef<boolean>(false)
+  // Seeded from the initial tool, not hardcoded false: the grabber is selected
+  // on arrival, and starting this at false would mean the board refused to pan
+  // until you picked some other tool and came back.
+  const grabbingRef = useRef<boolean>(DEFAULT_TOOL === "grabber")
 
   const selectTool = useCallback((type: AppTool) => {
     grabbingRef.current = type === "grabber"

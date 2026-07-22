@@ -71,8 +71,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT rooms_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)
@@ -92,8 +92,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (room_id, revision),
       CONSTRAINT canvas_snapshots_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)
@@ -254,8 +254,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT checkpoints_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)

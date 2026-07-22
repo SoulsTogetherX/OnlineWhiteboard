@@ -23,7 +23,11 @@ const ZOOM_SENSITIVITY = 0.1
 const MAX_ZOOM = 10
 const MIN_ZOOM = 0.6
 
-const MIDDLE_BUTTON_ONLY: MouseButton[] = ["middle"]
+// Left and middle. Both still have to satisfy optionalCheck above, so neither
+// pans on its own — this only decides WHICH buttons may pan once you are
+// already holding shift or the grabber. Middle-only meant shift+drag could never
+// pan at all, because the gate allowed it and the button check then refused.
+const PAN_BUTTONS: MouseButton[] = ["left", "middle"]
 //#endregion
 
 
@@ -77,18 +81,17 @@ export default function useCanvasMotion(
     dragFrameRef.current?.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
     dragFrameRef.current?.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
   }, [dragElementRef, dragFrameRef])
-  // Panning requires SHIFT — the same modifier that enables zooming, so one key
-  // means "navigate" and nothing moves the board by accident. The middle button
-  // still works on its own because it cannot be pressed by accident while
-  // drawing, and it is the conventional pan gesture.
+  // The board moves for EXACTLY two reasons: shift is held, or the grabber is
+  // the selected tool. Nothing else.
   //
-  // The grabber tool is the third way in, and it is the reason the tool exists:
-  // holding a modifier to move the canvas is fine for a quick nudge and tiring
-  // for a long one, especially on a trackpad or a tablet where shift may be a
-  // second hand away. Selecting the grabber makes dragging pan outright.
+  // The middle button used to pan on its own, on the reasoning that it cannot be
+  // pressed by accident while drawing. That made it a third, undocumented way to
+  // move the canvas with no modifier and no indicator — the board just moved. If
+  // there is one rule ("shift or the grabber"), an exception to it is a bug
+  // whatever its justification.
   const optionalCheck = useCallback(
     (ev: PointerEvent): boolean => {
-      return ev.shiftKey || ev.buttons === 4 || grabbingRef?.current === true
+      return ev.shiftKey || grabbingRef?.current === true
     },
     [grabbingRef],
   )
@@ -181,7 +184,7 @@ export default function useCanvasMotion(
     undefined,
     onDragMotion,
     undefined,
-    MIDDLE_BUTTON_ONLY,
+    PAN_BUTTONS,
   )
 }
 //#endregion

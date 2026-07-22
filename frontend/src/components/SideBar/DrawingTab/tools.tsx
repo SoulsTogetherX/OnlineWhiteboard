@@ -84,6 +84,19 @@ function glyph(path: string, box = 16): ReactNode {
 // cursor renderings.
 export const TOOLS: ToolDescriptor[] = [
   {
+    id: "grabber",
+    name: "Grab",
+    shortcut: "G",
+    usesStroke: false,
+    sliderCount: 0,
+    iconPath: GRABBER_PATH,
+    iconBox: 36,
+    // The heel of the palm, in the glyph's own 36-unit box: roughly where a hand
+    // actually contacts what it is dragging.
+    hotspot: [18, 20],
+    icon: glyph(GRABBER_PATH, 36),
+  },
+  {
     id: "pencil",
     name: "Pencil",
     shortcut: "P",
@@ -141,19 +154,6 @@ export const TOOLS: ToolDescriptor[] = [
     // The droplet's body, where the smearing is centred.
     hotspot: [8, 9],
     icon: glyph(BLUR_PATH),
-  },
-  {
-    id: "grabber",
-    name: "Grab",
-    shortcut: "G",
-    usesStroke: false,
-    sliderCount: 0,
-    iconPath: GRABBER_PATH,
-    iconBox: 36,
-    // The heel of the palm, in the glyph's own 36-unit box: roughly where a hand
-    // actually contacts what it is dragging.
-    hotspot: [18, 20],
-    icon: glyph(GRABBER_PATH, 36),
   },
   {
     id: "eyedropper",

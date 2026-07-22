@@ -6,6 +6,7 @@ import {
   forEachDiscPixel,
   getPosCorrected,
 } from "@shared/utils/helperProtocolMethods"
+import { blurRadiusFor } from "@shared/utils/handleBlurProtocol"
 
 import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 //#endregion
@@ -59,22 +60,35 @@ export default function useBrushPreview(
       }
       ctx.clearRect(0, 0, preview.width, preview.height)
 
-      // Shift is the navigate modifier — the pointer pans rather than paints,
-      // so there is no footprint to show.
-      if (ev.shiftKey || disabledRef?.current === true) {
+      const tool = toolRef.current
+
+      // Nothing to preview when the pointer is not going to paint: shift is the
+      // navigate modifier, and the grabber is that modifier latched on. Showing
+      // a footprint then promises a mark that dragging will not make.
+      if (ev.shiftKey || tool === "grabber" || disabledRef?.current === true) {
         return
       }
 
       const dims = canvasDimsOf(canvas)
       const [pos] = getPosCorrected(ev, canvas)
-      const tool = toolRef.current
 
       // Which pixels this tool would touch at this position. Bucket and
       // eyedropper both act on a single pixel from the pointer's point of view
       // (the fill's SPREAD depends on canvas contents, which is not something to
       // recompute on every pointer move), so they preview as one pixel.
+      //
+      // The blur was missing here and previewed as that single pixel, which was
+      // wrong rather than absent — it covers a disc like the brushes do. Its
+      // footprint is a RADIUS of `size` (see blurRadiusFor), and forEachDiscPixel
+      // takes a diameter, so it is twice what the stroke tools pass. Getting that
+      // factor wrong would draw an outline that does not match what the tool
+      // actually changes, which is worse than showing nothing.
       const usesBrush = tool === "pencil" || tool === "eraser" || tool === "spray"
-      const size = usesBrush ? strokeSizeRef.current : 1
+      const size = usesBrush
+        ? strokeSizeRef.current
+        : tool === "blur"
+          ? blurRadiusFor(strokeSizeRef.current) * 2
+          : 1
 
       const covered = new Set<number>()
       forEachDiscPixel(pos[0], pos[1], size, dims, ([x, y]) => {

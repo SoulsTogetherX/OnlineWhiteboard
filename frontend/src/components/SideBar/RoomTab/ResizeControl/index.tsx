@@ -12,13 +12,22 @@ import Button from "@/components/Button"
 //#endregion
 
 //#region Helpers
-// Mirror the server's bound (isValidCanvasDims) so the form can't submit a value
-// the server will reject. The server remains the authority; this is cosmetic.
+// Mirror the server's bound (isValidCanvasDims) so the form cannot submit a
+// value the server will reject. The server remains the authority; this exists so
+// that a rejection never happens in the first place.
+//
+// Rounding is part of that, not a nicety: isValidCanvasDims requires INTEGERS,
+// so "10.5" survived the old clamp unchanged and was then refused server-side —
+// producing exactly the silent nothing-happens this is meant to prevent. Empty
+// or unparseable input falls back to the minimum rather than erroring, because
+// the whole design here is "always submit something legal".
 function clampDimension(value: number): number {
   if (Number.isNaN(value)) {
     return MIN_CANVAS_DIMENSION
   }
-  return Math.max(MIN_CANVAS_DIMENSION, Math.min(MAX_CANVAS_DIMENSION, value))
+  return Math.round(
+    Math.max(MIN_CANVAS_DIMENSION, Math.min(MAX_CANVAS_DIMENSION, value)),
+  )
 }
 //#endregion
 
@@ -62,7 +71,18 @@ export default function ResizeControl({
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
-    onResize(clampDimension(Number(widthInput)), clampDimension(Number(heightInput)))
+    const width = clampDimension(Number(widthInput))
+    const height = clampDimension(Number(heightInput))
+
+    // Write the clamped values back into the fields. THIS is the feedback for an
+    // out-of-range entry: rather than an error message explaining that 999 is
+    // too big, the field simply shows the 512 that was actually applied, so what
+    // you see and what the canvas is agree. Silently sending a different number
+    // than the one still displayed is the version that feels broken.
+    setWidthInput(String(width))
+    setHeightInput(String(height))
+
+    onResize(width, height)
     setIsOpen(false)
   }
 

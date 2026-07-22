@@ -9,7 +9,10 @@ import { describe, expect, it } from "vitest"
 import { isValidClientMessage } from "../validateSocketMessage"
 import { isValidDrawInstruction } from "../validateInstruction"
 import { DIMS } from "./testHelpers"
-import { MAX_PATCH_ENTRIES } from "../../constants/canvas"
+import {
+  MAX_PATCH_ENTRIES,
+  MIN_CANVAS_DIMENSION,
+} from "../../constants/canvas"
 import { ROLES } from "../../types/identity"
 import {
   MAX_CHECKPOINT_NAME_LENGTH,
@@ -166,14 +169,24 @@ describe("isValidClientMessage — room actions and permissions", () => {
     ).toBe(true)
     // Below MIN, above MAX, and non-integer are all rejected as malformed before
     // they can reach the database CHECK constraint as a 500.
-    // 8 is legal now that the floor is 4; 3 is the first rejected width. Pinned
-    // one either side of the boundary so a future change to the minimum breaks a
-    // test here rather than only at the database CHECK constraint.
+    // Derived from the constant rather than written out, so moving the floor
+    // does not silently leave a stale literal asserting the old bound. Pinned
+    // one either side of it: the minimum itself is legal, one below is not.
     expect(
-      isValidClientMessage({ type: "resize", roomId: "r", width: 8, height: 100 }),
+      isValidClientMessage({
+        type: "resize",
+        roomId: "r",
+        width: MIN_CANVAS_DIMENSION,
+        height: MIN_CANVAS_DIMENSION,
+      }),
     ).toBe(true)
     expect(
-      isValidClientMessage({ type: "resize", roomId: "r", width: 3, height: 100 }),
+      isValidClientMessage({
+        type: "resize",
+        roomId: "r",
+        width: MIN_CANVAS_DIMENSION - 1,
+        height: 100,
+      }),
     ).toBe(false)
     expect(
       isValidClientMessage({ type: "resize", roomId: "r", width: 513, height: 100 }),
