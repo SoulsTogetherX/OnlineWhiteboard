@@ -11,14 +11,20 @@ import type { Vec } from "./primitive"
 //
 // It lives in the socket protocol rather than in the frontend because it now
 // travels between clients, and the two sides have to agree on the spelling.
-export type CursorTool = ToolType | "eyedropper"
+// "grabber" is here but is NOT a ToolType: it draws nothing, it changes what
+// dragging the canvas means. It still belongs on a cursor, because someone
+// holding it is about to move the view rather than mark the board, and that is
+// worth seeing.
+export type CursorTool = ToolType | "eyedropper" | "grabber"
 
 export const CURSOR_TOOLS: readonly CursorTool[] = [
   "pencil",
   "eraser",
   "bucket",
   "spray",
+  "blur",
   "eyedropper",
+  "grabber",
 ] as const
 //#endregion
 

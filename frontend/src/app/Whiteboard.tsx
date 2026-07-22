@@ -104,6 +104,14 @@ export default function Whiteboard({
     stabilizationRef,
     stabilization,
     setStabilization,
+    blurSettingsRef,
+    blurBlend,
+    setBlurBlend,
+    blurOpacity,
+    setBlurOpacity,
+    lockAlpha,
+    setLockAlpha,
+    grabbingRef,
   } = useDrawingTools()
 
   // The right sidebar (Phase 5) is the only tool surface now — the old floating
@@ -222,7 +230,7 @@ export default function Whiteboard({
   const navigating = useShiftHeld()
 
   // Canvas Setup
-  useCanvasMotion(frameRef, canvasRef)
+  useCanvasMotion(frameRef, canvasRef, grabbingRef)
   // Keep the drawing lock in step with this connection's role AND the room's
   // open-editing setting. Uses the shared canDraw rule rather than re-testing
   // roles inline, so the client's drawing lock and the server's rejection path
@@ -244,6 +252,7 @@ export default function Whiteboard({
     eyedropperActive,
     strokeSizeRef,
     sprayDensityRef,
+    blurSettingsRef,
     viewOnlyRef,
     stabilizationRef,
   )
@@ -357,6 +366,12 @@ export default function Whiteboard({
             onStrokeSizeChange={setStrokeSize}
             sprayDensity={sprayDensity}
             onSprayDensityChange={setSprayDensity}
+            blurBlend={blurBlend}
+            onBlurBlendChange={setBlurBlend}
+            blurOpacity={blurOpacity}
+            onBlurOpacityChange={setBlurOpacity}
+            lockAlpha={lockAlpha}
+            onLockAlphaChange={setLockAlpha}
             stabilization={stabilization}
             onStabilizationChange={setStabilization}
             colorPalette={colorPalette}

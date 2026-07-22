@@ -61,6 +61,80 @@ export function resetRecentSlider(): void {
 }
 //#endregion
 
+//#region Cycling
+// Where the cycleable sliders live. Scoped to the tool panel on purpose: the
+// colour picker and the playback scrubber are range inputs too, and cycling into
+// one of those would hand the wheel a control that has nothing to do with the
+// brush in your hand.
+const TOOL_PANEL_SELECTOR = ".drawing-tab"
+
+// The attribute the active slider is marked with, so it can be highlighted
+// without relying on focus. Focus is the wrong signal here — the whole point is
+// that this works mid-stroke, when the pointer owns the interaction and focus is
+// wherever it happened to be.
+export const WHEEL_TARGET_ATTR = "data-wheel-target"
+
+function cycleableSliders(): HTMLInputElement[] {
+  if (typeof document === "undefined") {
+    return []
+  }
+  const panel = document.querySelector(TOOL_PANEL_SELECTOR)
+  if (!panel) {
+    return []
+  }
+  return [
+    ...panel.querySelectorAll<HTMLInputElement>('input[type="range"]'),
+  ].filter((slider) => !slider.disabled)
+}
+
+// Re-marks the DOM so exactly one slider carries the attribute. Called after any
+// change of target, and after a re-render could have replaced the nodes.
+function markTarget(): void {
+  for (const slider of cycleableSliders()) {
+    if (slider === recent) {
+      slider.setAttribute(WHEEL_TARGET_ATTR, "true")
+    } else {
+      slider.removeAttribute(WHEEL_TARGET_ATTR)
+    }
+  }
+}
+
+// Moves the wheel's target to the next slider in the active tool's panel and
+// returns its label, so the caller can say what just happened.
+//
+// Wraps around, and starts from the first slider when nothing is remembered yet,
+// so the shortcut always does something visible rather than silently no-opping
+// on a fresh page.
+export function cycleRecentSlider(direction: 1 | -1 = 1): string | null {
+  const sliders = cycleableSliders()
+  if (sliders.length === 0) {
+    return null
+  }
+
+  const current = recent ? sliders.indexOf(recent) : -1
+  // (i + n) % n rather than plain %, because JS's % keeps the sign of the
+  // dividend and a bare -1 % n is -1, not n - 1.
+  const next =
+    current === -1
+      ? 0
+      : (current + direction + sliders.length) % sliders.length
+
+  recent = sliders[next]
+  markTarget()
+  return recent.getAttribute("aria-label") ?? recent.id ?? null
+}
+
+// Keeps the highlight on the right node after React re-renders a panel, and
+// clears a stale mark when the tool changes. Cheap enough to call from an effect
+// on every relevant render.
+export function refreshWheelTargetMark(): void {
+  if (recent && !recent.isConnected) {
+    recent = null
+  }
+  markTarget()
+}
+//#endregion
+
 //#region Stepping
 // Steps a slider by one of its own increments and tells React about it.
 //

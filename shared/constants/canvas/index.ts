@@ -86,6 +86,18 @@ const MAX_STROKE_SIZE = 32
 // a thousand pixels per puff and turn one message into a fill.
 const MAX_SPRAY_RADIUS = 40
 const MAX_SPRAY_DENSITY = 64
+
+// Blur. `blend` is the kernel radius — how far each pixel samples for its
+// average — and it is capped low on purpose: cost is O(area x kernel-area), so a
+// generous-looking 16 would be ~64x the work of 2 for a result that is visually
+// indistinguishable from "completely smeared". 8 already reaches that point.
+const MAX_BLUR_BLEND = 8
+const DEFAULT_BLUR_BLEND = 2
+// Percent of the blurred value mixed in. Defaulting below 100 makes the tool
+// build up with repeated passes rather than flattening an area on first contact,
+// which is what people expect from a smudge.
+const MAX_BLUR_OPACITY = 100
+const DEFAULT_BLUR_OPACITY = 60
 //#endregion
 
 //#region Patch
@@ -120,6 +132,10 @@ export {
   MAX_STROKE_SIZE,
   MAX_SPRAY_RADIUS,
   MAX_SPRAY_DENSITY,
+  MAX_BLUR_BLEND,
+  DEFAULT_BLUR_BLEND,
+  MAX_BLUR_OPACITY,
+  DEFAULT_BLUR_OPACITY,
   MAX_PATCH_ENTRIES,
 }
 //#endregion

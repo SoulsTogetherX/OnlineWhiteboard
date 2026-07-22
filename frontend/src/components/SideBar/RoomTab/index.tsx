@@ -143,10 +143,20 @@ export default function RoomTab({
         </div>
       </section>
 
-      <MemberList
-        participants={participants}
-        selfConnectionId={self?.connectionId ?? null}
-      />
+      {/* Ordered by how often you look at it, not by feature. Presence is the
+          glance-at-it group so it leads; cursor display is a preference you set
+          once, so it trails. Sections keep the one you are using open. */}
+      <Collapsible
+        title="In this room"
+        storageKey="online-whiteboard-room-section-presence"
+        badge={String(participants.length)}
+        defaultOpen
+      >
+        <MemberList
+          participants={participants}
+          selfConnectionId={self?.connectionId ?? null}
+        />
+      </Collapsible>
 
       {/* Everything below is grouped and foldable. This tab accumulated four
           unrelated jobs — who may do what, how cursors look, where history is,
@@ -198,35 +208,6 @@ export default function RoomTab({
       </Collapsible>
 
       <Collapsible
-        title="Cursors"
-        storageKey="online-whiteboard-room-section-cursors"
-      >
-        <CursorControls
-          showCursors={showCursors}
-          showNames={showCursorNames}
-          onShowCursorsChange={onShowCursorsChange}
-          onShowNamesChange={onShowCursorNamesChange}
-        />
-      </Collapsible>
-
-      {/* The room's history, folded in from what used to be its own tab. The
-          badge keeps the count visible while the section is shut. */}
-      <Collapsible
-        title="Checkpoints"
-        storageKey="online-whiteboard-room-section-checkpoints"
-        badge={String(checkpoints.length)}
-      >
-        <RoomHistory
-          checkpoints={checkpoints}
-          canEdit={canEditHistory}
-          onCreate={onCreateCheckpoint}
-          onRestore={onRestoreCheckpoint}
-          onDelete={onDeleteCheckpoint}
-          onReplay={onReplay}
-        />
-      </Collapsible>
-
-      <Collapsible
         title="Rooms"
         storageKey="online-whiteboard-room-section-navigation"
       >
@@ -268,6 +249,40 @@ export default function RoomTab({
           Browse my rooms
         </Button>
       </Collapsible>
+
+      {/* The room's history, folded in from what used to be its own tab. The
+          badge keeps the count visible while the section is shut. */}
+      <Collapsible
+        title="Checkpoints"
+        storageKey="online-whiteboard-room-section-checkpoints"
+        badge={String(checkpoints.length)}
+      >
+        <RoomHistory
+          checkpoints={checkpoints}
+          canEdit={canEditHistory}
+          onCreate={onCreateCheckpoint}
+          onRestore={onRestoreCheckpoint}
+          onDelete={onDeleteCheckpoint}
+          onReplay={onReplay}
+        />
+      </Collapsible>
+
+      <Collapsible
+        title="Cursors"
+        storageKey="online-whiteboard-room-section-cursors"
+      >
+        <CursorControls
+          showCursors={showCursors}
+          showNames={showCursorNames}
+          onShowCursorsChange={onShowCursorsChange}
+          onShowNamesChange={onShowCursorNamesChange}
+        />
+      </Collapsible>
+
+
+
+
+
 
       {/* Clear and download sit at the very bottom: one is destructive and the
           other ends a session, so neither belongs next to the controls used

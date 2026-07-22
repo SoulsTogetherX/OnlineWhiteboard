@@ -1,11 +1,20 @@
 //#region Imports
 import { useEffect } from "react"
 
+import { cycleRecentSlider } from "@/utils/recentSlider"
+
 import { TOOLS } from "@/components/SideBar/DrawingTab/tools"
 import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 //#endregion
 
 //#region Constants
+// Cycles which slider the scroll wheel drives. Backquote because it is the one
+// key on the main block that no tool wants and nothing types by accident, and it
+// sits where the hand already is — this has to be reachable DURING a stroke,
+// with the other hand still holding the pointer down.
+const CYCLE_SLIDER_KEY = "`"
+export const CYCLE_SLIDER_LABEL = "`"
+
 // shortcut key -> tool, derived once from the shared TOOLS descriptors so the
 // picker's tooltips and these bindings can never disagree (tools.tsx is the one
 // source). Lower-cased because event.key for an unmodified letter is lower-case.
@@ -22,18 +31,50 @@ export interface UseKeymapOptions {
   onSelectTool: (tool: AppTool) => void
   onUndo: () => void
   onRedo: () => void
+  // Announces which slider the wheel now drives, so the change is visible
+  // without looking away from the canvas.
+  onCycleSlider?: (label: string | null) => void
 }
 //#endregion
 
 //#region Helper Def
 // Never hijack a key while the user is typing into a field (a checkpoint name, a
 // room id, a resize dimension) — otherwise "s" in a text box would switch tools.
+// Only TEXT entry, not every <input>.
+//
+// Treating the whole INPUT tag as typing was wrong in a way that only shows up
+// once the sidebar has sliders: clicking one leaves it focused, and from then on
+// every shortcut was swallowed — including the very one meant to be used while
+// drawing, which is reachable exactly when a slider was the last thing touched.
+// A range, checkbox or radio consumes no letters, so no letter needs protecting
+// from it.
+const TEXT_INPUT_TYPES = new Set([
+  "text",
+  "search",
+  "url",
+  "tel",
+  "email",
+  "password",
+  "number",
+  "date",
+  "datetime-local",
+  "month",
+  "week",
+  "time",
+])
+
 function isTextEntry(target: EventTarget | null): boolean {
   if (!(target instanceof HTMLElement)) {
     return false
   }
-  const tag = target.tagName
-  return tag === "INPUT" || tag === "TEXTAREA" || target.isContentEditable
+  if (target.isContentEditable || target.tagName === "TEXTAREA") {
+    return true
+  }
+  if (target instanceof HTMLInputElement) {
+    // An input with no type attribute defaults to text.
+    return TEXT_INPUT_TYPES.has(target.type || "text")
+  }
+  return false
 }
 //#endregion
 
@@ -49,6 +90,7 @@ export default function useKeymap({
   onSelectTool,
   onUndo,
   onRedo,
+  onCycleSlider,
 }: UseKeymapOptions): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -69,6 +111,22 @@ export default function useKeymap({
         return
       }
 
+      // Deliberately BEFORE the sidebar gate and outside the "unmodified only"
+      // rule for shift: this is the one shortcut whose whole purpose is to work
+      // mid-stroke, and shift+` cycles backwards. It still respects ctrl/meta,
+      // which belong to the browser.
+      if (!isModified && event.key === CYCLE_SLIDER_KEY) {
+        event.preventDefault()
+        // Cycle FIRST, then notify. Written as
+        // `onCycleSlider?.(cycleRecentSlider(...))` this silently did nothing:
+        // an optional call short-circuits its ARGUMENTS as well as the call, so
+        // with no listener attached the cycle never ran at all. The work has to
+        // sit outside the optional call; only the notification is optional.
+        const label = cycleRecentSlider(event.shiftKey ? -1 : 1)
+        onCycleSlider?.(label)
+        return
+      }
+
       // Tool shortcuts: unmodified single keys, only while the sidebar is open.
       if (!sidebarOpen || isModified || event.altKey) {
         return
@@ -82,6 +140,6 @@ export default function useKeymap({
 
     window.addEventListener("keydown", onKeyDown)
     return () => window.removeEventListener("keydown", onKeyDown)
-  }, [sidebarOpen, onSelectTool, onUndo, onRedo])
+  }, [sidebarOpen, onSelectTool, onUndo, onRedo, onCycleSlider])
 }
 //#endregion

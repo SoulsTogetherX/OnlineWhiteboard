@@ -5,7 +5,9 @@ import ToolPicker from "./ToolPicker"
 import ColorControls from "./ColorControls"
 import StrokePanel from "./StrokePanel"
 import SprayPanel from "./SprayPanel"
+import BlurPanel from "./BlurPanel"
 import { toolById } from "./tools"
+import { CYCLE_SLIDER_LABEL } from "@/hooks/useKeymap"
 import type { AppTool } from "./tools"
 
 import type { ColorPalette } from "@shared/types/primitive"
@@ -47,6 +49,12 @@ export interface DrawingTabProps {
   onStrokeSizeChange: (size: number) => void
   sprayDensity: number
   onSprayDensityChange: (density: number) => void
+  blurBlend: number
+  onBlurBlendChange: (blend: number) => void
+  blurOpacity: number
+  onBlurOpacityChange: (opacity: number) => void
+  lockAlpha: boolean
+  onLockAlphaChange: (locked: boolean) => void
   stabilization: number
   onStabilizationChange: (strength: number) => void
   colorPalette: React.RefObject<ColorPalette>
@@ -68,6 +76,12 @@ export default function DrawingTab({
   onStrokeSizeChange,
   sprayDensity,
   onSprayDensityChange,
+  blurBlend,
+  onBlurBlendChange,
+  blurOpacity,
+  onBlurOpacityChange,
+  lockAlpha,
+  onLockAlphaChange,
   stabilization,
   onStabilizationChange,
   colorPalette,
@@ -110,6 +124,22 @@ export default function DrawingTab({
         openColorPopup={openColorPopup}
       />
 
+      {/* Stated once, above every panel, rather than repeated on each slider.
+          Both halves of the gesture are non-obvious and useless apart: the wheel
+          does nothing until you know it targets a slider, and knowing that is
+          useless when the tool has several. */}
+      {activeTool.sliderCount > 0 && (
+        <p className="drawing-tab-wheel-hint">
+          Scroll over the canvas to adjust
+          {activeTool.sliderCount > 1 && (
+            <>
+              {" · "}
+              <kbd>{CYCLE_SLIDER_LABEL}</kbd> switches slider
+            </>
+          )}
+        </p>
+      )}
+
       {/* Contextual panels per tool: stroke width for pencil/eraser, size +
           density for the spray. */}
       {activeTool.usesStroke && (
@@ -118,6 +148,18 @@ export default function DrawingTab({
           onStrokeSizeChange={onStrokeSizeChange}
           stabilization={stabilization}
           onStabilizationChange={onStabilizationChange}
+        />
+      )}
+      {activeTool.id === "blur" && (
+        <BlurPanel
+          strokeSize={strokeSize}
+          onStrokeSizeChange={onStrokeSizeChange}
+          blurBlend={blurBlend}
+          onBlurBlendChange={onBlurBlendChange}
+          blurOpacity={blurOpacity}
+          onBlurOpacityChange={onBlurOpacityChange}
+          lockAlpha={lockAlpha}
+          onLockAlphaChange={onLockAlphaChange}
         />
       )}
       {activeTool.id === "spray" && (

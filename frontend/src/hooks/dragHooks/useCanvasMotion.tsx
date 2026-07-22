@@ -40,6 +40,10 @@ const MIDDLE_BUTTON_ONLY: MouseButton[] = ["middle"]
 export default function useCanvasMotion(
   dragFrameRef: React.RefObject<HTMLElement | null>,
   dragElementRef: React.RefObject<HTMLElement | null>,
+  // True while the grabber tool is held. A ref, not a value: the drag listeners
+  // read it on every event, and threading it as state would re-subscribe them
+  // each time the tool changed.
+  grabbingRef?: React.RefObject<boolean>,
 ): void {
   const offset = useRef({ x: 0, y: 0 })
   const scale = useRef(1)
@@ -77,9 +81,17 @@ export default function useCanvasMotion(
   // means "navigate" and nothing moves the board by accident. The middle button
   // still works on its own because it cannot be pressed by accident while
   // drawing, and it is the conventional pan gesture.
-  const optionalCheck = useCallback((ev: PointerEvent): boolean => {
-    return ev.shiftKey || ev.buttons === 4
-  }, [])
+  //
+  // The grabber tool is the third way in, and it is the reason the tool exists:
+  // holding a modifier to move the canvas is fine for a quick nudge and tiring
+  // for a long one, especially on a trackpad or a tablet where shift may be a
+  // second hand away. Selecting the grabber makes dragging pan outright.
+  const optionalCheck = useCallback(
+    (ev: PointerEvent): boolean => {
+      return ev.shiftKey || ev.buttons === 4 || grabbingRef?.current === true
+    },
+    [grabbingRef],
+  )
 
   const onDragStart = useCallback((ev: PointerEvent) => {
     dragStart.current = {
@@ -125,7 +137,11 @@ export default function useCanvasMotion(
       //
       // With no remembered slider the wheel is left completely alone — the board
       // still never moves on its own.
-      if (!ev.shiftKey) {
+      // The grabber zooms on a bare wheel too. Holding it means "I am navigating
+      // right now", and a tool with no sliders has nothing else for the wheel to
+      // do — requiring shift as well would be asking for a modifier to confirm
+      // the mode you already selected.
+      if (!ev.shiftKey && grabbingRef?.current !== true) {
         const slider = recentSlider()
         if (slider) {
           ev.preventDefault()
@@ -148,7 +164,7 @@ export default function useCanvasMotion(
       frame.style.setProperty(SCROLL_KEY, `${scale.current}`)
       checkResetPos()
     },
-    [dragFrameRef, checkResetPos],
+    [dragFrameRef, checkResetPos, grabbingRef],
   )
 
   // Start watching for slider interaction as soon as the board exists, so the

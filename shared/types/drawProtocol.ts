@@ -6,11 +6,16 @@ import type { Vec, ColorType } from "./primitive"
 export type LineToolType = "pencil" | "eraser"
 export type FillToolType = "bucket"
 export type SprayToolType = "spray"
-export type ToolType = LineToolType | FillToolType | SprayToolType
+export type BlurToolType = "blur"
+export type ToolType =
+  | LineToolType
+  | FillToolType
+  | SprayToolType
+  | BlurToolType
 
 export type LineAction = PencilAction | EraseAction
 export type FillAction = BucketAction
-export type DrawAction = LineAction | FillAction | SprayAction
+export type DrawAction = LineAction | FillAction | SprayAction | BlurAction
 
 export type LineInstruction = PencilInstruction | EraseInstruction
 export type FillInstruction = BucketInstruction
@@ -18,6 +23,7 @@ export type DrawInstruction =
   | LineInstruction
   | FillInstruction
   | SprayInstruction
+  | BlurInstruction
   | PatchInstruction
   | ClearInstruction
 //#endregion
@@ -106,6 +112,46 @@ export type SprayInstruction = SprayShared &
   BaseInstruction &
   BaseAction &
   SprayFields
+// The blur brush. Unlike every other tool, it carries NO colour: what it paints
+// is derived from the pixels already there, which makes it the first instruction
+// whose result depends on the canvas it lands on.
+//
+// That is why the numbers below are all on the wire rather than being read from
+// each client's own sliders. The server and every client must compute the same
+// output from the same input, and they only do that if they agree on the exact
+// kernel, mix and alpha rule — the same reasoning as the spray's `seed`, for the
+// same reason: determinism is what keeps the canvases identical.
+//
+// It is also why it is order-dependent. Blurring twice is not blurring once, so
+// two clients that applied the same blurs in different orders would diverge —
+// but they never do, because everyone applies the server's ordered log.
+type BlurShared = {
+  type: "blur"
+}
+type BlurFields = {
+  pos: Vec
+  // Brush radius: which pixels are touched at all.
+  radius: number
+  // Kernel radius: how far each touched pixel samples for its average. Separate
+  // from `radius` because "a big soft smudge" and "a small strong smudge" are
+  // different tools in the hand, and one number cannot express both.
+  blend: number
+  // How much of the blurred value is mixed in, 1-100. Below 100 the pixel keeps
+  // some of itself, so repeated passes build up gradually instead of flattening
+  // an area in one stroke.
+  opacity: number
+  // When true, alpha is left exactly as found and only RGB is averaged.
+  //
+  // Without it, blurring near the edge of a drawing pulls transparency inwards
+  // and eats away at what you drew — the stroke visibly erodes as you smudge it.
+  // Locking alpha keeps the shape and softens only the colour inside it.
+  lockAlpha: boolean
+}
+export type BlurAction = BlurShared & BaseAction & Partial<BlurFields>
+export type BlurInstruction = BlurShared &
+  BaseInstruction &
+  BaseAction &
+  BlurFields
 //#endregion
 
 //#region Patch Instruction (undo/redo)

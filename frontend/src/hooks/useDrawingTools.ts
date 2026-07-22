@@ -5,7 +5,11 @@ import { DEFAULT_STABILIZATION } from "@/utils/stabilizer"
 
 import { DEFAULT_DRAW_ACTION } from "@/constants/ui"
 
-import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
+import {
+  DEFAULT_BLUR_BLEND,
+  DEFAULT_BLUR_OPACITY,
+  DEFAULT_STROKE_SIZE,
+} from "@shared/constants/canvas"
 
 import type { DrawAction, ToolType } from "@shared/types/drawProtocol"
 import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
@@ -13,6 +17,21 @@ import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 
 //#region Type Def
 export interface UseDrawingToolsResult {
+  // Blur brush settings. blend = how far each pixel samples, opacity = how much
+  // of the blurred value is mixed in, lockAlpha = leave transparency alone.
+  blurSettingsRef: React.RefObject<{
+    blend: number
+    opacity: number
+    lockAlpha: boolean
+  }>
+  blurBlend: number
+  setBlurBlend: (blend: number) => void
+  blurOpacity: number
+  setBlurOpacity: (opacity: number) => void
+  lockAlpha: boolean
+  setLockAlpha: (locked: boolean) => void
+  // True while the grabber is held, read by the canvas drag handlers.
+  grabbingRef: React.RefObject<boolean>
   // The live draw action, read by the pointer handlers on every event (§13.5) —
   // a ref so switching tools never re-subscribes the drag listeners.
   drawAction: React.RefObject<DrawAction>
@@ -71,9 +90,25 @@ export default function useDrawingTools(): UseDrawingToolsResult {
   const eyedropperActive = useRef<boolean>(false)
   const lastDrawTool = useRef<ToolType>(DEFAULT_DRAW_ACTION.type)
 
+  // Two tools are not ToolTypes and so never become a drawAction:
+  //   - eyedropper samples a pixel and reverts.
+  //   - grabber draws nothing at all; it changes what dragging the canvas means.
+  // Both still need to be the SELECTED tool (the picker, the cursor glyph, the
+  // panels all key off that), which is why selection and "what the pointer
+  // draws" are separate pieces of state rather than one value.
+  // True while the grabber is held, read per-event by the canvas drag handlers.
+  // Written in selectTool rather than derived during render, for the same reason
+  // as the blur settings above.
+  const grabbingRef = useRef<boolean>(false)
+
   const selectTool = useCallback((type: AppTool) => {
+    grabbingRef.current = type === "grabber"
     if (type === "eyedropper") {
       eyedropperActive.current = true
+    } else if (type === "grabber") {
+      // Leave drawAction untouched: picking up the grabber and putting it down
+      // again should hand back the brush you had, not reset you to the pencil.
+      eyedropperActive.current = false
     } else {
       lastDrawTool.current = type
       eyedropperActive.current = false
@@ -112,7 +147,49 @@ export default function useDrawingTools(): UseDrawingToolsResult {
     setSprayDensityState(density)
   }, [])
 
+  // Blur settings. Same ref+state split as everything above (§13.5): the refs are
+  // what the pointer handlers read while a gesture runs, the state is what the
+  // panel renders.
+  // ONE ref holding all three blur settings, not three refs plus a combining
+  // step. The pointer handler wants a single deref, and — more importantly — a
+  // combined ref assembled during render would be a render-time ref mutation,
+  // which React's rules forbid because it makes the value depend on how many
+  // times a component happened to render. Mutating inside the setters keeps
+  // every write inside an event handler, where it belongs.
+  const blurSettingsRef = useRef({
+    blend: DEFAULT_BLUR_BLEND,
+    opacity: DEFAULT_BLUR_OPACITY,
+    lockAlpha: false,
+  })
+
+  const [blurBlend, setBlurBlendState] = useState<number>(DEFAULT_BLUR_BLEND)
+  const setBlurBlend = useCallback((blend: number) => {
+    blurSettingsRef.current = { ...blurSettingsRef.current, blend }
+    setBlurBlendState(blend)
+  }, [])
+
+  const [blurOpacity, setBlurOpacityState] =
+    useState<number>(DEFAULT_BLUR_OPACITY)
+  const setBlurOpacity = useCallback((opacity: number) => {
+    blurSettingsRef.current = { ...blurSettingsRef.current, opacity }
+    setBlurOpacityState(opacity)
+  }, [])
+
+  const [lockAlpha, setLockAlphaState] = useState<boolean>(false)
+  const setLockAlpha = useCallback((locked: boolean) => {
+    blurSettingsRef.current = { ...blurSettingsRef.current, lockAlpha: locked }
+    setLockAlphaState(locked)
+  }, [])
+
   return {
+    blurSettingsRef,
+    blurBlend,
+    setBlurBlend,
+    blurOpacity,
+    setBlurOpacity,
+    lockAlpha,
+    setLockAlpha,
+    grabbingRef,
     drawAction,
     selectedTool,
     selectTool,

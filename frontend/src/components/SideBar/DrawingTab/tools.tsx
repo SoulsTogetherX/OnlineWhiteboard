@@ -22,6 +22,10 @@ export interface ToolDescriptor {
   // Whether this tool draws with the stroke-width control (pencil/eraser). The
   // contextual panel uses it to decide what to show.
   usesStroke: boolean
+  // How many sliders this tool's contextual panel shows. Drives the wheel hint
+  // above the panels: no sliders means the hint is a lie, and one slider means
+  // the "switch slider" half of it is noise.
+  sliderCount: number
   // The glyph as raw path data in a 16x16 box, NOT as JSX.
   //
   // It is the path rather than an element because the same glyph has to become
@@ -51,6 +55,12 @@ const BUCKET_PATH =
 const SPRAY_PATH =
   "M3 2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5a1 1 0 0 1 .5.866l.5.289a2 2 0 0 1 1 1.732V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.387a2 2 0 0 1 1-1.732l.5-.289A1 1 0 0 1 5 3.5V2zm7.5 1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m2-1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-2 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m3 0a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1.5 2.5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0M14 5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0"
 
+const GRABBER_PATH =
+  "M8.5 1.5a1.5 1.5 0 0 1 3 0V6h.25a1.5 1.5 0 0 1 1.5 1.5V11a4.5 4.5 0 0 1-4.5 4.5H7.9a4.5 4.5 0 0 1-3.6-1.8L1.7 10.2a1.5 1.5 0 0 1 2.2-2l1.1 1.05V2.5a1.5 1.5 0 0 1 3 0zM6.5 2.5v7.2a.5.5 0 0 1-.85.36L3.2 7.9a.5.5 0 0 0-.7.7l2.6 3.5a3.5 3.5 0 0 0 2.8 1.4h.85A3.5 3.5 0 0 0 12.25 11V7.5a.5.5 0 0 0-.5-.5h-.75a.5.5 0 0 0-.5.5V9a.5.5 0 0 1-1 0V1.5a.5.5 0 0 0-1 0V8a.5.5 0 0 1-1 0V2.5a.5.5 0 0 0-1 0"
+
+const BLUR_PATH =
+  "M8 .5a.5.5 0 0 1 .35.14C8.68.96 13 5.24 13 9a5 5 0 0 1-10 0C3 5.24 7.32.96 7.65.64A.5.5 0 0 1 8 .5m0 1.24C6.87 2.94 4 6.2 4 9a4 4 0 0 0 8 0c0-2.8-2.87-6.06-4-7.26M6.2 8.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.6 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.6 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8M7 10.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.8 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8M7 6.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.8 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8"
+
 const EYEDROPPER_PATH =
   "M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM10.293 7 3.293 14H2v-1.293l7-7z"
 
@@ -72,6 +82,7 @@ export const TOOLS: ToolDescriptor[] = [
     name: "Pencil",
     shortcut: "P",
     usesStroke: true,
+    sliderCount: 2,
     iconPath: PENCIL_PATH,
     // Drawn tip-down-left, so the point is the bottom-left corner.
     hotspot: [1, 15],
@@ -82,6 +93,7 @@ export const TOOLS: ToolDescriptor[] = [
     name: "Eraser",
     shortcut: "E",
     usesStroke: true,
+    sliderCount: 2,
     iconPath: ERASER_PATH,
     hotspot: [2, 14],
     icon: glyph(ERASER_PATH),
@@ -91,6 +103,7 @@ export const TOOLS: ToolDescriptor[] = [
     name: "Fill",
     shortcut: "F",
     usesStroke: false,
+    sliderCount: 0,
     iconPath: BUCKET_PATH,
     // The spout, where the paint actually lands.
     hotspot: [1, 9],
@@ -101,16 +114,40 @@ export const TOOLS: ToolDescriptor[] = [
     name: "Spray",
     shortcut: "S",
     usesStroke: false,
+    sliderCount: 3,
     iconPath: SPRAY_PATH,
     // The nozzle at the top right, where the mist comes out.
     hotspot: [10, 4],
     icon: glyph(SPRAY_PATH),
   },
   {
+    id: "blur",
+    name: "Blur",
+    shortcut: "B",
+    usesStroke: false,
+    sliderCount: 3,
+    iconPath: BLUR_PATH,
+    // The droplet's body, where the smearing is centred.
+    hotspot: [8, 9],
+    icon: glyph(BLUR_PATH),
+  },
+  {
+    id: "grabber",
+    name: "Grab",
+    shortcut: "G",
+    usesStroke: false,
+    sliderCount: 0,
+    iconPath: GRABBER_PATH,
+    // The fingertips — what you would put on the thing you are moving.
+    hotspot: [8, 2],
+    icon: glyph(GRABBER_PATH),
+  },
+  {
     id: "eyedropper",
     name: "Eyedropper",
     shortcut: "I",
     usesStroke: false,
+    sliderCount: 0,
     iconPath: EYEDROPPER_PATH,
     hotspot: [1, 15],
     icon: glyph(EYEDROPPER_PATH),

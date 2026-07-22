@@ -6,6 +6,7 @@ import {
 import { handleDrawLineInstruction } from "./handleLineProtocol"
 import { handleDrawFillInstruction } from "./handleFillProtocol"
 import { handleDrawSprayInstruction } from "./handleSprayProtocol"
+import { handleDrawBlurInstruction } from "./handleBlurProtocol"
 import { handleDrawPatchInstruction } from "./handlePatchProtocol"
 import { isValidDrawInstruction } from "./validateInstruction"
 
@@ -84,6 +85,8 @@ export function applyDrawInstructionToCanvas(
       return handleDrawFillInstruction(pixels, inst, dims) > 0 ? inst : null
     case "spray":
       return handleDrawSprayInstruction(pixels, inst, dims) > 0 ? inst : null
+    case "blur":
+      return handleDrawBlurInstruction(pixels, inst, dims) > 0 ? inst : null
     case "clear": {
       // Blank every byte — R, G, B and A all to 0 (fully transparent).
       const buffer = pixels instanceof Uint8ClampedArray ? pixels : pixels.data
