@@ -20,7 +20,7 @@
 .playback-close {
   padding: 0.3rem 0.75rem;
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--border-color);
   background: transparent;
   cursor: pointer;
 }
@@ -55,7 +55,7 @@
 .playback-controls button {
   padding: 0.35rem 0.75rem;
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--border-color);
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
@@ -93,7 +93,7 @@
   height: 14px;
   transform: translate(-50%, -50%);
   border-radius: 1px;
-  background: var(--accent-color, #1677ff);
+  background: var(--accent-color);
 }
 .playback-count {
   font-size: 0.8rem;
