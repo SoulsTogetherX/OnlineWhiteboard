@@ -4,6 +4,8 @@
   gap: 0.9rem;
 
   min-height: 100%;
+  /* Owned here rather than by the panel — see SideBar/styles.css. */
+  padding: 1rem;
 }
 
 .account-guest {

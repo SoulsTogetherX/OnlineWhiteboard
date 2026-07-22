@@ -2,6 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 0.9rem;
+
+  /* Owned here rather than by the panel — see SideBar/styles.css. */
+  padding: 1rem;
 }
 
 .drawing-tab-tools {

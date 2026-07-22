@@ -122,12 +122,16 @@
   transform: translateY(1px);
 }
 
-/* The navigate-mode cue. Top-right, out of the way of the canvas, and
-   pointer-events:none so it can never intercept the drag it is describing. */
+/* The navigate-mode cue. Directly under the theme toggle in the top-LEFT, so it
+   sits with the other whole-app controls; the top-right corner belongs to the
+   room actions, and a hint blinking in and out over those read as one of THEM
+   misbehaving. pointer-events:none so it can never intercept the drag it is
+   describing. */
 .navigate-hint {
   position: fixed;
-  top: 12px;
-  right: 12px;
+  /* The toggle's 12px offset + its 2rem height + an 8px gap. */
+  top: calc(12px + 2rem + 8px);
+  left: 12px;
   z-index: 21;
 
   display: inline-flex;

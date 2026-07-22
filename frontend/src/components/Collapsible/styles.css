@@ -1,0 +1,94 @@
+.collapsible {
+  border: 1px solid var(--border-color);
+  border-radius: 0.45rem;
+
+  background: var(--panel-background);
+}
+
+.collapsible-summary {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  padding: 0.5rem 0.6rem;
+
+  color: var(--text-color);
+  font-size: 0.85rem;
+  font-weight: 600;
+
+  cursor: pointer;
+  /* Kills the default disclosure triangle so the chevron below is the only
+     marker; -webkit- variant for Safari, which ignores the standard one. */
+  list-style: none;
+  user-select: none;
+}
+
+.collapsible-summary::-webkit-details-marker {
+  display: none;
+}
+
+.collapsible-summary:hover {
+  background: var(--hover-background);
+}
+
+.collapsible-summary:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.collapsible-title {
+  flex: 1 1 auto;
+  min-width: 0;
+
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* What the section still tells you while folded. */
+.collapsible-badge {
+  flex: none;
+
+  padding: 0.05rem 0.4rem;
+
+  border-radius: 0.7rem;
+
+  background: var(--surface-background);
+  color: var(--muted-text-color);
+  font-size: 0.7rem;
+  font-weight: 500;
+}
+
+.collapsible-chevron {
+  flex: none;
+
+  width: 0.9rem;
+  height: 0.9rem;
+
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+
+  /* Rotates to point at the content it reveals. */
+  transition: transform 160ms ease;
+}
+
+.collapsible[open] .collapsible-chevron {
+  transform: rotate(180deg);
+}
+
+.collapsible-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+
+  padding: 0.2rem 0.6rem 0.7rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .collapsible-chevron {
+    transition: none;
+  }
+}

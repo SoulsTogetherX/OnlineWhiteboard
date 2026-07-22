@@ -98,10 +98,47 @@
   flex: 1 1 auto;
   min-height: 0;
 
-  padding: 1rem;
+  /* No padding HERE — each tab owns its own. A sticky footer is confined to its
+     containing block, which is the panel's CONTENT box, so a bottom padding on
+     the scroll container held the footer that far off the bottom no matter what
+     offset it asked for, and content showed through the gap underneath it.
+     Moving the padding into the tabs makes the panel's content box reach the
+     panel's edge, so `bottom: 0` really means the bottom. */
+  padding: 0;
   overflow-y: auto;
 
   color: var(--text-color);
+
+  /* A tab that overflows should say so quietly. The default scrollbar is a wide
+     grey slab that reads as part of the OS rather than part of the panel. */
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-color) transparent;
+
+  /* A barely-there grain over the flat fill. Tabs are large single-colour areas,
+     and a completely even fill at this size reads as unfinished. Generated
+     (feTurbulence) rather than shipped as an asset: no extra request, no binary
+     in the repo, and it tiles seamlessly via stitchTiles. The alpha is what
+     keeps it texture and not visible noise. */
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)' opacity='0.038'/%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* WebKit/Blink ignore scrollbar-color, so the same treatment again for them. */
+.sidebar-panel::-webkit-scrollbar {
+  width: 0.5rem;
+}
+
+.sidebar-panel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.sidebar-panel::-webkit-scrollbar-thumb {
+  border-radius: 0.25rem;
+  background: var(--border-color);
+}
+
+.sidebar-panel::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-color);
 }
 
 .sidebar-panel:focus-visible {

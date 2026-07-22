@@ -6,6 +6,9 @@
   /* Fill the panel so the footer's margin-top:auto can pin download to the
      bottom-right. */
   min-height: 100%;
+  /* The panel deliberately has none, so the sticky footer's containing block
+     reaches the panel's edge — see SideBar/styles.css. */
+  padding: 1rem;
 }
 
 /* Room id + connection status + change-room field — moved here from the floating

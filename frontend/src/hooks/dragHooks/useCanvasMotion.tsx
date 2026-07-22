@@ -1,8 +1,14 @@
 //#region Imports
-import { useCallback, useRef } from "react"
+import { useCallback, useEffect, useRef } from "react"
 
 import useScrollWheel from "./useScrollWheel"
 import useDrag from "./useDrag"
+
+import {
+  installRecentSliderTracking,
+  nudgeSlider,
+  recentSlider,
+} from "@/utils/recentSlider"
 import type { MouseButton } from "./useDrag"
 //#endregion
 
@@ -22,6 +28,15 @@ const MIDDLE_BUTTON_ONLY: MouseButton[] = ["middle"]
 
 
 //#region Hook Def
+// The pan/zoom variables are written to the FRAME, not to the canvas, even
+// though it is the canvas that carries the transform reading them.
+//
+// Custom properties inherit, so anything inside the frame sees the same values —
+// which is what keeps the canvas and the brush-preview overlay stacked on top of
+// it in exact alignment. Setting them on the canvas element (as this used to)
+// meant the overlay, a sibling, kept the fallbacks: it never panned and never
+// zoomed, so the outline drifted away from the pointer the moment the board was
+// moved. Any future layer over the canvas gets the alignment for free now.
 export default function useCanvasMotion(
   dragFrameRef: React.RefObject<HTMLElement | null>,
   dragElementRef: React.RefObject<HTMLElement | null>,
@@ -55,9 +70,9 @@ export default function useCanvasMotion(
       y: 0,
     }
 
-    element.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
-    element.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
-  }, [dragElementRef])
+    dragFrameRef.current?.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
+    dragFrameRef.current?.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
+  }, [dragElementRef, dragFrameRef])
   // Panning requires SHIFT — the same modifier that enables zooming, so one key
   // means "navigate" and nothing moves the board by accident. The middle button
   // still works on its own because it cannot be pressed by accident while
@@ -77,8 +92,8 @@ export default function useCanvasMotion(
 
   const onDragMotion = useCallback(
     (ev: PointerEvent) => {
-      const element = dragElementRef.current
-      if (!element) {
+      const frame = dragFrameRef.current
+      if (!frame) {
         return
       }
 
@@ -90,30 +105,38 @@ export default function useCanvasMotion(
         y: dragStart.current.offsetY + dy,
       }
 
-      element.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
-      element.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
+      frame.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
+      frame.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
       checkResetPos()
     },
-    [dragElementRef, checkResetPos],
+    [dragFrameRef, checkResetPos],
   )
 
   const onScrollWheel = useCallback(
     (ev: WheelEvent) => {
-      // The canvas NEVER moves on its own. A bare wheel is left entirely alone —
-      // it scrolls whatever the pointer is over, exactly as it would on any page
-      // — and only shift+wheel zooms the board.
+      // Shift is the canvas modifier: shift+wheel zooms the board, and a bare
+      // wheel belongs to the tool — it adjusts the slider you were last working
+      // with, so you can size a brush, try it, and size it again without ever
+      // going back to the sidebar.
       //
-      // This replaced two earlier rules that both tried to be clever: zoom on a
-      // bare wheel (which hijacked scrolling), then zoom-unless-a-slider-has-
-      // focus (which made the same gesture do different things depending on
-      // invisible state). One modifier, one meaning.
+      // "Last worked with" rather than "currently focused" is what makes that
+      // usable: clicking the canvas to draw takes focus off the slider, so a
+      // focus-based rule worked exactly once per visit to the panel.
+      //
+      // With no remembered slider the wheel is left completely alone — the board
+      // still never moves on its own.
       if (!ev.shiftKey) {
+        const slider = recentSlider()
+        if (slider) {
+          ev.preventDefault()
+          nudgeSlider(slider, ev.deltaY < 0 ? 1 : -1)
+        }
         return
       }
       ev.preventDefault()
 
-      const element = dragElementRef.current
-      if (!element) {
+      const frame = dragFrameRef.current
+      if (!frame) {
         return
       }
 
@@ -122,11 +145,17 @@ export default function useCanvasMotion(
         ev.deltaY < 0
           ? Math.min(MAX_ZOOM, scale.current * zoomFactor)
           : Math.max(MIN_ZOOM, scale.current / zoomFactor)
-      element.style.setProperty(SCROLL_KEY, `${scale.current}`)
+      frame.style.setProperty(SCROLL_KEY, `${scale.current}`)
       checkResetPos()
     },
-    [dragElementRef, checkResetPos],
+    [dragFrameRef, checkResetPos],
   )
+
+  // Start watching for slider interaction as soon as the board exists, so the
+  // very first wheel already knows which slider you were last using.
+  useEffect(() => {
+    installRecentSliderTracking()
+  }, [])
 
   useScrollWheel(dragFrameRef, onScrollWheel)
   useDrag(

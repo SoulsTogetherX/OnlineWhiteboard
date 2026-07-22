@@ -1,6 +1,7 @@
 //#region Imports
 import { useState } from "react"
 
+import Collapsible from "@/components/Collapsible"
 import IconButton from "@/components/IconButton"
 import Toggle from "@/components/Toggle"
 
@@ -145,91 +146,122 @@ export default function RoomTab({
         selfConnectionId={self?.connectionId ?? null}
       />
 
-      <OwnershipButton
-        isOwner={isOwner}
-        hasOwner={hasOwner}
-        isGuest={isGuest}
-        onClaim={onClaimOwnership}
-        onRelease={onReleaseOwnership}
-      />
+      {/* Everything below is grouped and foldable. This tab accumulated four
+          unrelated jobs — who may do what, how cursors look, where history is,
+          and how to leave — as one flat column you had to read end to end to
+          find anything. Sections let you keep open the one you are using.
 
-      <Toggle
-        checked={openEditing}
-        disabled={!isOwner}
-        onChange={onSetOpenEditing}
-        label="Let guests &amp; viewers draw"
-      />
-
-      {mayRequestEditor && (
-        <button
-          type="button"
-          className="room-request-editor"
-          onClick={onRequestEditor}
-        >
-          Request editor access
-        </button>
-      )}
-
-      {isOwner && (
-        <EditorRequests
-          requests={editorRequests}
-          onRespond={onRespondEditor}
-        />
-      )}
-
-      <CursorControls
-        showCursors={showCursors}
-        showNames={showCursorNames}
-        onShowCursorsChange={onShowCursorsChange}
-        onShowNamesChange={onShowCursorNamesChange}
-      />
-
-      <ResizeControl
-        width={canvasWidth}
-        height={canvasHeight}
-        disabled={!isOwner}
-        onResize={onResize}
-      />
-
-      <form
-        className="room-change"
-        onSubmit={(event) => {
-          event.preventDefault()
-          const next = draftRoomId.trim()
-          if (next.length > 0) {
-            onLoadRoom(next)
-          }
-        }}
+          Permissions is the only one open by default: it is the group whose
+          state you need to SEE (can guests draw right now?) rather than one you
+          go to when you want it. */}
+      <Collapsible
+        title="Permissions &amp; canvas"
+        storageKey="online-whiteboard-room-section-permissions"
+        defaultOpen
       >
-        <label className="room-change-label" htmlFor="room-change-input">
-          Change room
-        </label>
-        <div className="room-change-row">
-          <input
-            id="room-change-input"
-            type="text"
-            value={draftRoomId}
-            onChange={(event) => setDraftRoomId(event.target.value)}
-            maxLength={22}
-            autoComplete="off"
+        <OwnershipButton
+          isOwner={isOwner}
+          hasOwner={hasOwner}
+          isGuest={isGuest}
+          onClaim={onClaimOwnership}
+          onRelease={onReleaseOwnership}
+        />
+
+        <Toggle
+          checked={openEditing}
+          disabled={!isOwner}
+          onChange={onSetOpenEditing}
+          label="Let guests &amp; viewers draw"
+        />
+
+        {mayRequestEditor && (
+          <button
+            type="button"
+            className="room-request-editor"
+            onClick={onRequestEditor}
+          >
+            Request editor access
+          </button>
+        )}
+
+        {isOwner && (
+          <EditorRequests
+            requests={editorRequests}
+            onRespond={onRespondEditor}
           />
-          <button type="submit">Go</button>
-        </div>
-      </form>
+        )}
 
-      <button type="button" className="room-leave" onClick={onLeaveRoom}>
-        Leave room
-      </button>
+        <ResizeControl
+          width={canvasWidth}
+          height={canvasHeight}
+          disabled={!isOwner}
+          onResize={onResize}
+        />
+      </Collapsible>
 
-      {/* The room's history, folded in from what used to be its own tab. */}
-      <RoomHistory
-        checkpoints={checkpoints}
-        canEdit={canEditHistory}
-        onCreate={onCreateCheckpoint}
-        onRestore={onRestoreCheckpoint}
-        onDelete={onDeleteCheckpoint}
-        onReplay={onReplay}
-      />
+      <Collapsible
+        title="Cursors"
+        storageKey="online-whiteboard-room-section-cursors"
+      >
+        <CursorControls
+          showCursors={showCursors}
+          showNames={showCursorNames}
+          onShowCursorsChange={onShowCursorsChange}
+          onShowNamesChange={onShowCursorNamesChange}
+        />
+      </Collapsible>
+
+      {/* The room's history, folded in from what used to be its own tab. The
+          badge keeps the count visible while the section is shut. */}
+      <Collapsible
+        title="Checkpoints"
+        storageKey="online-whiteboard-room-section-checkpoints"
+        badge={String(checkpoints.length)}
+      >
+        <RoomHistory
+          checkpoints={checkpoints}
+          canEdit={canEditHistory}
+          onCreate={onCreateCheckpoint}
+          onRestore={onRestoreCheckpoint}
+          onDelete={onDeleteCheckpoint}
+          onReplay={onReplay}
+        />
+      </Collapsible>
+
+      <Collapsible
+        title="Switch or leave"
+        storageKey="online-whiteboard-room-section-navigation"
+      >
+        <form
+          className="room-change"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const next = draftRoomId.trim()
+            if (next.length > 0) {
+              onLoadRoom(next)
+            }
+          }}
+        >
+          <label className="room-change-label" htmlFor="room-change-input">
+            Change room
+          </label>
+          <div className="room-change-row">
+            <input
+              id="room-change-input"
+              type="text"
+              value={draftRoomId}
+              onChange={(event) => setDraftRoomId(event.target.value)}
+              maxLength={22}
+              autoComplete="off"
+            />
+            <button type="submit">Go</button>
+          </div>
+        </form>
+
+        <button type="button" className="room-leave" onClick={onLeaveRoom}>
+          Leave room
+        </button>
+      </Collapsible>
 
       {/* Clear and download sit at the very bottom: one is destructive and the
           other ends a session, so neither belongs next to the controls used
