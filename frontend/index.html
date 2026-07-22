@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Group Whiteboard</title>
+    <!-- Deliberately blocking: no defer, no async, no type="module". This must
+         run before the first paint or a dark-mode user gets a frame of the light
+         palette, and any one of those attributes would postpone it past exactly
+         that point. A few hundred bytes on the critical path, spent to remove a
+         flash that happened on every single load. See public/theme-boot.js. -->
+    <script src="/theme-boot.js"></script>
   </head>
   <body>
     <div id="root"></div>

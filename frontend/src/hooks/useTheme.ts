@@ -18,9 +18,28 @@ export interface UseThemeResult {
 //#endregion
 
 //#region Helper
-// A stored choice wins; otherwise follow the OS preference so first-time dark-mode
-// users get dark without touching anything.
+// What theme is already on screen.
+//
+// The attribute is checked FIRST, because by the time React runs the answer has
+// already been decided and painted: public/theme-boot.js is a blocking script in
+// <head> that resolves the theme and stamps `data-theme` before the browser
+// paints anything. Recomputing here rather than reading it back would be two
+// implementations of one decision, free to disagree — and a disagreement shows
+// up as exactly the flash that script exists to prevent.
+//
+// The rest is the same resolution the boot script performs, kept for the cases
+// where it did not run: jsdom in the unit tests, and any future server render.
+// If the order or the storage key changes here, change public/theme-boot.js to
+// match — a classic blocking script cannot import from a module without becoming
+// one, and becoming one would defer it, which is the whole bug.
 function initialTheme(): Theme {
+  if (typeof document !== "undefined") {
+    const stamped = document.documentElement.getAttribute("data-theme")
+    if (stamped === "light" || stamped === "dark") {
+      return stamped
+    }
+  }
+
   try {
     const stored = localStorage.getItem(THEME_KEY)
     if (stored === "light" || stored === "dark") {
