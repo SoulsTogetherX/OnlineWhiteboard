@@ -13,6 +13,7 @@ import EditorRequests from "./EditorRequests"
 import RoomHistory from "./RoomHistory"
 import DownloadMenu from "./DownloadMenu"
 
+import { MAX_ROOM_NAME_INPUT_LENGTH } from "@shared/constants/protocol"
 import { canManageRoom, canRequestEditor } from "@shared/types/identity"
 import type { Participant } from "@shared/types/identity"
 import type {
@@ -232,18 +233,6 @@ export default function RoomTab({
         title="Rooms"
         storageKey="online-whiteboard-room-section-navigation"
       >
-        {/* The dashboard is reachable from the top-right corner too, but that
-            button only appears while signed in and sits at the far side of the
-            screen — and this is the section you are already in when you are
-            thinking about which room to be in. */}
-        <button
-          type="button"
-          className="room-open-dashboard"
-          onClick={onOpenDashboard}
-        >
-          Browse my rooms
-        </button>
-
         <form
           className="room-change"
           onSubmit={(event) => {
@@ -263,7 +252,7 @@ export default function RoomTab({
               type="text"
               value={draftRoomId}
               onChange={(event) => setDraftRoomId(event.target.value)}
-              maxLength={22}
+              maxLength={MAX_ROOM_NAME_INPUT_LENGTH}
               autoComplete="off"
             />
             <button type="submit">Go</button>
@@ -272,6 +261,18 @@ export default function RoomTab({
 
         <button type="button" className="room-leave" onClick={onLeaveRoom}>
           Leave room
+        </button>
+
+        {/* Last in the section, under Leave room. The dashboard is reachable
+            from the top-right corner too, but that button only appears while
+            signed in and sits at the far side of the screen — and this is the
+            section you are already in when thinking about which room to be in. */}
+        <button
+          type="button"
+          className="room-open-dashboard"
+          onClick={onOpenDashboard}
+        >
+          Browse my rooms
         </button>
       </Collapsible>
 

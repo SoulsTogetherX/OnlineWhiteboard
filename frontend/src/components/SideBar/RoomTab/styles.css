@@ -155,9 +155,10 @@
   width: 100%;
 }
 
-/* Opens the rooms dashboard. Shares the leave button's shape — both are "go
-   somewhere else" — but carries the accent so it does not read as the
-   destructive one sitting right below it. */
+/* Opens the rooms dashboard. Sits directly under "Leave room" and matches it
+   exactly — same border, same text colour — because the two are the same KIND of
+   control (go somewhere else), and giving one of them the accent made it read as
+   the primary action of the section when it is not. */
 .room-open-dashboard {
   display: inline-flex;
   align-items: center;
@@ -166,11 +167,11 @@
   width: 100%;
   padding: 0.35rem 0.75rem;
 
-  border: 1px solid var(--accent-color);
+  border: 1px solid var(--border-color);
   border-radius: 0.35rem;
 
   background: var(--surface-background);
-  color: var(--accent-color);
+  color: var(--text-color);
 
   text-align: center;
   cursor: pointer;

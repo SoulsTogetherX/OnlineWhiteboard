@@ -19,7 +19,17 @@
    where it was. Same trick as the sidebar's sticky footer. */
 .dashboard-header {
   position: sticky;
-  top: -1px;
+  /* Must equal the negative top margin below, and that is not a coincidence to
+     be tidied away.
+     A sticky element sits at its FLOW position until the scroll offset would
+     push it past `top`. The -20px margin puts this bar's flow position 20px
+     above the scrollport, so with `top: -1px` it was already past its threshold
+     at rest — pinned 19px BELOW where the layout had reserved space for it,
+     overlapping the first row of cards while the grid stayed put. Matching the
+     two means no displacement at rest, and when the list scrolls the bar pins
+     with its 20px top padding above the visible edge, so cards are covered from
+     off-screen downwards and none can appear above it. */
+  top: -20px;
   z-index: 1;
 
   display: flex;
@@ -130,7 +140,6 @@
   align-items: center;
   justify-content: center;
 
-  min-height: 12rem;
   margin: 0;
   padding: 0 1rem;
 
@@ -146,11 +155,23 @@
    never fit a fourth; on a narrower screen the 15rem floor takes over instead and
    it drops to two, then one. Still no media query — the two floors express
    "at most three" and "never thinner than readable", and whichever binds, wins. */
+/* The list area keeps a floor height whether or not there is anything in it, so
+   the dialog does not resize itself around its contents — opening it with one
+   room and opening it with none should not be two different-sized windows, and
+   removing the last few rooms should not make it collapse under the pointer. */
+.dashboard-grid,
+.dashboard-empty {
+  min-height: 12rem;
+}
+
 .dashboard-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
+  /* Rows size to content; without this the floor above stretches a single row
+     to fill all 12rem. */
+  grid-auto-rows: min-content;
   grid-template-columns: repeat(
     auto-fill,
     minmax(max(15rem, calc((100% - 1.5rem) / 3)), 1fr)
@@ -200,6 +221,40 @@
 }
 
 .dashboard-select:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Quiet on purpose. It sits beside the bin, and the bin is the button with
+   consequences — this one only changes what is ticked. */
+.dashboard-select-all {
+  padding: 0.3rem 0.6rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--surface-background);
+  color: var(--text-color);
+  font-size: 0.8rem;
+
+  cursor: pointer;
+}
+
+.dashboard-select-all:hover:not(:disabled) {
+  background: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.dashboard-select-all:active:not(:disabled) {
+  background: var(--active-background);
+}
+
+.dashboard-select-all:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.dashboard-select-all:focus-visible {
   outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

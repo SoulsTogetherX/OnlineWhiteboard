@@ -1,6 +1,8 @@
 //#region Imports
 import { useState } from "react"
 
+import { MAX_ROOM_NAME_INPUT_LENGTH } from "@shared/constants/protocol"
+
 import type { AuthUser } from "@shared/types/identity"
 
 import "./styles.css"
@@ -93,7 +95,7 @@ export default function Lobby({
             type="text"
             value={roomId}
             onChange={(event) => setRoomId(event.target.value)}
-            maxLength={22}
+            maxLength={MAX_ROOM_NAME_INPUT_LENGTH}
             autoComplete="off"
             placeholder="e.g. design-review"
           />

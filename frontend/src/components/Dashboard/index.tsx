@@ -85,6 +85,15 @@ export default function Dashboard({
     })
   }
 
+  // One control that flips meaning, rather than separate Select all / Clear
+  // buttons where one of the two is always a no-op. It reads "all are ticked" off
+  // the live list, so a room arriving on a refetch correctly makes it offer
+  // "select all" again instead of claiming everything is already chosen.
+  const allChosen = rooms.length > 0 && count === rooms.length
+  const toggleAll = () => {
+    setSelected(allChosen ? new Set() : new Set(rooms.map((r) => r.roomId)))
+  }
+
   const removeChosen = async () => {
     if (count === 0 || busy) {
       return
@@ -116,6 +125,14 @@ export default function Dashboard({
               <span className="dashboard-selection" aria-live="polite">
                 {count > 0 && `${count} selected`}
               </span>
+              <button
+                type="button"
+                className="dashboard-select-all"
+                onClick={toggleAll}
+                disabled={rooms.length === 0}
+              >
+                {allChosen ? "Clear selection" : "Select all"}
+              </button>
               {/* The tooltip sits on a wrapper, not on the button. A disabled
                   button fires no pointer events in most browsers, so a title on
                   it would hide the one explanation you need precisely when it is
