@@ -11,6 +11,9 @@ export interface CanvasBoardProps {
   // a non-square canvas must be shown as a rectangle, not stretched into the
   // square viewport box.
   dims: CanvasDims
+  // The CSS cursor to show over the canvas — the active tool's own glyph, so the
+  // local pointer matches what collaborators see on it (see utils/toolCursor).
+  cursor: string
 }
 
 // Fit the canvas into a roughly-square viewport box (min(90vw, 80vh)) while
@@ -19,7 +22,11 @@ export interface CanvasBoardProps {
 // regardless of dims, so resizing to e.g. 128×256 squashed the pixels 2:1.
 const VIEWPORT_BOX = "min(90vw, 80vh)"
 
-export default function CanvasBoard({ canvasRef, dims }: CanvasBoardProps) {
+export default function CanvasBoard({
+  canvasRef,
+  dims,
+  cursor,
+}: CanvasBoardProps) {
   const handleContextMenu = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Right-click is the secondary-color draw gesture (see getDirectColor), so
     // the browser menu must not appear.
@@ -41,7 +48,7 @@ export default function CanvasBoard({ canvasRef, dims }: CanvasBoardProps) {
     <canvas
       ref={canvasRef}
       className="draw-canvas"
-      style={displaySize}
+      style={{ ...displaySize, cursor }}
       onContextMenu={handleContextMenu}
       // A <canvas> with no label and no child content is completely opaque to
       // assistive tech — it was announced as nothing at all. `img` is the right

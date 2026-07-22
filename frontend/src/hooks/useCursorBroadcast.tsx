@@ -4,6 +4,7 @@ import { useEffect } from "react"
 import { getPosCorrected } from "@shared/utils/helperProtocolMethods"
 
 import type { Vec } from "@shared/types/primitive"
+import type { CursorTool } from "@shared/types/socketProtocol"
 //#endregion
 
 //#region Constants
@@ -19,7 +20,11 @@ const THROTTLE_MS = 45
 // when the pointer leaves so their cursor disappears.
 export default function useCursorBroadcast(
   canvasRef: React.RefObject<HTMLCanvasElement | null>,
-  sendCursor: (pos: Vec | null) => void,
+  sendCursor: (pos: Vec | null, tool?: CursorTool) => void,
+  // A REF, read at send time rather than captured: the tool changes while this
+  // effect stays mounted, and re-subscribing the pointer listeners every time
+  // someone picks a brush would be pure churn (§13.5).
+  toolRef: React.RefObject<CursorTool>,
 ): void {
   useEffect(() => {
     const canvas = canvasRef.current
@@ -38,7 +43,7 @@ export default function useCursorBroadcast(
       // getPosCorrected clamps to the canvas bounds, so a cursor near the edge
       // sticks to the edge rather than reporting an out-of-range coordinate.
       const [pos] = getPosCorrected(ev, canvas)
-      sendCursor(pos)
+      sendCursor(pos, toolRef.current)
     }
 
     const onLeave = () => sendCursor(null)
@@ -49,6 +54,6 @@ export default function useCursorBroadcast(
       canvas.removeEventListener("pointermove", onMove)
       canvas.removeEventListener("pointerleave", onLeave)
     }
-  }, [canvasRef, sendCursor])
+  }, [canvasRef, sendCursor, toolRef])
 }
 //#endregion

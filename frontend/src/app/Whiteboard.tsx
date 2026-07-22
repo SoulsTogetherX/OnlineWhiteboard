@@ -30,9 +30,11 @@ import useKeymap from "@/hooks/useKeymap"
 
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
+import { toolCursorCss } from "@/utils/toolCursor"
 
 import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
+import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 import type { AuthUser } from "@shared/types/identity"
 import type { ColorType } from "@shared/types/primitive"
 //#endregion
@@ -144,6 +146,7 @@ export default function Whiteboard({
     canvasResize,
     cursorsRef,
     cursorIds,
+    cursorTools,
   } = useRoomConnection(canvasRef, () => {}, user?.id ?? null, initialRoomId)
 
   // Keep the shell's "last room" in step with in-room switches, so leaving and
@@ -212,7 +215,14 @@ export default function Whiteboard({
     viewOnlyRef,
   )
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
-  useCursorBroadcast(canvasRef, sendCursor)
+  // The tool rides along with every cursor update, so other people see what this
+  // pointer is holding. A ref, read at send time: the tool changes often and the
+  // broadcaster must not resubscribe its pointer listeners each time.
+  const cursorToolRef = useRef<AppTool>(selectedTool)
+  useEffect(() => {
+    cursorToolRef.current = selectedTool
+  }, [selectedTool])
+  useCursorBroadcast(canvasRef, sendCursor, cursorToolRef)
 
   // The app's keyboard map: undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) always, and
   // the single-key tool shortcuts (P/E/F/S/I) while the sidebar is open.
@@ -247,12 +257,18 @@ export default function Whiteboard({
           </button>
         </div>
       )}
-      <CanvasBoard canvasRef={canvasRef} dims={canvasDims} />
+      {/* The local pointer wears the same glyph everyone else sees on it. */}
+      <CanvasBoard
+        canvasRef={canvasRef}
+        dims={canvasDims}
+        cursor={toolCursorCss(selectedTool)}
+      />
       <CursorOverlay
         canvasRef={canvasRef}
         cursorsRef={cursorsRef}
         cursorIds={cursorIds}
         participants={participants}
+        cursorTools={cursorTools}
         showCursors={showCursors}
         showNames={showCursorNames}
       />

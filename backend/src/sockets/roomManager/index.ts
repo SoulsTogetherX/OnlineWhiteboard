@@ -58,6 +58,7 @@ import {
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
   ClientSocketMessage,
+  CursorTool,
   RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
@@ -496,7 +497,7 @@ export default class RoomManager {
     }
 
     if (message.type === "cursor") {
-      this.relayCursor(socket, room, message.pos)
+      this.relayCursor(socket, room, message.pos, message.tool)
       return
     }
 
@@ -596,12 +597,16 @@ export default class RoomManager {
     socket: ClientSocket,
     room: RoomState,
     pos: Vec | null,
+    // Validation has already confirmed this is one of the tools the app knows,
+    // so it is safe to pass straight through to every other client.
+    tool: CursorTool | undefined,
   ): void {
     const message: ServerSocketMessage = {
       type: "cursor",
       roomId: room.roomId,
       connectionId: socket.connectionId,
       pos,
+      tool,
     }
     const payload = JSON.stringify(message)
     room.clients.forEach((client) => {

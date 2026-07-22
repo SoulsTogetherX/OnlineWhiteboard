@@ -28,6 +28,7 @@ import type {
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
 import type { Participant, RoomRole } from "@shared/types/identity"
+import type { CursorTool } from "@shared/types/socketProtocol"
 import type { Vec } from "@shared/types/primitive"
 import type { WebSocketOptions } from "@/hooks/useWebSocket"
 import {
@@ -72,7 +73,7 @@ export interface UseRoomConnectionResult {
   socketLabel: string
   loadRoom: (nextRoomId: string) => void
   sendDrawInstruction: (action: DrawInstruction) => void
-  sendCursor: (pos: Vec | null) => void
+  sendCursor: (pos: Vec | null, tool?: CursorTool) => void
   // Room permissions and ownership.
   settings: RoomSettings
   clearCanvas: () => void
@@ -114,6 +115,8 @@ export interface UseRoomConnectionResult {
   // which cursor nodes to render), but only changes when a cursor appears or
   // disappears — never on movement.
   cursorIds: string[]
+  // The tool each of those cursors is holding, by connectionId.
+  cursorTools: Record<string, CursorTool>
 }
 //#endregion
 
@@ -152,6 +155,10 @@ export default function useRoomConnection(
   // is the render-driving set that only changes on appear/disappear.
   const cursorsRef = useRef<Map<string, Vec>>(new Map())
   const [cursorIds, setCursorIds] = useState<string[]>([])
+  // Which tool each remote cursor is holding. State rather than a ref because
+  // the overlay renders a different glyph per tool, and unlike position this
+  // changes only when someone picks a new tool.
+  const [cursorTools, setCursorTools] = useState<Record<string, CursorTool>>({})
 
   // Populated once useWebSocket returns below. handleSocketMessage needs to
   // be able to send a "resync" request, but it's itself a dependency of the
@@ -331,12 +338,20 @@ export default function useRoomConnection(
         }
 
         case "cursor": {
-          const { connectionId, pos } = message
+          const { connectionId, pos, tool } = message
           if (pos === null) {
             // Pointer left the canvas — remove the cursor.
             if (cursorsRef.current.delete(connectionId)) {
               setCursorIds((ids) => ids.filter((id) => id !== connectionId))
             }
+            setCursorTools((tools) => {
+              if (!(connectionId in tools)) {
+                return tools
+              }
+              const next = { ...tools }
+              delete next[connectionId]
+              return next
+            })
           } else {
             const isNew = !cursorsRef.current.has(connectionId)
             cursorsRef.current.set(connectionId, pos)
@@ -344,6 +359,17 @@ export default function useRoomConnection(
             // ref and never re-render.
             if (isNew) {
               setCursorIds((ids) => [...ids, connectionId])
+            }
+            // The tool DOES drive a render — the overlay swaps which glyph it
+            // draws — but it only changes when somebody picks a different tool,
+            // which is rare next to the ~22 moves a second arriving here. Bail
+            // out when it is unchanged so the common case stays render-free.
+            if (tool !== undefined) {
+              setCursorTools((tools) =>
+                tools[connectionId] === tool
+                  ? tools
+                  : { ...tools, [connectionId]: tool },
+              )
             }
           }
           break
@@ -563,8 +589,8 @@ export default function useRoomConnection(
   )
 
   const sendCursor = useCallback(
-    (pos: Vec | null) => {
-      send({ type: "cursor", roomId, pos })
+    (pos: Vec | null, tool?: CursorTool) => {
+      send({ type: "cursor", roomId, pos, tool })
     },
     [roomId, send],
   )
@@ -710,6 +736,7 @@ export default function useRoomConnection(
     clearPlayback,
     cursorsRef,
     cursorIds,
+    cursorTools,
   }
 }
 

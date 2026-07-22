@@ -26,8 +26,9 @@ import {
 import { MAX_CANVAS_DIMS, isValidCanvasDims } from "../constants/canvas"
 import { isValidDrawInstruction, isValidVec } from "./validateInstruction"
 import { ROLES } from "../types/identity"
+import { CURSOR_TOOLS } from "../types/socketProtocol"
 
-import type { ClientSocketMessage } from "../types/socketProtocol"
+import type { ClientSocketMessage, CursorTool } from "../types/socketProtocol"
 //#endregion
 
 //#region Primitive Guards
@@ -51,6 +52,16 @@ function isId(value: unknown): value is string {
 //#endregion
 
 //#region Message Guard
+// Narrows an unknown to one of the tools this app ships. A guard rather than an
+// inline `includes` because the value arrives as `unknown`, and casting it to
+// string just to satisfy `includes` would defeat the check being performed.
+function isCursorTool(value: unknown): value is CursorTool {
+  return (
+    typeof value === "string" &&
+    (CURSOR_TOOLS as readonly string[]).includes(value)
+  )
+}
+
 // Returns false for anything that is not a well-formed client message. Callers
 // treat false as "drop it": no handler runs, no state changes.
 //
@@ -94,9 +105,14 @@ export function isValidClientMessage(
     case "cursor":
       // null is meaningful: "my pointer left the canvas". Any other value must
       // be a valid in-bounds vector.
+      //
+      // The tool is optional, but if present must be one this app knows. It is
+      // relayed verbatim to every other client, so an unchecked value would be
+      // attacker-chosen text arriving at everyone else's renderer.
       return (
         isRoomId(message.roomId) &&
-        (message.pos === null || isValidVec(message.pos, MAX_CANVAS_DIMS))
+        (message.pos === null || isValidVec(message.pos, MAX_CANVAS_DIMS)) &&
+        (message.tool === undefined || isCursorTool(message.tool))
       )
 
     case "room_action":

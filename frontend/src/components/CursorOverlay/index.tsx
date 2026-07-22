@@ -4,7 +4,10 @@ import { useEffect, useMemo, useRef } from "react"
 
 import { readableTextColor } from "@/utils/color"
 
+import { toolById } from "@/components/SideBar/DrawingTab/tools"
+
 import type { Participant } from "@shared/types/identity"
+import type { CursorTool } from "@shared/types/socketProtocol"
 import type { Vec } from "@shared/types/primitive"
 
 import "./styles.css"
@@ -19,8 +22,12 @@ export interface CursorOverlayProps {
   cursorIds: string[]
   // Source of each cursor's colour and name.
   participants: Participant[]
+  // Which tool each cursor is holding, by connectionId. A cursor whose tool is
+  // unknown (an older client, or one that has not moved since picking one) falls
+  // back to the pencil rather than rendering nothing.
+  cursorTools: Record<string, CursorTool>
   // Viewer display preferences (useCursorPreferences). When showCursors is off
-  // nothing renders; when showNames is off the arrows stay but the name labels
+  // nothing renders; when showNames is off the cursors stay but the name labels
   // are dropped.
   showCursors: boolean
   showNames: boolean
@@ -37,10 +44,15 @@ export default function CursorOverlay({
   cursorsRef,
   cursorIds,
   participants,
+  cursorTools,
   showCursors,
   showNames,
 }: CursorOverlayProps) {
   const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+
+  // Falls back to the pencil for a cursor whose tool has not arrived yet.
+  const toolFor = (connectionId: string) =>
+    toolById(cursorTools[connectionId] ?? "pencil")
 
   const participantById = useMemo(
     () => new Map(participants.map((p) => [p.connectionId, p])),
@@ -111,19 +123,27 @@ export default function CursorOverlay({
               }
             }}
           >
+            {/* The tool someone is holding, not a generic arrow — you can see
+                what a collaborator is about to do before they do it. The glyph
+                is offset so its own hotspot sits on the reported pixel, the
+                same point the local CSS cursor uses, so both cursors agree
+                about where "here" is. */}
             <svg
-              className="remote-cursor-arrow"
-              width="18"
-              height="18"
-              viewBox="0 0 18 18"
+              className="remote-cursor-tool"
+              width="20"
+              height="20"
+              viewBox="0 0 16 16"
               fill={participant.color}
+              style={{
+                marginLeft: `${-(toolFor(id).hotspot[0] / 16) * 20}px`,
+                marginTop: `${-(toolFor(id).hotspot[1] / 16) * 20}px`,
+              }}
             >
-              {/* Classic pointer, tip at (0,0) so the node's translate lands the
-                  tip exactly on the cursor pixel. */}
               <path
-                d="M0 0 L0 13 L3.5 9.5 L6 15 L8.5 14 L6 8.5 L11 8.5 Z"
+                d={toolFor(id).iconPath}
                 stroke="white"
-                strokeWidth="1"
+                strokeWidth="0.75"
+                paintOrder="stroke"
               />
             </svg>
             {showNames && (
