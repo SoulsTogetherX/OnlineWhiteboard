@@ -385,6 +385,89 @@ they can't carry a victim's cookie.
 > in the cache locations. CSP needs `style-src 'unsafe-inline'` for the app's inline
 > `style={{}}`; scripts stay `'self'`.
 
+### 8.1 Security review — findings and what was done
+
+A full read-only review of the auth, socket and persistence layers. Headline: **nothing
+critical** — no auth bypass, no injection surface (Kysely parameterises everything; the only
+raw SQL is DDL in migrations), no XSS vector, no secrets in git. What it did find was mostly
+DoS-shaped, plus three places where these docs asserted a property the code did not have.
+
+**Fixed (see the commit "Close the findings from the security review"):**
+
+- **The fail-closed guarantee never fired.** §7 says production refuses to boot without the
+  email secrets. It does refuse — but `pepper()`/`encryptionKey()` are lazy and only register
+  and login reach them, so a misconfigured deploy booted, passed the health check (which
+  touches nothing by design), took traffic, and threw on the first signup as a generic 500.
+  `server.ts` now reads both before `listen()`.
+- **The connection cap was trivially bypassable.** The key was the session hash *instead of*
+  the IP whenever a cookie was present — and the cookie was never validated. `sid=<random>`
+  bought a fresh private 8-slot bucket per forged value and never touched the IP cap; with a
+  per-socket token bucket, unlimited sockets meant unlimited aggregate budget. Now counted
+  against **both** keys (acquired together or not at all, so a refusal cannot leak an IP
+  slot), which keeps the deliberate no-database-query property.
+- **Account deletion left other sessions' sockets live** until the 30-minute revalidation
+  sweep, each holding a `userId` for a deleted row. `closeSocketsForUser` closes all of them.
+- **Playback was an amplification vector.** It is the most expensive thing an unprivileged
+  client can request — up to `MAX_HISTORY_EVENTS` rows, a megabyte of base64, and a
+  multi-megabyte `JSON.stringify` that runs **synchronously** on the thread every room shares.
+  Metering the rate cannot make the stringify cheaper, so it is one in flight per socket.
+- **No send backpressure.** `sendRaw` checked `readyState` but not `bufferedAmount`, so a
+  client that reads slowly grew server memory without limit — without sending anything at
+  all. Now dropped past a ceiling, which is safe for the same reason the revision heartbeat
+  exists (§5.3): a missed broadcast is noticed and resynced.
+- **Smaller:** login now length-bounds the password before hashing (register already did, and
+  login is the hotter endpoint); the JSON body limit is 64 KB rather than 2 MB, since the
+  largest legitimate body is a register form and canvas data never touches HTTP.
+
+**Known and deliberately not done** (recorded so the reasoning is not re-derived):
+
+- **Unrated room creation.** Any novel `roomId` on the upgrade path creates a room row; there
+  is no rate limit on upgrades, only the (now-fixed) connection cap. The clean fix is to not
+  persist a room until its first *write*, which would also make read-only visits free — but
+  it moves the genesis-snapshot seeding that playback depends on, so it is a Phase-sized
+  change, not a patch.
+- **Per-account login throttling.** 10/15min per IP is good against one source and does
+  nothing against distributed stuffing at a single account — which is the threat
+  `breachedPassword.ts` exists for. Wants a counter keyed on the blind index, capped as a
+  *delay* rather than a lockout, or it becomes an account-denial primitive.
+- **Blind-index versioning.** The ciphertext is self-describing (`v1.<iv>.<tag>.<ct>`); the
+  index is a bare hex string. Rotating `EMAIL_INDEX_PEPPER` therefore makes every account
+  unfindable at login, recoverable only by decrypting every ciphertext and re-indexing. A
+  `v1$` prefix plus a dual-accept window would make rotation routine.
+- **scrypt params in the hash.** The format carries `N` but not `r`/`p`, so raising either
+  would silently fail every existing verify. Wants `scrypt$N$r$p$salt$hash` with a legacy
+  branch, and rehash-on-login (which the file's header already anticipates).
+- **No backup.** The event log + snapshots are an excellent *durability* story and not a
+  *backup* story: `down -v`, a corrupted volume or a bad reset loses everything, and
+  `saveCanvas`'s pruning is irreversible by construction. A documented `pg_dump` would close
+  the most obvious question this §6 invites.
+- **TLS.** `Secure` + `__Host-` work locally only because browsers treat `localhost` as
+  trustworthy. A real deployment needs TLS in front or the session cookie is silently dropped.
+
+**Do NOT "improve" these** — each is a considered decision that reads like a mistake:
+
+- **scrypt from `node:crypto`, not a native argon2 addon.** argon2id is marginally preferred
+  by current guidance; the Alpine/no-native-build trade-off is deliberate and the
+  self-describing hash format is the migration lever. Swapping it is a build-risk regression.
+- **Session tokens hashed with plain unsalted SHA-256 at rest.** Correct here: the token is
+  256 bits of `randomBytes` with no guessable structure, so a slow KDF buys nothing — and the
+  hash is *also* the key the socket registry and connection counter use. A second hashing
+  scheme would silently decouple logout from socket termination.
+- **A slow-KDF blind index rather than HMAC.** The standard advice is HMAC; it is *wrong* for
+  a low-entropy enumerable plaintext like an email. Do not simplify it, do not merge the
+  pepper with the encryption key, and do not move id generation to `gen_random_uuid()` — the
+  id must precede the ciphertext because it is the AAD.
+- **HIBP screening fails OPEN.** Hardening it to fail closed turns an HIBP outage into a
+  signup outage.
+- **`perMessageDeflate: false`** with application-level snapshot compression (CRIME/BREACH).
+- **The `saveCanvas` mega-transaction.** Room upsert + snapshot write + snapshot prune +
+  event prune in ONE transaction, with `packPixels` captured before it. This is the crux of
+  crash-safety: a crash can never delete events before the snapshot superseding them is
+  committed. Do not split it "for readability". Keeping decimation *outside* it, bounded to
+  `≤ headRevision`, is equally deliberate.
+- **Login's generic error + constant-work hash on the miss path**, and the deliberate absence
+  of security headers on the API (nginx sets them; the backend publishes no host port).
+
 ---
 
 ## 9. Running it
@@ -482,6 +565,12 @@ for the environment you need.
 The backend's DB suites gate themselves on `POSTGRES_PASSWORD` so `npm test` stays green
 with no database. The pure ones (password hashing, input validation, origin allowlist) run
 everywhere.
+
+> **A full working guide lives in [`TESTING.md`](TESTING.md)** — what each layer covers and
+> why it is there rather than elsewhere, how to run every layer (including the two that need
+> infrastructure), how the CI pipeline is wired step by step, worked examples for adding a
+> test at each layer, and a symptom table for when something fails. The summary below is the
+> orientation; that file is the manual.
 
 **CI** (`.github/workflows/ci.yml`) has two jobs:
 
@@ -1112,6 +1201,30 @@ in the repo of a bug that is really two bugs.
 > Static endpoints are checkable there; **motion is not**. Two-socket Node probes turned out
 > to be both faster and stronger evidence for anything protocol-level (see the cursor-tool
 > probe pattern in §11).
+
+### ✅ Phase 6.6 — Input polish, export formats, and the security review
+
+- **The board never moves on its own.** Shift is the one navigate modifier: shift+wheel
+  zooms, shift+drag pans, and while it is held the pointer does not draw. A bare wheel is
+  left completely alone. Two earlier rules (zoom on a bare wheel; zoom-unless-a-slider-has-
+  focus) both tried to be clever and both hijacked a gesture the user expected to keep. A
+  move-arrows cue appears top-right while shift is down, because the mode is otherwise
+  invisible.
+- **Brush preview**: a dotted outline of exactly the pixels the current tool would change,
+  built from the SAME `forEachDiscPixel` the brush paints with, drawn as alternating
+  boundary pixels (crisp under `image-rendering: pixelated`, and visible on any background).
+- **Stabilization** for the dragged tools — an EMA on the POINTER POSITION, so it is purely
+  local and needs no protocol change. `alpha = 1/(1+strength)`, so strength 0 is provably
+  the raw pointer.
+- **Export formats**: PNG / WebP / JPEG / Bitmap, each stating what it costs. JPEG and BMP
+  are matted onto white first — a transparent pixel otherwise encodes as BLACK. BMP is
+  hand-encoded (no browser ships an encoder); the three classic traps — 4-BYTE row padding,
+  bottom-up rows, BGR order — are commented at the site and the padding rule has a test.
+- **Sticky tab footer** for clear/download, behind a heavy rule, `position: sticky` so it
+  stays inside the sidebar's scroll container rather than re-deriving the drawer's geometry.
+- **Security review** and its fixes: see §8.1, which also records what was deliberately NOT
+  changed and what must not be "improved".
+- **`TESTING.md`**: a full guide to the five test layers and the CI pipeline.
 
 ### Phase 7 — Real-world Usablity
 
