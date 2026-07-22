@@ -1194,6 +1194,7 @@ in the repo of a bug that is really two bugs.
 - **The wheel zooms again**, except while a slider holds focus — selecting a tool focuses its
   size slider, so the wheel sizes the brush until you draw, and shift+wheel zooms meanwhile.
   Focus rather than hover, because you are over the *canvas* when you want to size a brush.
+  (Superseded twice — the settled rule is in Phase 6.7.)
 
 > **Environment note for whoever verifies next.** The in-app preview browser used here does
 > not run animation frames — `requestAnimationFrame` never fires and screenshots time out —
@@ -1205,11 +1206,10 @@ in the repo of a bug that is really two bugs.
 ### ✅ Phase 6.6 — Input polish, export formats, and the security review
 
 - **The board never moves on its own.** Shift is the one navigate modifier: shift+wheel
-  zooms, shift+drag pans, and while it is held the pointer does not draw. A bare wheel is
-  left completely alone. Two earlier rules (zoom on a bare wheel; zoom-unless-a-slider-has-
-  focus) both tried to be clever and both hijacked a gesture the user expected to keep. A
-  move-arrows cue appears top-right while shift is down, because the mode is otherwise
-  invisible.
+  zooms, shift+drag pans, and while it is held the pointer does not draw. A move-arrows cue
+  appears while shift is down, because the mode is otherwise invisible. (Phase 6.7 gave the
+  *bare* wheel to the last-used slider and moved the cue to the top-left; shift's meaning is
+  unchanged and is the settled rule.)
 - **Brush preview**: a dotted outline of exactly the pixels the current tool would change,
   built from the SAME `forEachDiscPixel` the brush paints with, drawn as alternating
   boundary pixels (crisp under `image-rendering: pixelated`, and visible on any background).
@@ -1225,6 +1225,42 @@ in the repo of a bug that is really two bugs.
 - **Security review** and its fixes: see §8.1, which also records what was deliberately NOT
   changed and what must not be "improved".
 - **`TESTING.md`**: a full guide to the five test layers and the CI pipeline.
+
+### ✅ Phase 6.7 — Sidebar grouping, wheel-to-slider, and a preview-alignment bug
+
+- **The brush outline drifting from the cursor was not the stabilizer.** The preview reads
+  raw pointer events and never sees the EMA. The pan/zoom custom properties were written as
+  **inline style on the drawing canvas**, and the preview is a *sibling*, so it kept the
+  fallbacks — it never panned and never zoomed, and any board movement separated the two.
+  They now go on the **frame** and both canvases inherit them. Custom properties inherit, so
+  this is also the general fix: any future layer over the canvas is aligned for free.
+  Verified by zooming and reading both canvases' computed transform (identical matrix, and
+  neither element carrying an inline variable).
+- **The wheel drives the last-used slider; shift+wheel is the board.** "Last *used*" rather
+  than "focused" is the whole point — clicking the canvas to try a brush takes focus off the
+  slider, so a focus-based rule (Phase 6.5) worked exactly once per visit to the panel.
+  - Driving it caught a second bug in the first cut: tracking installed itself **lazily on
+    first read**, which is *after* the first wheel event, so the interaction it needed to
+    have observed had already happened. It installs on mount now. `recentSlider.test.tsx`
+    pins that ordering explicitly, along with staleness (a slider whose panel unmounted, or
+    that became disabled) and the `input` event React's `onChange` depends on — setting
+    `.value` alone is silent, because React compares against the value it last wrote.
+- **The Room tab is foldable sections** (`Collapsible`, built on `<details>/<summary>`):
+  permissions, cursors, checkpoints, switch/leave. The element pair already provides the
+  disclosure semantics — button role, Enter/Space, tab order, find-in-page opening a closed
+  section — so re-implementing it with `onClick` and `aria-expanded` would be more code
+  behaving slightly worse. Open state is controlled off session storage, because sections
+  that spring back open on every tab switch train you to ignore them.
+- **The sticky footer sat a padding's width off the bottom**, with content visible in the gap
+  beneath it. A sticky element is confined to its **containing block**, so the scroll
+  container's own bottom padding held it there regardless of the offset it asked for. The
+  padding moved out of `.sidebar-panel` and into each tab, so the panel's content box reaches
+  its edge and `bottom: 0` means the bottom.
+- Smaller: the navigate hint moved under the theme toggle (whole-app controls belong
+  together; the top-right is the room actions' corner). All three tab icons are **solid** — a
+  filled icon beside outlined ones reads as "selected", which is the underline's job. The
+  panel scrollbar is thin and themed, over a generated `feTurbulence` grain so a large flat
+  fill does not read as unfinished.
 
 ### Phase 7 — Real-world Usablity
 
