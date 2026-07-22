@@ -42,8 +42,22 @@
   border-right: none;
   border-radius: 0.4rem 0 0 0.4rem;
 
-  background-color: var(--panel-background);
+  /* A raised surface, not the panel colour: the handle sits ON the app
+     background, and panel-on-app is two nearly identical shades in dark mode —
+     the one control that must be findable when the drawer is shut was the
+     hardest to see. The shadow lifts it off the grid as well. */
+  background-color: var(--surface-background);
+  box-shadow: -2px 0 6px var(--shadow-color);
   cursor: pointer;
+}
+
+.sidebar-handle:hover {
+  background-color: var(--hover-background);
+  border-color: var(--accent-color);
+}
+
+.sidebar-handle:active {
+  background-color: var(--active-background);
 }
 
 .sidebar-handle:focus-visible {

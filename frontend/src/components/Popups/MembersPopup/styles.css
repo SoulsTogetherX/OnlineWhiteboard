@@ -13,7 +13,7 @@
 
 .members-error {
   margin: 0;
-  color: #c62828;
+  color: var(--danger-color);
   font-size: 0.85rem;
 }
 
@@ -64,8 +64,8 @@
   padding: 0.15rem 0.5rem;
   font-size: 0.75rem;
   border-radius: 0.25rem;
-  border: 1px solid #c62828;
-  color: #c62828;
+  border: 1px solid var(--danger-color);
+  color: var(--danger-color);
   background: transparent;
   cursor: pointer;
 }
@@ -74,14 +74,23 @@
   font-size: 0.7rem;
   padding: 0.1rem 0.4rem;
   border-radius: 0.25rem;
-  background: var(--tag-bg, #eee);
+  /* These read off the theme now. They were a nonexistent --tag-bg plus two
+     fixed pastels, so in dark mode a light chip carried the theme's light text
+     and the role was nearly unreadable. Each chip now states its own text
+     colour rather than inheriting one chosen for a different background. */
+  border: 1px solid var(--border-color);
+  background: var(--hover-background);
+  color: var(--text-color);
   text-transform: capitalize;
 }
 .members-role-tag.role-owner {
-  background: #ffe082;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-accent-color);
 }
 .members-role-tag.role-viewer {
-  background: #cfd8dc;
+  background: var(--surface-background);
+  color: var(--muted-text-color);
 }
 
 .members-hint {

@@ -20,6 +20,34 @@ const MIN_ZOOM = 0.6
 const MIDDLE_BUTTON_ONLY: MouseButton[] = ["middle"]
 //#endregion
 
+//#region Focused-slider helpers
+// The range input that currently holds focus, if any. Only a range counts: a
+// text field also takes focus, but a wheel means nothing to it, so stealing the
+// wheel there would just break zooming while someone typed a room name.
+function focusedSlider(): HTMLInputElement | null {
+  const active = document.activeElement
+  return active instanceof HTMLInputElement && active.type === "range"
+    ? active
+    : null
+}
+
+// Steps a slider by one of its own increments and tells React about it.
+//
+// stepUp/stepDown rather than arithmetic: they already respect the input's step,
+// min and max, so the wheel moves the control by exactly what a keyboard arrow
+// would. The "input" event is what React's change tracking listens for — it
+// compares the DOM value against the last value it wrote, sees the difference,
+// and runs onChange, so the controlled state stays the source of truth.
+function nudgeSlider(slider: HTMLInputElement, direction: 1 | -1): void {
+  if (direction > 0) {
+    slider.stepUp()
+  } else {
+    slider.stepDown()
+  }
+  slider.dispatchEvent(new Event("input", { bubbles: true }))
+}
+//#endregion
+
 //#region Hook Def
 export default function useCanvasMotion(
   dragFrameRef: React.RefObject<HTMLElement | null>,
@@ -94,10 +122,20 @@ export default function useCanvasMotion(
 
   const onScrollWheel = useCallback(
     (ev: WheelEvent) => {
-      // Zoom only on SHIFT+wheel. A plain wheel is left alone so it scrolls the
-      // page or, crucially, a focused/hovered control (the stroke-size slider and
-      // number input) — instead of the canvas silently eating every scroll.
-      if (!ev.shiftKey) {
+      // A plain wheel zooms the canvas — that is what a wheel means on a board.
+      //
+      // The exception is a FOCUSED slider. Selecting a tool focuses its size
+      // slider, so right after picking a brush the wheel is the fastest way to
+      // size it, wherever the pointer happens to be. While that slider holds
+      // focus the plain wheel belongs to it, and shift+wheel zooms instead.
+      //
+      // Focus, not hover, is what decides: it is the one signal that survives
+      // the pointer being over the canvas, which is exactly where you are when
+      // you want to adjust a brush and see the result.
+      const slider = focusedSlider()
+      if (slider && !ev.shiftKey) {
+        ev.preventDefault()
+        nudgeSlider(slider, ev.deltaY < 0 ? 1 : -1)
         return
       }
       ev.preventDefault()

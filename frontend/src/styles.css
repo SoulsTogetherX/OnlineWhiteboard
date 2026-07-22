@@ -56,7 +56,11 @@
    names, same roles, so every var-driven surface flips together. */
 :root[data-theme="dark"] {
   --app-background: #191712;
-  --grid-color: #252119;
+  /* Was #252119 — only ~12 levels off the ground it sits on, which read as no
+     grid at all on a dark screen. Dark surfaces need a WIDER absolute gap than
+     light ones to show the same amount of contrast, so the dark grid steps
+     further from its background than the light one does. */
+  --grid-color: #322d21;
   --panel-background: #221f18;
   --surface-background: #2b271f;
 
@@ -79,7 +83,7 @@
   --tooltip-text-color: #f7f2e7;
 
   --danger-color: #f27166;
-  --border-color: #453f33;
+  --border-color: #7c6e51;
   --shadow-color: rgba(0, 0, 0, 0.55);
 }
 
