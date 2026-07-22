@@ -100,10 +100,14 @@ const MAX_PENDING_MESSAGES = 64
 // (with its snapshots and events, via ON DELETE CASCADE). This is the only
 // unbounded table left — a row per room ever visited — so it needs an explicit
 // retention policy the way the event log and snapshots don't.
-const ROOM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
+//
+// 30 days rather than 90: this is now the ONLY thing that ever removes a canvas.
+// Leaving a room from the dashboard deletes your membership and nothing else, so
+// an abandoned board's storage is reclaimed here or not at all.
+const ROOM_RETENTION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 // How often the cleanup sweep runs. Daily is plenty — retention is measured in
-// months, so the exact cadence doesn't matter, only that it happens.
+// weeks, so the exact cadence doesn't matter, only that it happens.
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 //#endregion

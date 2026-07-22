@@ -13,10 +13,7 @@ import EditorRequests from "./EditorRequests"
 import RoomHistory from "./RoomHistory"
 import DownloadMenu from "./DownloadMenu"
 
-import {
-  canManageRoom,
-  canRequestEditor,
-} from "@shared/types/identity"
+import { canManageRoom, canRequestEditor } from "@shared/types/identity"
 import type { Participant } from "@shared/types/identity"
 import type {
   CheckpointInfo,
@@ -229,7 +226,7 @@ export default function RoomTab({
       </Collapsible>
 
       <Collapsible
-        title="Switch or leave"
+        title="Rooms"
         storageKey="online-whiteboard-room-section-navigation"
       >
         <form

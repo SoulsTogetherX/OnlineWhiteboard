@@ -238,6 +238,36 @@ export async function removeMember(
     .execute()
   return true
 }
+
+// Removing YOURSELF from a room — what the dashboard's trash does.
+//
+// Deliberately a separate function from removeMember rather than a flag on it,
+// because the owner rule differs and that difference is the whole point:
+//
+//   - removeMember refuses to remove an owner. Someone else evicting the owner
+//     is a privilege problem, so that path demands a transfer first.
+//   - Leaving is your own decision about your own membership, so an owner may
+//     leave, and doing so RELEASES ownership: the row goes and the room is
+//     simply unowned afterwards.
+//
+// An unowned room is a state the schema already allows — `room_one_owner` is a
+// PARTIAL unique index, so it forbids two owners, not zero — and one the app
+// already has a way out of, since anyone signed in can claim an unowned room.
+//
+// The canvas is untouched. This deletes a membership, not a board: the pixels,
+// the event log and the checkpoints belong to the room, and the room itself is
+// only ever removed by the stale-room sweep.
+export async function leaveRoom(
+  roomId: string,
+  userId: string,
+): Promise<boolean> {
+  const result = await db
+    .deleteFrom("room_members")
+    .where("room_id", "=", roomId)
+    .where("user_id", "=", userId)
+    .executeTakeFirst()
+  return Number(result.numDeletedRows ?? 0n) > 0
+}
 //#endregion
 
 //#region Dashboard

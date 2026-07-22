@@ -9,6 +9,7 @@ import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 import {
   claimOwnership,
   ensureMembership,
+  leaveRoom,
   releaseOwnership,
   roomHasOwner,
   listMembers,
@@ -229,6 +230,60 @@ describe.skipIf(!DB_CONFIGURED)("roomMembersRepository (integration)", () => {
     expect(await removeMember(roomId, owner)).toBe(false)
     expect(await removeMember(roomId, editor)).toBe(true)
     expect(await resolveRole(roomId, editor)).toBeNull()
+  })
+
+  // Leaving is your own decision about your own membership, so it deliberately
+  // follows a different rule from being removed by someone else — see leaveRoom.
+  it("lets a member leave on their own", async () => {
+    const roomId = await makeRoom()
+    const user = await makeUser()
+    await ensureMembership(roomId, user)
+
+    expect(await leaveRoom(roomId, user)).toBe(true)
+    expect(await resolveRole(roomId, user)).toBeNull()
+  })
+
+  it("lets the OWNER leave, releasing ownership and leaving the room unowned", async () => {
+    // removeMember refuses this exact case, because someone else must not be
+    // able to evict an owner. Leaving must allow it, or an owner is trapped in
+    // their own room with no way to clear it off their dashboard.
+    const roomId = await makeRoom()
+    const owner = await makeUser()
+    await ensureMembership(roomId, owner)
+    await claimOwnership(roomId, owner)
+    expect(await roomHasOwner(roomId)).toBe(true)
+
+    expect(await leaveRoom(roomId, owner)).toBe(true)
+    expect(await resolveRole(roomId, owner)).toBeNull()
+    // Unowned, not broken: room_one_owner is a PARTIAL unique index, so zero
+    // owners is a legal state and anyone signed in can claim it afterwards.
+    expect(await roomHasOwner(roomId)).toBe(false)
+  })
+
+  it("leaves the ROOM itself untouched", async () => {
+    // The whole contract of the dashboard's bin: it removes your membership,
+    // never the board. Only the stale-room sweep ever deletes a room.
+    const roomId = await makeRoom()
+    const user = await makeUser()
+    await ensureMembership(roomId, user)
+    await leaveRoom(roomId, user)
+
+    const room = await db
+      .selectFrom("rooms")
+      .select("id")
+      .where("id", "=", roomId)
+      .executeTakeFirst()
+    expect(room?.id).toBe(roomId)
+  })
+
+  it("is idempotent, so a repeated or raced bulk removal cannot fail", async () => {
+    const roomId = await makeRoom()
+    const user = await makeUser()
+    await ensureMembership(roomId, user)
+
+    expect(await leaveRoom(roomId, user)).toBe(true)
+    // The second call reports "nothing to do" rather than throwing.
+    expect(await leaveRoom(roomId, user)).toBe(false)
   })
 
   it("lists members with their usernames, and rooms for a user", async () => {

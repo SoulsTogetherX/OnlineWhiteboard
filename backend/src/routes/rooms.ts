@@ -3,6 +3,7 @@ import type { Express } from "express"
 
 import { createRequireUser } from "@/auth/requireUser"
 import {
+  leaveRoom,
   listMembers,
   listRoomsForUser,
   removeMember,
@@ -100,6 +101,26 @@ export default function configureRoomRoutes(app: Express): void {
         .json({ error: "Cannot change that role (a room must keep an owner)." })
     }
     res.json({ members: await listMembers(roomId) })
+  })
+
+  // --- Leave a room (yourself) -----------------------------------------------
+  // No :userId in the path, on purpose. This acts on the CALLER, resolved from
+  // the session cookie alone — the same rule as PATCH/DELETE /api/auth/me. An id
+  // parameter on "remove me" is an invitation to pass someone else's, and then
+  // the only thing between a user and evicting a stranger is an ownership check
+  // that has to be right every time. There is nothing to get wrong if the id
+  // cannot be supplied at all.
+  app.delete("/api/rooms/:roomId/membership", async (req, res) => {
+    const user = await requireUser(req, res)
+    if (!user) return
+    const { roomId } = req.params
+
+    // Leaving a room you own releases ownership — see leaveRoom. Idempotent:
+    // leaving a room you are not in is a no-op rather than an error, so the
+    // dashboard's bulk delete cannot fail half way through and leave the user
+    // unsure which ones went.
+    await leaveRoom(roomId, user.id)
+    res.json({ rooms: await listRoomsForUser(user.id) })
   })
 
   // --- Remove a member (owner only) ------------------------------------------

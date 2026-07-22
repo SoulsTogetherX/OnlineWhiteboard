@@ -1,21 +1,108 @@
 /* The overlay/card chrome now comes from PopupBase's .popup-front; this panel is
    just the sized, scrollable content container inside it. */
 .dashboard-panel {
-  /* The dialog around this now bounds and scrolls itself (PopupBase), so this
-     only needs a comfortable width. */
-  width: min(60rem, 100%);
+  /* Sized against the VIEWPORT, not the dialog.
+     `100%` was circular here and quietly collapsed the grid to a single column:
+     .popup-front is width:fit-content, so its width comes from its content —
+     this panel — while this panel asked for a percentage OF that width. With
+     nothing to resolve against, both settled on the cards' min-content and the
+     dialog rendered ~310px wide on a 1400px screen.
+     A vw basis breaks the cycle; the calc leaves room for the dialog's own
+     padding and the overlay's margin so it never overflows the screen. */
+  width: min(76rem, calc(100vw - 5rem));
 }
 
+/* Pinned while the list scrolls under it. The negative margins let the bar span
+   the dialog's padding, so cards pass under a full-width edge instead of beside
+   a floating strip; the matching positive padding puts its own content back
+   where it was. Same trick as the sidebar's sticky footer. */
 .dashboard-header {
+  position: sticky;
+  top: -1px;
+  z-index: 1;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  /* 20px matches .popup-front's padding exactly — the bar has to span it and
+     then put its own content back, so these two numbers are one decision. */
+  margin: -20px -20px 1rem;
+  padding: 20px;
+
+  border-bottom: 1px solid var(--border-color);
+  /* The dialog's own surface, so nothing shows through as cards pass beneath. */
+  background: var(--surface-background);
 }
 
 .dashboard-title {
   margin: 0;
   font-size: 1.3rem;
+}
+
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashboard-selection {
+  color: var(--muted-text-color);
+  font-size: 0.8rem;
+  /* Reserves its own space so the buttons beside it do not shuffle sideways as
+     the count appears, changes width, and disappears. */
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+/* The tooltip host. Must not be the button itself: a disabled button receives no
+   pointer events, so a title on it would be unreadable in exactly the state that
+   needs explaining. */
+.dashboard-bin-wrap {
+  display: inline-flex;
+}
+
+.dashboard-bin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 2rem;
+  height: 2rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: transparent;
+  color: var(--text-color);
+
+  cursor: pointer;
+}
+
+.dashboard-bin svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
+}
+
+/* Destructive-looking only once it can actually do something. */
+.dashboard-bin:not(:disabled):hover {
+  border-color: var(--danger-color);
+  background: var(--hover-background);
+  color: var(--danger-color);
+}
+
+.dashboard-bin:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dashboard-bin:focus-visible,
+.dashboard-close:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
 }
 
 .dashboard-close {
@@ -37,13 +124,51 @@
   opacity: 0.7;
 }
 
+/* auto-fill + minmax means the COLUMN COUNT is decided by the available width
+   rather than hard-coded: the browser fits as many 12rem tracks as it can and
+   stretches them to fill. Narrowing the minimum from 14rem is what buys the
+   extra columns, and it still collapses to one column on a phone with no
+   media query. */
 .dashboard-grid {
   list-style: none;
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(12rem, 1fr));
   gap: 0.75rem;
+}
+
+/* Positioning context for the checkbox that overlays each card's corner. */
+.dashboard-item {
+  position: relative;
+  display: flex;
+}
+
+.dashboard-select {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  z-index: 1;
+
+  width: 1.05rem;
+  height: 1.05rem;
+
+  cursor: pointer;
+  /* The card underneath is themed, so the native tick must be too, or it renders
+     in the OS accent and reads as something the page does not own. */
+  accent-color: var(--accent-color);
+}
+
+.dashboard-select:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Selection has to be legible at a glance across a grid, so it changes the
+   card's border and fill rather than relying on the small tick alone. */
+.dashboard-item-selected .dashboard-card {
+  border-color: var(--accent-color);
+  background: var(--hover-background);
 }
 
 .dashboard-card {
