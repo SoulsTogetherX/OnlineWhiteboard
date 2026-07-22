@@ -2,6 +2,11 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
+import {
+  MAX_CANVAS_DIMENSION,
+  MIN_CANVAS_DIMENSION,
+} from "@shared/constants/canvas"
+
 import ResizeControl from "./index"
 
 describe("ResizeControl", () => {
@@ -31,7 +36,7 @@ describe("ResizeControl", () => {
     expect(screen.getByLabelText("Height")).toHaveValue(200)
   })
 
-  it("clamps out-of-range values to [16, 512] before calling onResize", async () => {
+  it("clamps out-of-range values to the shared canvas bounds before calling onResize", async () => {
     const onResize = vi.fn()
     const user = userEvent.setup()
     render(
@@ -49,10 +54,17 @@ describe("ResizeControl", () => {
     await user.clear(width)
     await user.type(width, "999")
     await user.clear(height)
-    await user.type(height, "4")
+    await user.type(height, "1")
     await user.click(screen.getByRole("button", { name: "Apply" }))
 
-    expect(onResize).toHaveBeenCalledWith(512, 16)
+    // Read from the shared constants rather than repeated literals: these are
+    // the same bounds the server validates with, and hardcoding them here meant
+    // changing the minimum broke this test with a mystery number rather than a
+    // statement about what changed.
+    expect(onResize).toHaveBeenCalledWith(
+      MAX_CANVAS_DIMENSION,
+      MIN_CANVAS_DIMENSION,
+    )
   })
 
   it("passes a valid size through unchanged", async () => {

@@ -227,7 +227,10 @@ export default function Whiteboard({
   // Shift is the navigate modifier: while it is held, dragging pans and the
   // wheel zooms, and the pointer does not draw. The board never moves without
   // it, so the indicator below is the only cue that the mode exists.
-  const navigating = useShiftHeld()
+  // The grabber IS shift, latched on: same pan, same zoom, same indicator. One
+  // signal rather than two conditions repeated at each site, so the tool cannot
+  // drift into meaning "almost shift".
+  const navigating = useShiftHeld() || selectedTool === "grabber"
 
   // Canvas Setup
   useCanvasMotion(frameRef, canvasRef, grabbingRef)
@@ -253,6 +256,7 @@ export default function Whiteboard({
     strokeSizeRef,
     sprayDensityRef,
     blurSettingsRef,
+    grabbingRef,
     viewOnlyRef,
     stabilizationRef,
   )

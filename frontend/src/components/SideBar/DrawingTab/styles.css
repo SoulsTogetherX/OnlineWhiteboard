@@ -24,3 +24,33 @@
   flex-shrink: 0;
   gap: 0.35rem;
 }
+
+/* One line of guidance above the tool panels, kept deliberately quiet: it is
+   reference material you read once, not part of the controls. */
+.drawing-tab-wheel-hint {
+  margin: 0;
+
+  color: var(--muted-text-color);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+.drawing-tab-wheel-hint kbd {
+  padding: 0.05rem 0.25rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.2rem;
+
+  background: var(--surface-background);
+  font-family: inherit;
+  font-size: 0.95em;
+}
+
+/* The slider the wheel is currently driving. Marked with an attribute rather
+   than :focus because the whole point is that it survives clicking the canvas —
+   see utils/recentSlider. */
+.drawing-tab input[type="range"][data-wheel-target] {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 3px;
+  border-radius: 2px;
+}

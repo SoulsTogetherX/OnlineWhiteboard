@@ -30,7 +30,7 @@ const DEFAULT_CANVAS_DIMS: CanvasDims = {
 //   - MIN keeps a canvas from being degenerate (a 1x1 board is not a board) and
 //     stops a resize request asking for zero or negative dimensions.
 const MAX_CANVAS_DIMENSION = 512
-const MIN_CANVAS_DIMENSION = 16
+const MIN_CANVAS_DIMENSION = 4
 
 // The dimensions the SOCKET ENVELOPE validates coordinates against, before the
 // room's actual (possibly smaller) size is known. Its only job there is to stop

@@ -77,11 +77,24 @@ function averageAt(
   y: number,
   blend: number,
   dims: CanvasDims,
-): { r: number; g: number; b: number; a: number } {
-  let r = 0
-  let g = 0
-  let b = 0
-  let a = 0
+): { r: number | null; g: number | null; b: number | null; a: number } {
+  // Colour is averaged WEIGHTED BY ALPHA; alpha is averaged plainly.
+  //
+  // A transparent pixel has no colour to contribute — it is "nothing", not
+  // "black" — but its RGB bytes are usually 0, and a plain average happily reads
+  // those zeros as black. Blurring the edge of a drawing against empty canvas
+  // therefore dragged a dark halo inwards: the classic transparency-fringe bug.
+  //
+  // Weighting by alpha makes a transparent neighbour contribute nothing to the
+  // colour while still contributing its transparency to the alpha. The effect at
+  // an edge is exactly what you want: the opaque side's colour is carried into
+  // the transparent side (there is no other colour in the sum), and what varies
+  // across the boundary is the alpha alone.
+  let weightedR = 0
+  let weightedG = 0
+  let weightedB = 0
+  let totalAlpha = 0
+  let alphaSum = 0
   let n = 0
 
   const minX = Math.max(0, x - blend)
@@ -92,15 +105,29 @@ function averageAt(
   for (let sy = minY; sy <= maxY; sy += 1) {
     for (let sx = minX; sx <= maxX; sx += 1) {
       const idx = (sy * dims.width + sx) * 4
-      r += source[idx]
-      g += source[idx + 1]
-      b += source[idx + 2]
-      a += source[idx + 3]
+      const alpha = source[idx + 3]
+      weightedR += source[idx] * alpha
+      weightedG += source[idx + 1] * alpha
+      weightedB += source[idx + 2] * alpha
+      totalAlpha += alpha
+      alphaSum += alpha
       n += 1
     }
   }
 
-  return { r: r / n, g: g / n, b: b / n, a: a / n }
+  // A neighbourhood that is entirely transparent has no colour to offer, so the
+  // pixel keeps whatever colour it already had. Returning zeros here would
+  // reintroduce the same black-bleed by another route.
+  if (totalAlpha === 0) {
+    return { r: null, g: null, b: null, a: 0 }
+  }
+
+  return {
+    r: weightedR / totalAlpha,
+    g: weightedG / totalAlpha,
+    b: weightedB / totalAlpha,
+    a: alphaSum / n,
+  }
 }
 
 // Blurs the disc at `pos`. Every write goes through `setPixel`, so the caller
@@ -138,10 +165,17 @@ function setPixelBlur(
       // Math.round, not truncation: rounding is symmetric, so a flat region
       // averages back to itself and repeated passes over unchanged pixels stay
       // no-ops instead of drifting one level darker each time.
+      //
+      // A null channel means the neighbourhood had no colour at all (everything
+      // around it is fully transparent), so there is nothing to move towards and
+      // the pixel keeps what it has.
+      const towards = (channel: number | null, from: number): number =>
+        channel === null ? from : Math.round(from + (channel - from) * mix)
+
       setPixel(idx, {
-        r: Math.round(current.r + (avg.r - current.r) * mix),
-        g: Math.round(current.g + (avg.g - current.g) * mix),
-        b: Math.round(current.b + (avg.b - current.b) * mix),
+        r: towards(avg.r, current.r),
+        g: towards(avg.g, current.g),
+        b: towards(avg.b, current.b),
         // Locking alpha keeps the drawing's SHAPE and softens only the colour
         // inside it. Without it, blurring near an edge averages in the
         // transparency outside and the stroke erodes as you smudge it.

@@ -1,4 +1,5 @@
 //#region Imports
+import { useEffect } from "react"
 import IconButton from "@/components/IconButton"
 
 import ToolPicker from "./ToolPicker"
@@ -8,6 +9,7 @@ import SprayPanel from "./SprayPanel"
 import BlurPanel from "./BlurPanel"
 import { toolById } from "./tools"
 import { CYCLE_SLIDER_LABEL } from "@/hooks/useKeymap"
+import { refreshWheelTargetMark } from "@/utils/recentSlider"
 import type { AppTool } from "./tools"
 
 import type { ColorPalette } from "@shared/types/primitive"
@@ -94,6 +96,13 @@ export default function DrawingTab({
 }: DrawingTabProps) {
   const activeTool = toolById(selectedTool)
 
+  // After the panel for this tool has rendered, make sure the wheel has a target
+  // — the first slider, unless one is already marked. In an effect because it
+  // reads the DOM the render just produced.
+  useEffect(() => {
+    refreshWheelTargetMark()
+  }, [selectedTool])
+
   return (
     <div className="drawing-tab">
       <div className="drawing-tab-tools">
@@ -124,19 +133,11 @@ export default function DrawingTab({
         openColorPopup={openColorPopup}
       />
 
-      {/* Stated once, above every panel, rather than repeated on each slider.
-          Both halves of the gesture are non-obvious and useless apart: the wheel
-          does nothing until you know it targets a slider, and knowing that is
-          useless when the tool has several. */}
-      {activeTool.sliderCount > 0 && (
+      {/* Stated once, above every panel, rather than repeated on each slider —
+          and only when there is more than one slider to switch between. */}
+      {activeTool.sliderCount > 1 && (
         <p className="drawing-tab-wheel-hint">
-          Scroll over the canvas to adjust
-          {activeTool.sliderCount > 1 && (
-            <>
-              {" · "}
-              <kbd>{CYCLE_SLIDER_LABEL}</kbd> switches slider
-            </>
-          )}
+          Press <kbd>{CYCLE_SLIDER_LABEL}</kbd> to switch focused slider
         </p>
       )}
 

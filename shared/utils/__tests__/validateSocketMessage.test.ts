@@ -166,8 +166,14 @@ describe("isValidClientMessage — room actions and permissions", () => {
     ).toBe(true)
     // Below MIN, above MAX, and non-integer are all rejected as malformed before
     // they can reach the database CHECK constraint as a 500.
+    // 8 is legal now that the floor is 4; 3 is the first rejected width. Pinned
+    // one either side of the boundary so a future change to the minimum breaks a
+    // test here rather than only at the database CHECK constraint.
     expect(
       isValidClientMessage({ type: "resize", roomId: "r", width: 8, height: 100 }),
+    ).toBe(true)
+    expect(
+      isValidClientMessage({ type: "resize", roomId: "r", width: 3, height: 100 }),
     ).toBe(false)
     expect(
       isValidClientMessage({ type: "resize", roomId: "r", width: 513, height: 100 }),

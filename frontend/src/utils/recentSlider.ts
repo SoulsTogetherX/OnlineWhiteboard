@@ -125,11 +125,20 @@ export function cycleRecentSlider(direction: 1 | -1 = 1): string | null {
 }
 
 // Keeps the highlight on the right node after React re-renders a panel, and
-// clears a stale mark when the tool changes. Cheap enough to call from an effect
-// on every relevant render.
+// makes sure SOMETHING is targeted whenever the panel has sliders.
+//
+// Defaulting to the first one matters: without it the wheel did nothing at all
+// until you had either touched a slider or pressed the cycle key, which makes a
+// documented gesture look broken on arrival. A remembered slider from a panel
+// that has since unmounted (switching tools) is dropped first — it is a detached
+// node, so nudging it would update nothing while appearing to work.
 export function refreshWheelTargetMark(): void {
   if (recent && !recent.isConnected) {
     recent = null
+  }
+  const sliders = cycleableSliders()
+  if ((!recent || !sliders.includes(recent)) && sliders.length > 0) {
+    recent = sliders[0]
   }
   markTarget()
 }

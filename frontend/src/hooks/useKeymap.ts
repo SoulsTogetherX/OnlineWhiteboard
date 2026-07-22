@@ -8,12 +8,11 @@ import type { AppTool } from "@/components/SideBar/DrawingTab/tools"
 //#endregion
 
 //#region Constants
-// Cycles which slider the scroll wheel drives. Backquote because it is the one
-// key on the main block that no tool wants and nothing types by accident, and it
-// sits where the hand already is — this has to be reachable DURING a stroke,
-// with the other hand still holding the pointer down.
-const CYCLE_SLIDER_KEY = "`"
-export const CYCLE_SLIDER_LABEL = "`"
+// Cycles which slider the scroll wheel drives. D because it sits under the
+// drawing hand's fingers on a standard layout and no tool claims it — this has
+// to be reachable DURING a stroke, with the other hand still on the pointer.
+const CYCLE_SLIDER_KEY = "d"
+export const CYCLE_SLIDER_LABEL = "D"
 
 // shortcut key -> tool, derived once from the shared TOOLS descriptors so the
 // picker's tooltips and these bindings can never disagree (tools.tsx is the one
@@ -115,7 +114,9 @@ export default function useKeymap({
       // rule for shift: this is the one shortcut whose whole purpose is to work
       // mid-stroke, and shift+` cycles backwards. It still respects ctrl/meta,
       // which belong to the browser.
-      if (!isModified && event.key === CYCLE_SLIDER_KEY) {
+      // toLowerCase so it fires with caps lock on, and so shift+D (cycle
+      // backwards) still matches the key rather than arriving as "D".
+      if (!isModified && event.key.toLowerCase() === CYCLE_SLIDER_KEY) {
         event.preventDefault()
         // Cycle FIRST, then notify. Written as
         // `onCycleSlider?.(cycleRecentSlider(...))` this silently did nothing:

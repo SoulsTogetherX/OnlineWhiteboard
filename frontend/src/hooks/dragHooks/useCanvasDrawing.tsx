@@ -37,6 +37,8 @@ export default function useCanvasDrawing(
     opacity: number
     lockAlpha: boolean
   }>,
+  // True while the grabber tool is held — see isNavigating below.
+  grabbingRef?: React.RefObject<boolean>,
   // When true, this client is a viewer — block drawing entirely. The server
   // also rejects a viewer's draws, but blocking locally avoids strokes flashing
   // on the viewer's own canvas and then being reverted on the next resync.
@@ -68,7 +70,12 @@ export default function useCanvasDrawing(
   // Shift is the navigate modifier (see useCanvasMotion): while it is held the
   // pointer pans the board, so it must not also lay down paint. Checked per
   // event rather than as a mode flag, so releasing shift mid-gesture behaves.
-  const isNavigating = (ev: PointerEvent) => ev.shiftKey
+  // Shift OR the grabber. The grabber is defined as "shift, latched on", so
+  // every place that asks "are we navigating?" has to consult both — otherwise a
+  // drag with the grabber pans AND paints, because the previously held brush is
+  // still what drawAction points at.
+  const isNavigating = (ev: PointerEvent) =>
+    ev.shiftKey || grabbingRef?.current === true
 
   // Each of these runs from a pointer event, so reading `.current` here is
   // correct — it picks up the tool and palette as they are at gesture time

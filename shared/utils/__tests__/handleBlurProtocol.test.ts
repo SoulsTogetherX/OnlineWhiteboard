@@ -111,8 +111,78 @@ describe("blur parameters", () => {
     // neighbours; locked, every alpha value is exactly as it started.
     expect(getPixel(pixels, 8, 10).a).toBeLessThan(255)
     expect(getPixel(locked, 8, 10).a).toBe(255)
-    // ...while the colour inside still changed, which is the point of locking.
-    expect(getPixel(locked, 8, 10)).not.toEqual(RED)
+    // ...and the colour is untouched, because the only colour anywhere in the
+    // neighbourhood IS red. See the transparency tests below.
+    expect(getPixel(locked, 8, 10)).toEqual(RED)
+  })
+})
+
+describe("transparent pixels contribute no colour", () => {
+  // A transparent pixel is "nothing", not "black". Its RGB bytes are usually
+  // zero, and a plain average reads those zeros as black — so blurring the edge
+  // of a drawing against empty canvas used to drag a dark halo inwards.
+  //
+  // The rule: colour is averaged weighted by alpha, alpha is averaged plainly.
+  // Across an edge that means the opaque side's colour is carried outwards (it
+  // is the only colour in the sum) and what varies is the alpha alone.
+  function redSquare(): Uint8ClampedArray {
+    const pixels = makeCanvas()
+    for (let y = 8; y < 13; y += 1) {
+      for (let x = 8; x < 13; x += 1) {
+        setPixel(pixels, x, y, RED)
+      }
+    }
+    return pixels
+  }
+
+  it("never darkens an edge against empty canvas", () => {
+    const pixels = redSquare()
+    handleDrawBlurInstruction(pixels, blur({ opacity: 100 }), DIMS)
+
+    // Every pixel that ended up with any opacity must still be pure red. A
+    // non-zero green or blue channel would mean black bled in; a reduced red
+    // would mean it was dimmed towards black.
+    for (let y = 6; y < 15; y += 1) {
+      for (let x = 6; x < 15; x += 1) {
+        const pixel = getPixel(pixels, x, y)
+        if (pixel.a > 0) {
+          expect({ r: pixel.r, g: pixel.g, b: pixel.b }).toEqual({
+            r: 255,
+            g: 0,
+            b: 0,
+          })
+        }
+      }
+    }
+  })
+
+  it("spreads the opaque colour outwards and varies only alpha", () => {
+    const pixels = redSquare()
+    // Just outside the square: transparent, and black in RGB to begin with.
+    expect(getPixel(pixels, 7, 10)).toEqual({ r: 0, g: 0, b: 0, a: 0 })
+
+    handleDrawBlurInstruction(pixels, blur({ opacity: 100 }), DIMS)
+
+    const outside = getPixel(pixels, 7, 10)
+    expect(outside.a).toBeGreaterThan(0)
+    expect(outside.a).toBeLessThan(255)
+    // It took the square's colour rather than averaging towards black.
+    expect({ r: outside.r, g: outside.g, b: outside.b }).toEqual({
+      r: 255,
+      g: 0,
+      b: 0,
+    })
+  })
+
+  it("leaves colour alone where the whole neighbourhood is transparent", () => {
+    // Nothing to average towards, so nothing should move — returning zeros here
+    // would reintroduce the black bleed by another route.
+    const pixels = makeCanvas()
+    setPixel(pixels, 40, 40, { r: 12, g: 34, b: 56, a: 0 })
+
+    handleDrawBlurInstruction(pixels, blur({ pos: [40, 40] }), DIMS)
+
+    expect(getPixel(pixels, 40, 40)).toEqual({ r: 12, g: 34, b: 56, a: 0 })
   })
 })
 

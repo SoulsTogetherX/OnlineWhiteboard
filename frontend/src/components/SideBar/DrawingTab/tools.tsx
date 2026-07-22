@@ -33,6 +33,12 @@ export interface ToolDescriptor {
   // data URI (the local CSS cursor). Keeping the geometry here means the tool
   // you hold and the tool everyone sees you holding can never drift apart.
   iconPath: string
+  // The coordinate box `iconPath` is drawn in. Most glyphs here are 16-unit, but
+  // an imported one may be authored at any size, and re-drawing a path by hand to
+  // fit is how it ends up subtly cropped. Carrying the box is exact and free —
+  // both the React icon and the CSS cursor read it, and `hotspot` is expressed in
+  // these same units so the two cannot disagree.
+  iconBox: number
   // Where the glyph's business end sits in that 16x16 box. This becomes the CSS
   // cursor hotspot, so a click lands where the tool's tip is drawn rather than
   // at the corner of its bounding box.
@@ -56,7 +62,7 @@ const SPRAY_PATH =
   "M3 2a1 1 0 0 1 1-1h1a1 1 0 0 1 1 1v1.5a1 1 0 0 1 .5.866l.5.289a2 2 0 0 1 1 1.732V14a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6.387a2 2 0 0 1 1-1.732l.5-.289A1 1 0 0 1 5 3.5V2zm7.5 1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m2-1a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-2 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m3 0a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1.5 2.5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0M14 5a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0m-1 3a.5.5 0 1 1 1 0 .5.5 0 0 1-1 0"
 
 const GRABBER_PATH =
-  "M8.5 1.5a1.5 1.5 0 0 1 3 0V6h.25a1.5 1.5 0 0 1 1.5 1.5V11a4.5 4.5 0 0 1-4.5 4.5H7.9a4.5 4.5 0 0 1-3.6-1.8L1.7 10.2a1.5 1.5 0 0 1 2.2-2l1.1 1.05V2.5a1.5 1.5 0 0 1 3 0zM6.5 2.5v7.2a.5.5 0 0 1-.85.36L3.2 7.9a.5.5 0 0 0-.7.7l2.6 3.5a3.5 3.5 0 0 0 2.8 1.4h.85A3.5 3.5 0 0 0 12.25 11V7.5a.5.5 0 0 0-.5-.5h-.75a.5.5 0 0 0-.5.5V9a.5.5 0 0 1-1 0V1.5a.5.5 0 0 0-1 0V8a.5.5 0 0 1-1 0V2.5a.5.5 0 0 0-1 0"
+  "M28.09,9.74a4,4,0,0,0-1.16.19c-.19-1.24-1.55-2.18-3.27-2.18A4,4,0,0,0,22.13,8,3.37,3.37,0,0,0,19,6.3a3.45,3.45,0,0,0-2.87,1.32,3.65,3.65,0,0,0-1.89-.51A3.05,3.05,0,0,0,11,9.89v.91c-1.06.4-4.11,1.8-4.91,4.84s.34,8,2.69,11.78a25.21,25.21,0,0,0,5.9,6.41.9.9,0,0,0,.53.17H25.55a.92.92,0,0,0,.55-.19,13.13,13.13,0,0,0,3.75-6.13A25.8,25.8,0,0,0,31.41,18v-5.5A3.08,3.08,0,0,0,28.09,9.74ZM29.61,18a24,24,0,0,1-1.47,9.15A12.46,12.46,0,0,1,25.2,32.2H15.47a23.75,23.75,0,0,1-5.2-5.72c-2.37-3.86-3-8.23-2.48-10.39A5.7,5.7,0,0,1,11,12.76v7.65a.9.9,0,0,0,1.8,0V9.89c0-.47.59-1,1.46-1s1.49.52,1.49,1v5.72h1.8V8.81c0-.28.58-.71,1.46-.71s1.53.48,1.53.75v6.89h1.8V10l.17-.12a2.1,2.1,0,0,1,1.18-.32c.93,0,1.5.44,1.5.68l0,6.5H27V11.87a1.91,1.91,0,0,1,1.12-.33c.86,0,1.52.51,1.52.94Z"
 
 const BLUR_PATH =
   "M8 .5a.5.5 0 0 1 .35.14C8.68.96 13 5.24 13 9a5 5 0 0 1-10 0C3 5.24 7.32.96 7.65.64A.5.5 0 0 1 8 .5m0 1.24C6.87 2.94 4 6.2 4 9a4 4 0 0 0 8 0c0-2.8-2.87-6.06-4-7.26M6.2 8.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.6 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.6 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8M7 10.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.8 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8M7 6.4a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8m1.8 0a.4.4 0 1 1 0 .8.4.4 0 0 1 0-.8"
@@ -64,9 +70,9 @@ const BLUR_PATH =
 const EYEDROPPER_PATH =
   "M13.354.646a1.207 1.207 0 0 0-1.708 0L8.5 3.793l-.646-.647a.5.5 0 1 0-.708.708L8.293 5l-7.147 7.146A.5.5 0 0 0 1 12.5v1.793l-.854.853a.5.5 0 1 0 .708.707L1.707 15H3.5a.5.5 0 0 0 .354-.146L11 7.707l1.146 1.147a.5.5 0 0 0 .708-.708l-.647-.646 3.147-3.146a1.207 1.207 0 0 0 0-1.708zM10.293 7 3.293 14H2v-1.293l7-7z"
 
-function glyph(path: string): ReactNode {
+function glyph(path: string, box = 16): ReactNode {
   return (
-    <svg viewBox="0 0 16 16" aria-hidden="true">
+    <svg viewBox={`0 0 ${box} ${box}`} aria-hidden="true">
       <path d={path} />
     </svg>
   )
@@ -84,6 +90,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: true,
     sliderCount: 2,
     iconPath: PENCIL_PATH,
+    iconBox: 16,
     // Drawn tip-down-left, so the point is the bottom-left corner.
     hotspot: [1, 15],
     icon: glyph(PENCIL_PATH),
@@ -95,6 +102,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: true,
     sliderCount: 2,
     iconPath: ERASER_PATH,
+    iconBox: 16,
     hotspot: [2, 14],
     icon: glyph(ERASER_PATH),
   },
@@ -105,6 +113,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: false,
     sliderCount: 0,
     iconPath: BUCKET_PATH,
+    iconBox: 16,
     // The spout, where the paint actually lands.
     hotspot: [1, 9],
     icon: glyph(BUCKET_PATH),
@@ -116,6 +125,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: false,
     sliderCount: 3,
     iconPath: SPRAY_PATH,
+    iconBox: 16,
     // The nozzle at the top right, where the mist comes out.
     hotspot: [10, 4],
     icon: glyph(SPRAY_PATH),
@@ -127,6 +137,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: false,
     sliderCount: 3,
     iconPath: BLUR_PATH,
+    iconBox: 16,
     // The droplet's body, where the smearing is centred.
     hotspot: [8, 9],
     icon: glyph(BLUR_PATH),
@@ -138,9 +149,11 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: false,
     sliderCount: 0,
     iconPath: GRABBER_PATH,
-    // The fingertips — what you would put on the thing you are moving.
-    hotspot: [8, 2],
-    icon: glyph(GRABBER_PATH),
+    iconBox: 36,
+    // The heel of the palm, in the glyph's own 36-unit box: roughly where a hand
+    // actually contacts what it is dragging.
+    hotspot: [18, 20],
+    icon: glyph(GRABBER_PATH, 36),
   },
   {
     id: "eyedropper",
@@ -149,6 +162,7 @@ export const TOOLS: ToolDescriptor[] = [
     usesStroke: false,
     sliderCount: 0,
     iconPath: EYEDROPPER_PATH,
+    iconBox: 16,
     hotspot: [1, 15],
     icon: glyph(EYEDROPPER_PATH),
   },
