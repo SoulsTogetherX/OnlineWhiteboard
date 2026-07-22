@@ -27,10 +27,13 @@ import useSidebar from "@/hooks/useSidebar"
 import useColorPopup from "@/hooks/useColorPopup"
 import useDisclosure from "@/hooks/useDisclosure"
 import useKeymap from "@/hooks/useKeymap"
+import useShiftHeld from "@/hooks/useModifierHeld"
 
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
 import { toolCursorCss } from "@/utils/toolCursor"
+
+import type { ExportFormat } from "@/utils/downloadImage"
 
 import { canDraw, hasEditAuthority } from "@shared/types/identity"
 
@@ -187,11 +190,19 @@ export default function Whiteboard({
 
   // Downloading the current canvas as a PNG. Used by the Room tab's download
   // button (§12.9: shared as soon as a second caller appears).
-  const handleDownload = useCallback(() => {
-    if (canvasRef.current) {
-      downloadCanvasImage(canvasRef.current, roomId)
-    }
-  }, [roomId])
+  const handleDownload = useCallback(
+    (format: ExportFormat) => {
+      if (canvasRef.current) {
+        void downloadCanvasImage(canvasRef.current, roomId, format)
+      }
+    },
+    [roomId],
+  )
+
+  // Shift is the navigate modifier: while it is held, dragging pans and the
+  // wheel zooms, and the pointer does not draw. The board never moves without
+  // it, so the indicator below is the only cue that the mode exists.
+  const navigating = useShiftHeld()
 
   // Canvas Setup
   useCanvasMotion(frameRef, canvasRef)
@@ -267,6 +278,17 @@ export default function Whiteboard({
         dims={canvasDims}
         cursor={toolCursorCss(selectedTool)}
       />
+      {/* Shown only while Shift is down: the board is in navigate mode, where
+          dragging pans and the wheel zooms. Announced politely rather than
+          assertively — it is a mode cue, not an alert. */}
+      {navigating && (
+        <div className="navigate-hint" role="status" aria-live="polite">
+          <svg viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M8 1 5.8 3.2h1.45v3.05H4.2V4.8L2 7l2.2 2.2V7.75h3.05v3.05H5.8L8 13l2.2-2.2H8.75V7.75h3.05V9.2L14 7l-2.2-2.2v1.45H8.75V3.2h1.45z" />
+          </svg>
+          <span>Pan &amp; zoom</span>
+        </div>
+      )}
       <CursorOverlay
         canvasRef={canvasRef}
         cursorsRef={cursorsRef}

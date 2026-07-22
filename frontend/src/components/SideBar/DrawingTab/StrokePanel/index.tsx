@@ -1,8 +1,5 @@
 //#region Imports
-import { useRef } from "react"
-
 import LabelledSlider from "@/components/LabelledSlider"
-import useFocusFirstSlider from "@/hooks/useFocusFirstSlider"
 
 import { MAX_STROKE_SIZE } from "@shared/constants/canvas"
 
@@ -24,13 +21,8 @@ export default function StrokePanel({
   strokeSize,
   onStrokeSizeChange,
 }: StrokePanelProps) {
-  // Selecting a stroke tool mounts this panel, which focuses the size slider so
-  // the wheel sizes the brush until you draw. See useFocusFirstSlider.
-  const panelRef = useRef<HTMLDivElement>(null)
-  useFocusFirstSlider(panelRef)
-
   return (
-    <div className="stroke-panel" ref={panelRef}>
+    <div className="stroke-panel">
       <LabelledSlider
         label="Brush size"
         value={strokeSize}

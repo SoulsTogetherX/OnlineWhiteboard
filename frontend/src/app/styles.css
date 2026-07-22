@@ -121,3 +121,35 @@
   background: var(--active-background);
   transform: translateY(1px);
 }
+
+/* The navigate-mode cue. Top-right, out of the way of the canvas, and
+   pointer-events:none so it can never intercept the drag it is describing. */
+.navigate-hint {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 21;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  padding: 0.3rem 0.6rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--tooltip-background);
+  color: var(--tooltip-text-color);
+  font-size: 0.75rem;
+
+  box-shadow: 0 2px 8px var(--shadow-color);
+  pointer-events: none;
+}
+
+.navigate-hint svg {
+  width: 0.95rem;
+  height: 0.95rem;
+
+  fill: currentColor;
+}

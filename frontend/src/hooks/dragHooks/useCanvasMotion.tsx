@@ -20,33 +20,6 @@ const MIN_ZOOM = 0.6
 const MIDDLE_BUTTON_ONLY: MouseButton[] = ["middle"]
 //#endregion
 
-//#region Focused-slider helpers
-// The range input that currently holds focus, if any. Only a range counts: a
-// text field also takes focus, but a wheel means nothing to it, so stealing the
-// wheel there would just break zooming while someone typed a room name.
-function focusedSlider(): HTMLInputElement | null {
-  const active = document.activeElement
-  return active instanceof HTMLInputElement && active.type === "range"
-    ? active
-    : null
-}
-
-// Steps a slider by one of its own increments and tells React about it.
-//
-// stepUp/stepDown rather than arithmetic: they already respect the input's step,
-// min and max, so the wheel moves the control by exactly what a keyboard arrow
-// would. The "input" event is what React's change tracking listens for — it
-// compares the DOM value against the last value it wrote, sees the difference,
-// and runs onChange, so the controlled state stays the source of truth.
-function nudgeSlider(slider: HTMLInputElement, direction: 1 | -1): void {
-  if (direction > 0) {
-    slider.stepUp()
-  } else {
-    slider.stepDown()
-  }
-  slider.dispatchEvent(new Event("input", { bubbles: true }))
-}
-//#endregion
 
 //#region Hook Def
 export default function useCanvasMotion(
@@ -85,8 +58,12 @@ export default function useCanvasMotion(
     element.style.setProperty(POS_X_KEY, `${offset.current.x}px`)
     element.style.setProperty(POS_Y_KEY, `${offset.current.y}px`)
   }, [dragElementRef])
+  // Panning requires SHIFT — the same modifier that enables zooming, so one key
+  // means "navigate" and nothing moves the board by accident. The middle button
+  // still works on its own because it cannot be pressed by accident while
+  // drawing, and it is the conventional pan gesture.
   const optionalCheck = useCallback((ev: PointerEvent): boolean => {
-    return ev.buttons === 4
+    return ev.shiftKey || ev.buttons === 4
   }, [])
 
   const onDragStart = useCallback((ev: PointerEvent) => {
@@ -122,20 +99,15 @@ export default function useCanvasMotion(
 
   const onScrollWheel = useCallback(
     (ev: WheelEvent) => {
-      // A plain wheel zooms the canvas — that is what a wheel means on a board.
+      // The canvas NEVER moves on its own. A bare wheel is left entirely alone —
+      // it scrolls whatever the pointer is over, exactly as it would on any page
+      // — and only shift+wheel zooms the board.
       //
-      // The exception is a FOCUSED slider. Selecting a tool focuses its size
-      // slider, so right after picking a brush the wheel is the fastest way to
-      // size it, wherever the pointer happens to be. While that slider holds
-      // focus the plain wheel belongs to it, and shift+wheel zooms instead.
-      //
-      // Focus, not hover, is what decides: it is the one signal that survives
-      // the pointer being over the canvas, which is exactly where you are when
-      // you want to adjust a brush and see the result.
-      const slider = focusedSlider()
-      if (slider && !ev.shiftKey) {
-        ev.preventDefault()
-        nudgeSlider(slider, ev.deltaY < 0 ? 1 : -1)
+      // This replaced two earlier rules that both tried to be clever: zoom on a
+      // bare wheel (which hijacked scrolling), then zoom-unless-a-slider-has-
+      // focus (which made the same gesture do different things depending on
+      // invisible state). One modifier, one meaning.
+      if (!ev.shiftKey) {
         return
       }
       ev.preventDefault()

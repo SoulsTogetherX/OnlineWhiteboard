@@ -180,15 +180,34 @@
 }
 
 /* Clear sits at the left, download at the far right (bottom-right of the tab). */
+/* Pinned to the bottom of the panel, OVERLAYING the content that scrolls past
+   beneath it, so clear and download are reachable without scrolling to the end
+   of a long tab.
+ *
+ * `position: sticky` with `bottom: 0` rather than `fixed`: sticky stays inside
+ * the sidebar's scroll container, so it keeps the panel's width and moves with
+ * the drawer when it opens and closes. A fixed footer would have to re-derive
+ * both, and would still be sitting there when the drawer was shut.
+ *
+ * The negative margins let the bar span the panel's padding, so content passes
+ * under a full-width edge rather than beside a floating strip. */
 .room-tab-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  margin-top: auto;
-  padding-top: 0.5rem;
+  margin: auto -1rem -1rem;
+  padding: 0.6rem 1rem;
 
-  border-top: 1px solid var(--border-color);
+  /* A deliberately heavy rule: this is the boundary between "the tab" and "the
+     actions", and it has to read as an edge over moving content. */
+  border-top: 3px solid var(--border-color);
+
+  background: var(--panel-background);
 }
 
 /* The destructive action reads red so it isn't fired absent-mindedly. */

@@ -42,6 +42,11 @@ export default function useCanvasDrawing(
   const isDisabled = () =>
     disabledRef?.current === true || viewOnlyRef?.current === true
 
+  // Shift is the navigate modifier (see useCanvasMotion): while it is held the
+  // pointer pans the board, so it must not also lay down paint. Checked per
+  // event rather than as a mode flag, so releasing shift mid-gesture behaves.
+  const isNavigating = (ev: PointerEvent) => ev.shiftKey
+
   // Each of these runs from a pointer event, so reading `.current` here is
   // correct — it picks up the tool and palette as they are at gesture time
   // rather than whatever they were when this hook last rendered.
@@ -51,14 +56,16 @@ export default function useCanvasDrawing(
     }
   }
 
+  const blocked = (ev: PointerEvent) => isDisabled() || isNavigating(ev)
+
   const onDrawStart = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(start(drawAction.current, colorPalette.current, ev))
+    blocked(ev) ? undefined : emit(start(drawAction.current, colorPalette.current, ev))
   const onDrawFinish = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(finish(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(finish(drawAction.current, ev))
   const onDrawMotion = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(motion(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(motion(drawAction.current, ev))
   const onDrawLeave = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(leave(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(leave(drawAction.current, ev))
 
   useDrag(
     canvasRef,

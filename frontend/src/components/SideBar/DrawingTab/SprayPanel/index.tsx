@@ -1,8 +1,5 @@
 //#region Imports
-import { useRef } from "react"
-
 import LabelledSlider from "@/components/LabelledSlider"
-import useFocusFirstSlider from "@/hooks/useFocusFirstSlider"
 
 import { MAX_SPRAY_DENSITY, MAX_STROKE_SIZE } from "@shared/constants/canvas"
 
@@ -29,13 +26,8 @@ export default function SprayPanel({
   sprayDensity,
   onSprayDensityChange,
 }: SprayPanelProps) {
-  // Selecting the spray mounts this panel, which focuses the size slider so the
-  // wheel sizes the puff until you draw. See useFocusFirstSlider.
-  const panelRef = useRef<HTMLDivElement>(null)
-  useFocusFirstSlider(panelRef)
-
   return (
-    <div className="spray-panel" ref={panelRef}>
+    <div className="spray-panel">
       <LabelledSlider
         label="Spray size"
         value={strokeSize}

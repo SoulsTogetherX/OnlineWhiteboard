@@ -1,0 +1,63 @@
+.download-menu {
+  position: relative;
+}
+
+/* Opens UPWARD and right-anchored: the button lives in the sticky footer at the
+   bottom-right of the panel, so a menu dropping down or growing right would
+   land off-screen. */
+.download-menu-list {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 0.4rem);
+  z-index: 30;
+
+  display: flex;
+  flex-direction: column;
+  min-width: 12rem;
+
+  padding: 0.25rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.4rem;
+
+  background: var(--surface-background);
+  box-shadow: 0 6px 18px var(--shadow-color);
+}
+
+.download-menu-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+
+  padding: 0.4rem 0.5rem;
+
+  border-radius: 0.3rem;
+
+  color: var(--text-color);
+  text-align: left;
+
+  cursor: pointer;
+}
+
+.download-menu-item:hover {
+  background: var(--hover-background);
+}
+
+.download-menu-item:active {
+  background: var(--active-background);
+}
+
+.download-menu-item:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: -2px;
+}
+
+.download-menu-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.download-menu-caveat {
+  color: var(--muted-text-color);
+  font-size: 0.7rem;
+}
