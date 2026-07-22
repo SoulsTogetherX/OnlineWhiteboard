@@ -91,9 +91,36 @@ export default function useCanvasMotion(
   // whatever its justification.
   const optionalCheck = useCallback(
     (ev: PointerEvent): boolean => {
-      return ev.shiftKey || grabbingRef?.current === true
+      if (!(ev.shiftKey || grabbingRef?.current === true)) {
+        return false
+      }
+
+      // A pan may only START on the canvas surface or the empty frame background
+      // — never on UI chrome.
+      //
+      // The drag listener is on the frame, which WRAPS the entire app: the
+      // sidebar, its buttons, every popup. Consulting only the modifier meant a
+      // pointerdown anywhere in that subtree began a pan and preventDefault'd —
+      // so with the grabber (which latches "navigating" permanently on) no
+      // button, slider or input worked at all. Shift had the same latent bug; it
+      // just went unnoticed because nobody holds shift while clicking a button.
+      //
+      // ev.target tells the two apart with no blocklist to keep in sync: the
+      // overlays above the canvas are all pointer-events:none, so a press over
+      // the board resolves to the canvas element itself, a press on the bare
+      // background resolves to the frame, and a press on any control resolves to
+      // that control. Only the first two may pan. Capture makes this a
+      // start-only check — once a pan begins on the canvas, the whole drag is
+      // routed there regardless of what the pointer later passes over.
+      const target = ev.target
+      if (target === dragFrameRef.current) {
+        return true
+      }
+      return (
+        target instanceof Element && target.classList.contains("draw-canvas")
+      )
     },
-    [grabbingRef],
+    [grabbingRef, dragFrameRef],
   )
 
   const onDragStart = useCallback((ev: PointerEvent) => {
