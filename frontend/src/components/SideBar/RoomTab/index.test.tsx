@@ -21,9 +21,6 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     socketLabel: "Connected",
     onLoadRoom: vi.fn(),
     onLeaveRoom: vi.fn(),
-    user: null,
-    onOpenAuth: vi.fn(),
-    onLogout: vi.fn(),
     participants: [participant("owner")],
     self: participant("owner"),
     openEditing: true,
@@ -39,6 +36,12 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     editorRequests: [],
     onRequestEditor: vi.fn(),
     onRespondEditor: vi.fn(),
+    checkpoints: [],
+    canEditHistory: true,
+    onCreateCheckpoint: vi.fn(),
+    onRestoreCheckpoint: vi.fn(),
+    onDeleteCheckpoint: vi.fn(),
+    onReplay: vi.fn(),
     showCursors: true,
     showCursorNames: true,
     onShowCursorsChange: vi.fn(),
@@ -107,31 +110,29 @@ describe("RoomTab permission gating", () => {
   })
 })
 
-// The foot of this tab is the ONLY sign-in surface once a room is open — the
-// top-right account control is gone — so it has to work in both directions.
-describe("RoomTab account section", () => {
-  it("offers log in while signed out", () => {
-    renderTab({ user: null })
-    expect(screen.getByRole("button", { name: "Log in" })).toBeInTheDocument()
+// This tab is about the ROOM. Account controls moved to their own tab, so the
+// only thing left here that is not room state is the way back to the lobby.
+describe("RoomTab is scoped to the room", () => {
+  it("offers a way back to the lobby", () => {
+    const { props } = renderTab()
+    screen.getByRole("button", { name: "Leave room" }).click()
+    expect(props.onLeaveRoom).toHaveBeenCalled()
+  })
+
+  it("carries no account controls", () => {
+    renderTab()
     expect(
       screen.queryByRole("button", { name: "Log out" }),
     ).not.toBeInTheDocument()
-  })
-
-  it("shows the account and offers log out while signed in", () => {
-    renderTab({
-      user: { id: "u1", username: "Ada", color: "#ff8800", isGuest: false },
-    })
-    expect(screen.getByText("Ada")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument()
     expect(
       screen.queryByRole("button", { name: "Log in" }),
     ).not.toBeInTheDocument()
   })
 
-  it("offers a way back to the lobby", () => {
-    const { props } = renderTab()
-    screen.getByRole("button", { name: "Leave room" }).click()
-    expect(props.onLeaveRoom).toHaveBeenCalled()
+  it("holds the room's history, which used to be a tab of its own", () => {
+    renderTab({ canEditHistory: true })
+    expect(
+      screen.getByRole("button", { name: /Replay/ }),
+    ).toBeInTheDocument()
   })
 })

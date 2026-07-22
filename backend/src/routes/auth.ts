@@ -20,8 +20,10 @@ import {
 } from "@/auth/validation"
 import {
   createUser,
+  deleteUser,
   emailIndexExists,
   findUserByEmailIndex,
+  updateUsername,
 } from "@/db/userRepository"
 import {
   emailBlindIndex,
@@ -200,6 +202,60 @@ export default function configureAuthRoutes(app: Express): void {
       return res.status(200).json({ user: null })
     }
     return res.status(200).json({ user: publicUser(user) })
+  })
+
+  // --- Change display name ---------------------------------------------------
+  // The account tab's rename. Authorisation is the session itself: there is no
+  // user id in the request, so this can only ever rename the caller — an id
+  // parameter would be an invitation to rename somebody else.
+  app.patch("/api/auth/me", async (req: Request, res: Response) => {
+    const current = await resolveSessionUser(readSessionToken(req))
+    if (!current) {
+      return res.status(401).json({ error: "Not signed in." })
+    }
+
+    // The same validator the register form uses, so a name that could not be
+    // registered cannot be renamed into either.
+    const username = validateUsername(req.body?.username)
+    if (!username.ok) {
+      return res.status(400).json({ error: username.error })
+    }
+
+    const updated = await updateUsername(current.id, username.value)
+    if (!updated) {
+      return res.status(404).json({ error: "Account not found." })
+    }
+    return res.status(200).json({ user: publicUser(updated) })
+  })
+
+  // --- Delete account --------------------------------------------------------
+  // Irreversible, and again scoped to the caller by the session alone.
+  //
+  // The order matters. Sockets are closed BEFORE the row goes, because an open
+  // socket was authenticated once at its upgrade and would otherwise keep acting
+  // as a user who no longer exists. Deleting first would leave a live connection
+  // holding a dangling identity.
+  app.delete("/api/auth/me", async (req: Request, res: Response) => {
+    const token = readSessionToken(req)
+    const current = await resolveSessionUser(token)
+    if (!current) {
+      return res.status(401).json({ error: "Not signed in." })
+    }
+
+    if (token) {
+      closeSocketsForSession(hashSessionToken(token))
+    }
+
+    // Everything hanging off the id — sessions, saved colours, memberships
+    // (ownership included) — goes with it via the schema's own ON DELETE rules.
+    // Rooms they created survive, unowned; see deleteUser.
+    const deleted = await deleteUser(current.id)
+    if (!deleted) {
+      return res.status(404).json({ error: "Account not found." })
+    }
+
+    clearSessionCookie(res)
+    return res.status(204).end()
   })
 }
 //#endregion

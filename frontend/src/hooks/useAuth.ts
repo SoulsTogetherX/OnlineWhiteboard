@@ -17,6 +17,10 @@ export interface UseAuthResult {
     password: string,
   ) => Promise<AuthResult>
   logout: () => Promise<void>
+  // Both scoped to the caller by the session cookie alone — neither takes a
+  // user id, so neither can act on somebody else's account.
+  updateUsername: (username: string) => Promise<AuthResult>
+  deleteAccount: () => Promise<AuthResult>
 }
 //#endregion
 
@@ -37,12 +41,13 @@ type AuthResponse = { user?: AuthUser | null; error?: string }
 // but `credentials: "same-origin"` is stated explicitly so a future move to a
 // separate API origin fails loudly (needing "include" + CORS) rather than
 // silently dropping auth.
-async function postJson(
+async function sendJson(
   url: string,
   body: unknown,
+  method: "POST" | "PATCH" = "POST",
 ): Promise<{ status: number; data: AuthResponse | null }> {
   const res = await fetch(url, {
-    method: "POST",
+    method,
     credentials: "same-origin",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
@@ -125,7 +130,7 @@ export default function useAuth(): UseAuthResult {
 
   const login = useCallback(
     async (email: string, password: string): Promise<AuthResult> => {
-      const { status, data } = await postJson("/api/auth/login", {
+      const { status, data } = await sendJson("/api/auth/login", {
         email,
         password,
       })
@@ -145,7 +150,7 @@ export default function useAuth(): UseAuthResult {
       username: string,
       password: string,
     ): Promise<AuthResult> => {
-      const { status, data } = await postJson("/api/auth/register", {
+      const { status, data } = await sendJson("/api/auth/register", {
         email,
         username,
         password,
@@ -160,6 +165,44 @@ export default function useAuth(): UseAuthResult {
     [announce],
   )
 
+  // Rename. The endpoint takes no user id — the session decides whose name
+  // changes — so this cannot rename anyone but the caller.
+  const updateUsername = useCallback(
+    async (username: string): Promise<AuthResult> => {
+      const { status, data } = await sendJson(
+        "/api/auth/me",
+        { username },
+        "PATCH",
+      )
+      if (status === 200 && data?.user) {
+        setUser(data.user)
+        // Other tabs show this name too (the presence roster, the account tab),
+        // so they need to re-read rather than keep the old one.
+        announce()
+        return { ok: true }
+      }
+      return { ok: false, error: data?.error ?? "Could not change your name." }
+    },
+    [announce],
+  )
+
+  // Irreversible. The server closes this session's sockets before deleting the
+  // row, so there is no window where a live connection acts as a user who no
+  // longer exists.
+  const deleteAccount = useCallback(async (): Promise<AuthResult> => {
+    const res = await fetch("/api/auth/me", {
+      method: "DELETE",
+      credentials: "same-origin",
+    })
+    if (res.status === 204) {
+      setUser(null)
+      announce()
+      return { ok: true }
+    }
+    const data: AuthResponse | null = await res.json().catch(() => null)
+    return { ok: false, error: data?.error ?? "Could not delete your account." }
+  }, [announce])
+
   const logout = useCallback(async (): Promise<void> => {
     await fetch("/api/auth/logout", {
       method: "POST",
@@ -169,6 +212,14 @@ export default function useAuth(): UseAuthResult {
     announce()
   }, [announce])
 
-  return { user, isLoading, login, register, logout }
+  return {
+    user,
+    isLoading,
+    login,
+    register,
+    logout,
+    updateUsername,
+    deleteAccount,
+  }
 }
 //#endregion

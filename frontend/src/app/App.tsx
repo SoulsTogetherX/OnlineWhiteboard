@@ -44,7 +44,15 @@ function MoonIcon() {
 // The board is a separate component rather than a branch inside this one so that
 // its dozen hooks, and its socket, do not run at all while you are in the lobby.
 export default function App() {
-  const { user, isLoading: authLoading, login, register, logout } = useAuth()
+  const {
+    user,
+    isLoading: authLoading,
+    login,
+    register,
+    logout,
+    updateUsername,
+    deleteAccount,
+  } = useAuth()
   const authPopup = useDisclosure()
   const { theme, toggle: toggleTheme } = useTheme()
 
@@ -104,6 +112,8 @@ export default function App() {
           onLeaveRoom={leaveRoom}
           onOpenAuth={authPopup.open}
           onLogout={logout}
+          onUpdateUsername={updateUsername}
+          onDeleteAccount={deleteAccount}
         />
       )}
 

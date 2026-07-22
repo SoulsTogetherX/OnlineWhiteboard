@@ -86,6 +86,41 @@ export async function emailIndexExists(emailIndex: string): Promise<boolean> {
   return Boolean(row)
 }
 
+// Renames a user. Only the display name changes: the email index, the ciphertext
+// and the password hash are untouched, so nothing about signing in is affected.
+//
+// The name is NOT unique in this app — two people may both be "Sam". Identity is
+// the id, and every surface that shows a name pairs it with an identity colour,
+// so a collision is a cosmetic overlap rather than an ambiguity.
+export async function updateUsername(
+  id: string,
+  username: string,
+): Promise<User | null> {
+  const row = await db
+    .updateTable("users")
+    .set({ username })
+    .where("id", "=", id)
+    .returning(PUBLIC_COLUMNS)
+    .executeTakeFirst()
+  return row ?? null
+}
+
+// Deletes a user, and with them everything the schema hangs off their id:
+// sessions, saved colours, and room memberships — including any row that made
+// them an owner, so their rooms become unowned and can be claimed again.
+//
+// Rooms they CREATED survive, with created_by set to NULL: a room is a shared
+// artefact, and closing an account should not delete other people's drawings.
+// All of that is the database's own ON DELETE behaviour rather than a cascade
+// re-implemented here, so it cannot drift out of step with the schema.
+export async function deleteUser(id: string): Promise<boolean> {
+  const result = await db
+    .deleteFrom("users")
+    .where("id", "=", id)
+    .executeTakeFirst()
+  return (result.numDeletedRows ?? 0n) > 0n
+}
+
 // Returns the stored ciphertext for a user so it can be decrypted by a caller
 // that holds the key. Nothing reads this yet — it exists so the recovery path
 // the encryption was chosen to preserve (password reset, email verification) is

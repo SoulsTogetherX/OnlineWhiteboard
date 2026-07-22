@@ -10,7 +10,7 @@ import PlaybackViewer from "@/components/PlaybackViewer"
 import SideBar from "@/components/SideBar"
 import RoomTab from "@/components/SideBar/RoomTab"
 import DrawingTab from "@/components/SideBar/DrawingTab"
-import TimelineTab from "@/components/SideBar/TimelineTab"
+import AccountTab from "@/components/SideBar/AccountTab"
 
 import useCanvasMotion from "@/hooks/dragHooks/useCanvasMotion"
 import useCanvasDrawing from "@/hooks/dragHooks/useCanvasDrawing"
@@ -51,6 +51,8 @@ export interface WhiteboardProps {
   onLeaveRoom: () => void
   onOpenAuth: () => void
   onLogout: () => void
+  onUpdateUsername: (username: string) => Promise<{ ok: boolean; error?: string }>
+  onDeleteAccount: () => Promise<{ ok: boolean; error?: string }>
 }
 
 // Everything that only exists inside a room: the canvas, the tools, the sidebar
@@ -64,6 +66,8 @@ export default function Whiteboard({
   onLeaveRoom,
   onOpenAuth,
   onLogout,
+  onUpdateUsername,
+  onDeleteAccount,
 }: WhiteboardProps) {
   // Canvas plumbing — the frame that pans/zooms and the canvas element itself.
   const frameRef = useRef<HTMLDivElement>(
@@ -335,9 +339,6 @@ export default function Whiteboard({
             socketLabel={socketLabel}
             onLoadRoom={loadRoom}
             onLeaveRoom={onLeaveRoom}
-            user={user}
-            onOpenAuth={onOpenAuth}
-            onLogout={onLogout}
             participants={participants}
             self={self}
             openEditing={settings.openEditing}
@@ -353,19 +354,24 @@ export default function Whiteboard({
             editorRequests={editorRequests}
             onRequestEditor={requestEditor}
             onRespondEditor={respondEditor}
+            checkpoints={checkpoints}
+            canEditHistory={hasEditAuthority(self?.role ?? "guest")}
+            onCreateCheckpoint={createCheckpoint}
+            onRestoreCheckpoint={restoreCheckpoint}
+            onDeleteCheckpoint={deleteCheckpoint}
+            onReplay={requestPlayback}
             showCursors={showCursors}
             showCursorNames={showCursorNames}
             onShowCursorsChange={setShowCursors}
             onShowCursorNamesChange={setShowCursorNames}
           />
         ) : (
-          <TimelineTab
-            checkpoints={checkpoints}
-            canEdit={hasEditAuthority(self?.role ?? "guest")}
-            onCreate={createCheckpoint}
-            onRestore={restoreCheckpoint}
-            onDelete={deleteCheckpoint}
-            onReplay={requestPlayback}
+          <AccountTab
+            user={user}
+            onOpenAuth={onOpenAuth}
+            onLogout={onLogout}
+            onUpdateUsername={onUpdateUsername}
+            onDeleteAccount={onDeleteAccount}
           />
         )}
       </SideBar>

@@ -7,7 +7,7 @@ import "./styles.css"
 //#endregion
 
 //#region Component Def
-export interface TimelineTabProps {
+export interface RoomHistoryProps {
   checkpoints: CheckpointInfo[]
   // Whether this connection may save/restore/delete checkpoints (owner/editor).
   // Replay is available to everyone regardless.
@@ -18,17 +18,22 @@ export interface TimelineTabProps {
   onReplay: (fromCheckpointId?: string) => void
 }
 
-// The Timeline tab: named checkpoints (save/restore/delete for editors) and
-// history replay for everyone. Replay opens the playback overlay, which carries
-// the scrubber; this tab is the checkpoint surface.
-export default function TimelineTab({
+// The room's history: named checkpoints (save/restore/delete for editors) and
+// replay for everyone. Replay opens the playback overlay, which carries the
+// scrubber; this is the checkpoint surface.
+//
+// This was a sidebar tab of its own. It became a section of the Room tab because
+// a room's history is a fact ABOUT that room — you reach for it in the same
+// frame of mind as its members, its size and its permissions — and the tab it
+// vacated now holds the account.
+export default function RoomHistory({
   checkpoints,
   canEdit,
   onCreate,
   onRestore,
   onDelete,
   onReplay,
-}: TimelineTabProps) {
+}: RoomHistoryProps) {
   return (
     <div className="timeline-tab">
       <p className="timeline-hint">

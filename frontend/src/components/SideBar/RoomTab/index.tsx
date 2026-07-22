@@ -9,13 +9,17 @@ import OwnershipButton from "./OwnershipButton"
 import CursorControls from "./CursorControls"
 import ResizeControl from "./ResizeControl"
 import EditorRequests from "./EditorRequests"
+import RoomHistory from "./RoomHistory"
 
 import {
   canManageRoom,
   canRequestEditor,
 } from "@shared/types/identity"
-import type { AuthUser, Participant } from "@shared/types/identity"
-import type { EditorRequest } from "@shared/types/socketProtocol"
+import type { Participant } from "@shared/types/identity"
+import type {
+  CheckpointInfo,
+  EditorRequest,
+} from "@shared/types/socketProtocol"
 
 import "./styles.css"
 //#endregion
@@ -48,15 +52,9 @@ export interface RoomTabProps {
   roomId: string
   socketLabel: string
   onLoadRoom: (roomId: string) => void
-  // Back to the lobby. This is the only way out of a room now that the top-right
-  // account control is gone.
+  // Back to the lobby. Account controls live in the Account tab; this tab is
+  // only about the room you are in.
   onLeaveRoom: () => void
-  // The account block at the foot of this tab. It is the whole sign-in surface
-  // while a room is open, so it has to cover both directions — a guest logging
-  // in, and a signed-in user logging out.
-  user: AuthUser | null
-  onOpenAuth: () => void
-  onLogout: () => void
   participants: Participant[]
   self: Participant | null
   openEditing: boolean
@@ -72,6 +70,15 @@ export interface RoomTabProps {
   editorRequests: EditorRequest[]
   onRequestEditor: () => void
   onRespondEditor: (userId: string, approve: boolean) => void
+  // The room's history. It used to be a sidebar tab of its own; a room's
+  // timeline belongs to the room, so it lives here with everything else about
+  // this board.
+  checkpoints: CheckpointInfo[]
+  canEditHistory: boolean
+  onCreateCheckpoint: (name: string) => void
+  onRestoreCheckpoint: (checkpointId: string) => void
+  onDeleteCheckpoint: (checkpointId: string) => void
+  onReplay: (fromCheckpointId?: string) => void
   // Viewer cursor display preferences (useCursorPreferences).
   showCursors: boolean
   showCursorNames: boolean
@@ -88,9 +95,6 @@ export default function RoomTab({
   socketLabel,
   onLoadRoom,
   onLeaveRoom,
-  user,
-  onOpenAuth,
-  onLogout,
   participants,
   self,
   openEditing,
@@ -106,6 +110,12 @@ export default function RoomTab({
   editorRequests,
   onRequestEditor,
   onRespondEditor,
+  checkpoints,
+  canEditHistory,
+  onCreateCheckpoint,
+  onRestoreCheckpoint,
+  onDeleteCheckpoint,
+  onReplay,
   showCursors,
   showCursorNames,
   onShowCursorsChange,
@@ -188,55 +198,6 @@ export default function RoomTab({
         onResize={onResize}
       />
 
-      <div className="room-tab-footer">
-        <IconButton
-          label="Clear canvas"
-          onClick={onClear}
-          disabled={!isOwner}
-          className="room-clear"
-        >
-          <ClearIcon />
-        </IconButton>
-        {/* Available to everyone — a download is a read of the local canvas. */}
-        <IconButton label="Download image" onClick={onDownload}>
-          <DownloadIcon />
-        </IconButton>
-      </div>
-
-      {/* Account and room entry live at the FOOT of the tab: they are the two
-          things you touch when arriving or leaving, not while drawing, so they
-          sit below the controls you actually use in a session. The active-user
-          list stays at the top for the opposite reason. */}
-      <section className="room-account" aria-label="Account">
-        {user ? (
-          <>
-            <span className="room-account-identity">
-              <span
-                className="room-account-dot"
-                style={{ backgroundColor: user.color }}
-                aria-hidden="true"
-              />
-              <span className="room-account-name">{user.username}</span>
-            </span>
-            <button
-              type="button"
-              className="room-account-button"
-              onClick={onLogout}
-            >
-              Log out
-            </button>
-          </>
-        ) : (
-          <button
-            type="button"
-            className="room-account-button"
-            onClick={onOpenAuth}
-          >
-            Log in
-          </button>
-        )}
-      </section>
-
       <form
         className="room-change"
         onSubmit={(event) => {
@@ -266,6 +227,34 @@ export default function RoomTab({
       <button type="button" className="room-leave" onClick={onLeaveRoom}>
         Leave room
       </button>
+
+      {/* The room's history, folded in from what used to be its own tab. */}
+      <RoomHistory
+        checkpoints={checkpoints}
+        canEdit={canEditHistory}
+        onCreate={onCreateCheckpoint}
+        onRestore={onRestoreCheckpoint}
+        onDelete={onDeleteCheckpoint}
+        onReplay={onReplay}
+      />
+
+      {/* Clear and download sit at the very bottom: one is destructive and the
+          other ends a session, so neither belongs next to the controls used
+          while drawing. */}
+      <div className="room-tab-footer">
+        <IconButton
+          label="Clear canvas"
+          onClick={onClear}
+          disabled={!isOwner}
+          className="room-clear"
+        >
+          <ClearIcon />
+        </IconButton>
+        {/* Available to everyone — a download is a read of the local canvas. */}
+        <IconButton label="Download image" onClick={onDownload}>
+          <DownloadIcon />
+        </IconButton>
+      </div>
     </div>
   )
 }
