@@ -1,6 +1,8 @@
 //#region Imports
 import { useCallback, useRef, useState } from "react"
 
+import { DEFAULT_STABILIZATION } from "@/utils/stabilizer"
+
 import { DEFAULT_DRAW_ACTION } from "@/constants/ui"
 
 import { DEFAULT_STROKE_SIZE } from "@shared/constants/canvas"
@@ -31,7 +33,12 @@ export interface UseDrawingToolsResult {
   // for the spray tool.
   sprayDensityRef: React.RefObject<number>
   sprayDensity: number
+  // Stroke smoothing. Same ref+state split as the others (§13.5): the pointer
+  // handlers read the ref on every event, the slider renders from the state.
+  stabilizationRef: React.RefObject<number>
+  stabilization: number
   setSprayDensity: (density: number) => void
+  setStabilization: (strength: number) => void
 }
 //#endregion
 
@@ -89,6 +96,14 @@ export default function useDrawingTools(): UseDrawingToolsResult {
   }, [])
 
   // Spray density — same ref+state split as stroke size.
+  const stabilizationRef = useRef<number>(DEFAULT_STABILIZATION)
+  const [stabilization, setStabilizationState] =
+    useState<number>(DEFAULT_STABILIZATION)
+  const setStabilization = useCallback((strength: number) => {
+    stabilizationRef.current = strength
+    setStabilizationState(strength)
+  }, [])
+
   const sprayDensityRef = useRef<number>(DEFAULT_SPRAY_DENSITY)
   const [sprayDensity, setSprayDensityState] =
     useState<number>(DEFAULT_SPRAY_DENSITY)
@@ -108,6 +123,9 @@ export default function useDrawingTools(): UseDrawingToolsResult {
     setStrokeSize,
     sprayDensityRef,
     sprayDensity,
+    stabilizationRef,
+    stabilization,
+    setStabilization,
     setSprayDensity,
   }
 }

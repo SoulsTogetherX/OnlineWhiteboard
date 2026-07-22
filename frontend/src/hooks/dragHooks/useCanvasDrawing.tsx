@@ -1,8 +1,13 @@
 //#region Imports
+import { useRef } from "react"
+
 import useDrag from "./useDrag"
 import useDrawActions, { type OnCommitAction } from "../useDrawActions"
 
 import type { DrawAction, DrawInstruction } from "@shared/types/drawProtocol"
+import { createStabilizer } from "@/utils/stabilizer"
+
+import type { Stabilizer } from "@/utils/stabilizer"
 import type { ColorPalette } from "@shared/types/primitive"
 //#endregion
 
@@ -31,7 +36,19 @@ export default function useCanvasDrawing(
   // also rejects a viewer's draws, but blocking locally avoids strokes flashing
   // on the viewer's own canvas and then being reverted on the next resync.
   viewOnlyRef?: React.RefObject<boolean>,
+  // Stroke smoothing strength. Purely local: it changes WHERE the gesture
+  // reports the pointer to be, before any instruction is built (see
+  // utils/stabilizer), so nothing about the protocol changes.
+  stabilizationRef?: React.RefObject<number>,
 ): void {
+  // One stabilizer for the component's lifetime; it is reset at each gesture
+  // start rather than recreated, so there is no per-stroke allocation on a path
+  // that runs on every pointer event.
+  const stabilizer = useRef<Stabilizer | null>(null)
+  if (stabilizer.current === null) {
+    stabilizer.current = createStabilizer(stabilizationRef ?? { current: 0 })
+  }
+
   const [start, finish, motion, leave] = useDrawActions(
     canvasRef,
     onCommitAction,
@@ -58,14 +75,33 @@ export default function useCanvasDrawing(
 
   const blocked = (ev: PointerEvent) => isDisabled() || isNavigating(ev)
 
+  // Smoothing applies only to the tools you DRAG. A bucket fill and an
+  // eyedropper act on the single pixel you clicked, so a lagging average would
+  // just put the click somewhere you did not aim.
+  const smooths = (type: string) =>
+    type === "pencil" || type === "eraser" || type === "spray"
+
+  const steady = (ev: PointerEvent): PointerEvent =>
+    smooths(drawAction.current.type)
+      ? (stabilizer.current as Stabilizer).step(ev)
+      : ev
+
   const onDrawStart = (ev: PointerEvent) =>
-    blocked(ev) ? undefined : emit(start(drawAction.current, colorPalette.current, ev))
+    blocked(ev)
+      ? undefined
+      : emit(
+          start(
+            drawAction.current,
+            colorPalette.current,
+            (stabilizer.current as Stabilizer).begin(ev),
+          ),
+        )
   const onDrawFinish = (ev: PointerEvent) =>
-    blocked(ev) ? undefined : emit(finish(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(finish(drawAction.current, steady(ev)))
   const onDrawMotion = (ev: PointerEvent) =>
-    blocked(ev) ? undefined : emit(motion(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(motion(drawAction.current, steady(ev)))
   const onDrawLeave = (ev: PointerEvent) =>
-    blocked(ev) ? undefined : emit(leave(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(leave(drawAction.current, steady(ev)))
 
   useDrag(
     canvasRef,

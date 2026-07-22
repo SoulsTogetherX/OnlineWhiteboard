@@ -2,12 +2,17 @@
 import LabelledSlider from "@/components/LabelledSlider"
 
 import { MAX_SPRAY_DENSITY, MAX_STROKE_SIZE } from "@shared/constants/canvas"
+import { MAX_STABILIZATION } from "@/utils/stabilizer"
 
 import "./styles.css"
 //#endregion
 
 //#region Component Def
 export interface SprayPanelProps {
+  // Stroke smoothing, shared by every tool you drag rather than owned by one
+  // panel — the setting follows the gesture, not the brush.
+  stabilization: number
+  onStabilizationChange: (strength: number) => void
   // Size drives the puff RADIUS via the shared brush-size value (base.size), so
   // it reuses the stroke-size setter.
   strokeSize: number
@@ -23,6 +28,8 @@ export interface SprayPanelProps {
 export default function SprayPanel({
   strokeSize,
   onStrokeSizeChange,
+  stabilization,
+  onStabilizationChange,
   sprayDensity,
   onSprayDensityChange,
 }: SprayPanelProps) {
@@ -43,6 +50,14 @@ export default function SprayPanel({
         max={MAX_SPRAY_DENSITY}
         format={(value) => `${value}`}
         onChange={onSprayDensityChange}
+      />
+      <LabelledSlider
+        label="Stabilization"
+        value={stabilization}
+        min={0}
+        max={MAX_STABILIZATION}
+        format={(value) => (value === 0 ? "Off" : `${value}`)}
+        onChange={onStabilizationChange}
       />
     </div>
   )

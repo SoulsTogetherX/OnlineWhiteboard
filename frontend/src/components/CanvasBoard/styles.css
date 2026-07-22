@@ -24,3 +24,15 @@
     translate(var(--drag-pos-x, 0px), var(--drag-pos-y, 0px))
     scale(var(--scroll-scale, 1));
 }
+
+/* The brush-footprint overlay. Inherits every positioning rule from
+   .draw-canvas above so the two stay pixel-aligned through pan and zoom; only
+   the things that would double up are overridden. */
+.draw-canvas-preview {
+  z-index: 1;
+
+  border-color: transparent;
+  background-image: none;
+
+  pointer-events: none;
+}

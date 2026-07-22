@@ -2,12 +2,17 @@
 import LabelledSlider from "@/components/LabelledSlider"
 
 import { MAX_STROKE_SIZE } from "@shared/constants/canvas"
+import { MAX_STABILIZATION } from "@/utils/stabilizer"
 
 import "./styles.css"
 //#endregion
 
 //#region Component Def
 export interface StrokePanelProps {
+  // Stroke smoothing, shared by every tool you drag rather than owned by one
+  // panel — the setting follows the gesture, not the brush.
+  stabilization: number
+  onStabilizationChange: (strength: number) => void
   strokeSize: number
   onStrokeSizeChange: (size: number) => void
 }
@@ -20,6 +25,8 @@ export interface StrokePanelProps {
 export default function StrokePanel({
   strokeSize,
   onStrokeSizeChange,
+  stabilization,
+  onStabilizationChange,
 }: StrokePanelProps) {
   return (
     <div className="stroke-panel">
@@ -30,6 +37,14 @@ export default function StrokePanel({
         max={MAX_STROKE_SIZE}
         format={(value) => `${value}px`}
         onChange={onStrokeSizeChange}
+      />
+      <LabelledSlider
+        label="Stabilization"
+        value={stabilization}
+        min={0}
+        max={MAX_STABILIZATION}
+        format={(value) => (value === 0 ? "Off" : `${value}`)}
+        onChange={onStabilizationChange}
       />
     </div>
   )

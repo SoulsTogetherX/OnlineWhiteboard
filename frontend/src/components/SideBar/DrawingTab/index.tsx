@@ -47,6 +47,8 @@ export interface DrawingTabProps {
   onStrokeSizeChange: (size: number) => void
   sprayDensity: number
   onSprayDensityChange: (density: number) => void
+  stabilization: number
+  onStabilizationChange: (strength: number) => void
   colorPalette: React.RefObject<ColorPalette>
   onSwap: () => void
   openColorPopup: (primary: boolean) => void
@@ -66,6 +68,8 @@ export default function DrawingTab({
   onStrokeSizeChange,
   sprayDensity,
   onSprayDensityChange,
+  stabilization,
+  onStabilizationChange,
   colorPalette,
   onSwap,
   openColorPopup,
@@ -112,6 +116,8 @@ export default function DrawingTab({
         <StrokePanel
           strokeSize={strokeSize}
           onStrokeSizeChange={onStrokeSizeChange}
+          stabilization={stabilization}
+          onStabilizationChange={onStabilizationChange}
         />
       )}
       {activeTool.id === "spray" && (
@@ -120,6 +126,8 @@ export default function DrawingTab({
           onStrokeSizeChange={onStrokeSizeChange}
           sprayDensity={sprayDensity}
           onSprayDensityChange={onSprayDensityChange}
+          stabilization={stabilization}
+          onStabilizationChange={onStabilizationChange}
         />
       )}
     </div>

@@ -28,6 +28,7 @@ import useColorPopup from "@/hooks/useColorPopup"
 import useDisclosure from "@/hooks/useDisclosure"
 import useKeymap from "@/hooks/useKeymap"
 import useShiftHeld from "@/hooks/useModifierHeld"
+import useBrushPreview from "@/hooks/useBrushPreview"
 
 import { colorToHex8 } from "@/utils/color"
 import { downloadCanvasImage } from "@/utils/downloadImage"
@@ -79,6 +80,10 @@ export default function Whiteboard({
   const canvasRef = useRef<HTMLCanvasElement>(
     null,
   ) as React.RefObject<HTMLCanvasElement>
+  // The brush-footprint overlay that sits exactly on top of the canvas.
+  const previewRef = useRef<HTMLCanvasElement>(
+    null,
+  ) as React.RefObject<HTMLCanvasElement>
 
   // Drawing tools: the tool / stroke / eyedropper ref+state cluster (§13.5). The
   // refs are read by the pointer handlers on every event; the parallel state is
@@ -95,6 +100,9 @@ export default function Whiteboard({
     sprayDensityRef,
     sprayDensity,
     setSprayDensity,
+    stabilizationRef,
+    stabilization,
+    setStabilization,
   } = useDrawingTools()
 
   // The right sidebar (Phase 5) is the only tool surface now — the old floating
@@ -199,6 +207,14 @@ export default function Whiteboard({
     [roomId],
   )
 
+  // The live tool, as a ref. Read at event time by the cursor broadcaster (which
+  // must not resubscribe its pointer listeners every time a tool changes) and by
+  // the brush preview (§13.5).
+  const selectedToolRef = useRef<AppTool>(selectedTool)
+  useEffect(() => {
+    selectedToolRef.current = selectedTool
+  }, [selectedTool])
+
   // Shift is the navigate modifier: while it is held, dragging pans and the
   // wheel zooms, and the pointer does not draw. The board never moves without
   // it, so the indicator below is the only cue that the mode exists.
@@ -228,16 +244,16 @@ export default function Whiteboard({
     strokeSizeRef,
     sprayDensityRef,
     viewOnlyRef,
+    stabilizationRef,
   )
+  // The dotted outline of what the current tool would change. Fed the same refs
+  // the pointer handlers read, so it always describes the live tool and size.
+  useBrushPreview(canvasRef, previewRef, selectedToolRef, strokeSizeRef, viewOnlyRef)
   useEyedropper(canvasRef, eyedropperActive, onEyedropperPick)
   // The tool rides along with every cursor update, so other people see what this
   // pointer is holding. A ref, read at send time: the tool changes often and the
   // broadcaster must not resubscribe its pointer listeners each time.
-  const cursorToolRef = useRef<AppTool>(selectedTool)
-  useEffect(() => {
-    cursorToolRef.current = selectedTool
-  }, [selectedTool])
-  useCursorBroadcast(canvasRef, sendCursor, cursorToolRef)
+  useCursorBroadcast(canvasRef, sendCursor, selectedToolRef)
 
   // The app's keyboard map: undo/redo (Ctrl/Cmd+Z, Ctrl/Cmd+Shift+Z) always, and
   // the single-key tool shortcuts (P/E/F/S/I) while the sidebar is open.
@@ -277,6 +293,7 @@ export default function Whiteboard({
         canvasRef={canvasRef}
         dims={canvasDims}
         cursor={toolCursorCss(selectedTool)}
+        previewRef={previewRef}
       />
       {/* Shown only while Shift is down: the board is in navigate mode, where
           dragging pans and the wheel zooms. Announced politely rather than
@@ -347,6 +364,8 @@ export default function Whiteboard({
             onStrokeSizeChange={setStrokeSize}
             sprayDensity={sprayDensity}
             onSprayDensityChange={setSprayDensity}
+            stabilization={stabilization}
+            onStabilizationChange={setStabilization}
             colorPalette={colorPalette}
             onSwap={swapColors}
             openColorPopup={colorPopup.open}
