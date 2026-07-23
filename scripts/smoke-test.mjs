@@ -16,6 +16,8 @@
  * each is marked REGRESSION with what it guards.
  */
 
+import { encodePatchFrame } from "./lib/patchWire.mjs"
+
 import { inflateRawSync } from "node:zlib"
 
 const BASE = process.argv[2] ?? "http://localhost:8080"
@@ -106,42 +108,6 @@ function waitFor(seen, predicate, what, timeoutMs = 8_000) {
 
 const draw = (roomId, instruction) =>
   JSON.stringify({ type: "draw", roomId, instruction })
-
-// Encodes a patch draw as the binary frame a real client now sends: the draw
-// message (minus entries) as the JSON header, 11 packed bytes per entry as the
-// payload — a u24 PIXEL index (idx >> 2) plus two RGBA quads. Hand-rolled to
-// keep this probe dependency-free; keep it in step with
-// shared/utils/patchCodec.ts, same as decodeFrame mirrors binaryFrame.ts.
-function encodePatchFrame(roomId, instruction) {
-  const { entries, ...instructionHeader } = instruction
-  const payload = Buffer.alloc(entries.length * 11)
-  entries.forEach((e, i) => {
-    const o = i * 11
-    const pixel = e.idx >>> 2
-    payload[o] = (pixel >>> 16) & 0xff
-    payload[o + 1] = (pixel >>> 8) & 0xff
-    payload[o + 2] = pixel & 0xff
-    payload[o + 3] = e.from.r
-    payload[o + 4] = e.from.g
-    payload[o + 5] = e.from.b
-    payload[o + 6] = e.from.a
-    payload[o + 7] = e.to.r
-    payload[o + 8] = e.to.g
-    payload[o + 9] = e.to.b
-    payload[o + 10] = e.to.a
-  })
-  const header = Buffer.from(
-    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
-    "utf8",
-  )
-  const frame = Buffer.alloc(3 + header.length + payload.length)
-  frame[0] = BINARY_FRAME_VERSION
-  frame[1] = (header.length >> 8) & 0xff
-  frame[2] = header.length & 0xff
-  header.copy(frame, 3)
-  payload.copy(frame, 3 + header.length)
-  return frame
-}
 
 async function main() {
   console.log(`smoke test -> ${BASE} (room "${ROOM}")\n`)
