@@ -3,15 +3,17 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
-import { isValidCanvasDims } from "@shared/constants/canvas"
+import { canvasBytes, isValidCanvasDims } from "@shared/constants/canvas"
 import type { CanvasDims } from "@shared/constants/canvas"
-import { loadCanvas, saveCanvas } from "@/db/canvasRepository"
+import { loadBaseCanvas, loadCanvas, saveCanvas } from "@/db/canvasRepository"
 import {
   appendDrawEvents,
+  decimateRoomHistory,
   ensureRoom,
   loadEventsSince,
   type DrawEvent,
 } from "@/db/eventRepository"
+import { MAX_HISTORY_EVENTS } from "@/db/historyDecimation"
 import {
   getOpenEditing,
   pruneStaleRooms,
@@ -33,7 +35,6 @@ import {
   listCheckpoints,
   loadCheckpoint,
   maxCheckpointsPerRoom,
-  oldestCheckpointRevision,
 } from "@/db/checkpointRepository"
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { resizePixels } from "@shared/utils/helperProtocolMethods"
@@ -57,6 +58,7 @@ import {
 import type { ClientSocket } from "@/types/ClientSocket"
 import type {
   ClientSocketMessage,
+  CursorTool,
   RoomAction,
   ServerSocketMessage,
 } from "@shared/types/socketProtocol"
@@ -80,6 +82,12 @@ const FLUSH_INTERVAL_MS = 250
 // Flush early if the buffer grows past this between ticks, so a burst (e.g. a
 // fast scribble, or many users in one room) can't build an unbounded backlog or
 // stretch the loss window beyond one batch.
+// How much unsent data may pile up for one socket before further sends are
+// dropped. Sized above the largest single legitimate message — a compressed
+// full-canvas snapshot plus a playback payload — so a slow reader is only cut
+// off once it is genuinely failing to keep up, never mid-message.
+const MAX_BUFFERED_BYTES = 8 * 1024 * 1024
+
 const MAX_EVENT_BUFFER = 200
 
 // Cap on messages buffered while a room loads from Postgres (see addClient).
@@ -92,10 +100,14 @@ const MAX_PENDING_MESSAGES = 64
 // (with its snapshots and events, via ON DELETE CASCADE). This is the only
 // unbounded table left — a row per room ever visited — so it needs an explicit
 // retention policy the way the event log and snapshots don't.
-const ROOM_RETENTION_MS = 90 * 24 * 60 * 60 * 1000 // 90 days
+//
+// 30 days rather than 90: this is now the ONLY thing that ever removes a canvas.
+// Leaving a room from the dashboard deletes your membership and nothing else, so
+// an abandoned board's storage is reclaimed here or not at all.
+const ROOM_RETENTION_MS = 30 * 24 * 60 * 60 * 1000 // 30 days
 
 // How often the cleanup sweep runs. Daily is plenty — retention is measured in
-// months, so the exact cadence doesn't matter, only that it happens.
+// weeks, so the exact cadence doesn't matter, only that it happens.
 const CLEANUP_INTERVAL_MS = 24 * 60 * 60 * 1000 // 24 hours
 
 //#endregion
@@ -112,7 +124,7 @@ type RoomState = {
   revision: number
   isDirty: boolean
   saveTimer: NodeJS.Timeout
-  snapshotTimer: NodeJS.Timeout
+  revisionCheckTimer: NodeJS.Timeout
   flushTimer: NodeJS.Timeout
   // Applied instructions awaiting their batched write to draw_events.
   eventBuffer: DrawEvent[]
@@ -155,6 +167,9 @@ export default class RoomManager {
   // Per-socket flood control. Keyed by the socket object, so state disappears
   // with the connection.
   private rateLimiter = new SocketRateLimiter()
+  // Sockets with a playback being built. A WeakSet so a disconnect during one
+  // cannot leave an entry behind — there is no cleanup path to forget.
+  private playbackInFlight = new WeakSet<ClientSocket>()
 
   constructor(private readonly wss: WebSocketServer) {}
 
@@ -397,6 +412,15 @@ export default class RoomManager {
     // created at the room's dimensions.
     await ensureRoom(roomId, dims)
 
+    // Seed a genesis BASE snapshot (blank @ revision 0) for a brand-new room, so
+    // start-to-end playback always has a base to replay forward from. saveRoom
+    // only runs when the room is dirty, and by then the revision has advanced
+    // past 0 — so the base has to be written here, before any drawing, not on the
+    // first timed save. Idempotent: existing rooms already have one.
+    if ((await loadBaseCanvas(roomId)) === null) {
+      await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(dims)), 0, dims)
+    }
+
     // Permission state is read ONCE here and mirrored in memory for the room's
     // lifetime. Every draw message asks "may this connection draw?", so querying
     // it per message would put a database round trip on the hottest path in the
@@ -421,7 +445,7 @@ export default class RoomManager {
         () => void this.saveRoom(roomId),
         SAVE_INTERVAL_MS,
       ),
-      snapshotTimer: setInterval(
+      revisionCheckTimer: setInterval(
         () => this.broadcastRevisionCheck(roomId),
         SNAPSHOT_INTERVAL_MS,
       ),
@@ -486,7 +510,7 @@ export default class RoomManager {
     }
 
     if (message.type === "cursor") {
-      this.relayCursor(socket, room, message.pos)
+      this.relayCursor(socket, room, message.pos, message.tool)
       return
     }
 
@@ -586,12 +610,16 @@ export default class RoomManager {
     socket: ClientSocket,
     room: RoomState,
     pos: Vec | null,
+    // Validation has already confirmed this is one of the tools the app knows,
+    // so it is safe to pass straight through to every other client.
+    tool: CursorTool | undefined,
   ): void {
     const message: ServerSocketMessage = {
       type: "cursor",
       roomId: room.roomId,
       connectionId: socket.connectionId,
       pos,
+      tool,
     }
     const payload = JSON.stringify(message)
     room.clients.forEach((client) => {
@@ -868,10 +896,11 @@ export default class RoomManager {
       room.revision += 1
       room.isDirty = false
 
-      // retainEventsAfter = null prunes every event this snapshot supersedes,
-      // regardless of checkpoints — the new-dimensioned snapshot is a clean base
-      // that recovery replays nothing stale on top of.
-      await saveCanvas(room.roomId, room.pixels, room.revision, dims, null)
+      // resetBase makes the new-dimensioned snapshot the sole snapshot AND the
+      // new playback base: it prunes every prior snapshot and every event this
+      // one supersedes, so recovery replays nothing stale on top and the timeline
+      // restarts here (a resize is a hard history boundary).
+      await saveCanvas(room.roomId, room.pixels, room.revision, dims, true)
       this.broadcastSnapshot(room)
     } catch (error) {
       console.error(`Failed to resize ${room.roomId}:`, error)
@@ -1187,8 +1216,8 @@ export default class RoomManager {
 
   // Sends the requester the data to animate history: a base canvas plus the
   // events after it. Read-only, so anyone in the room (including viewers) may
-  // watch. From a checkpoint, the base is that checkpoint; otherwise the latest
-  // rolling snapshot (i.e. "replay what happened since the last save").
+  // watch. From a checkpoint, the base is that checkpoint; otherwise the GENESIS
+  // base (earliest snapshot), so the scrub covers the room start-to-end.
   private async handlePlayback(
     socket: ClientSocket,
     room: RoomState,
@@ -1214,7 +1243,12 @@ export default class RoomManager {
         baseRevision = checkpoint.revision
         baseDims = { width: checkpoint.width, height: checkpoint.height }
       } else {
-        const stored = await loadCanvas(room.roomId)
+        // Genesis base = the earliest snapshot (seeded blank @ rev 0, or the
+        // resize image after a resize). Fall back to the head snapshot if a base
+        // is somehow missing, so playback still works rather than erroring.
+        const stored =
+          (await loadBaseCanvas(room.roomId)) ??
+          (await loadCanvas(room.roomId))
         base = stored.pixels
         baseRevision = stored.revision
         baseDims = { width: stored.width, height: stored.height }
@@ -1240,6 +1274,10 @@ export default class RoomManager {
     } catch (error) {
       console.error(`Failed to build playback for ${room.roomId}:`, error)
       this.send(socket, { type: "error", message: "Could not load history." })
+    } finally {
+      // Released whatever happened, or one failure would lock this socket out of
+      // playback for as long as it stayed connected.
+      this.playbackInFlight.delete(socket)
     }
   }
 
@@ -1345,7 +1383,7 @@ export default class RoomManager {
       return
     }
     clearInterval(room.saveTimer)
-    clearInterval(room.snapshotTimer)
+    clearInterval(room.revisionCheckTimer)
     clearInterval(room.flushTimer)
     this.rooms.delete(room.roomId)
   }
@@ -1361,7 +1399,7 @@ export default class RoomManager {
     clearInterval(this.cleanupTimer)
     for (const room of this.rooms.values()) {
       clearInterval(room.saveTimer)
-      clearInterval(room.snapshotTimer)
+      clearInterval(room.revisionCheckTimer)
       clearInterval(room.flushTimer)
     }
     // Drain all rooms concurrently — they write to independent rows.
@@ -1380,16 +1418,14 @@ export default class RoomManager {
     }
 
     try {
-      // Keep events newer than the oldest checkpoint so history stays replayable
-      // from it; with no checkpoints this is null and compaction is fully bounded.
-      const retainAfter = await oldestCheckpointRevision(room.roomId)
-      await saveCanvas(
-        room.roomId,
-        room.pixels,
-        room.revision,
-        this.dimsOf(room),
-        retainAfter,
-      )
+      // Retain the whole event log after the genesis base so the timeline replays
+      // start-to-end; saveCanvas keeps the base + head snapshots and prunes only
+      // what the base already bakes in.
+      await saveCanvas(room.roomId, room.pixels, room.revision, this.dimsOf(room))
+      // Bound that retained span: once it grows past MAX_HISTORY_EVENTS, thin it
+      // uniformly. Separate from the snapshot write because it only ever deletes
+      // events already baked into the head snapshot, so it cannot affect recovery.
+      await decimateRoomHistory(room.roomId, room.revision, MAX_HISTORY_EVENTS)
       room.isDirty = false
     } catch (error) {
       console.error(`Failed to save room ${room.roomId}:`, error)
@@ -1425,6 +1461,13 @@ export default class RoomManager {
       roomId: room.roomId,
       revision: room.revision,
     })
+    // Re-broadcast the roster too. Presence is otherwise push-only (join/leave/
+    // role change), so a client that was mid-reconnect when an update went out
+    // would keep a stale roster forever — the cause of tabs disagreeing on who
+    // is present. This heartbeat lets a missed roster self-heal within the
+    // interval, mirroring how revision_check heals canvas state (§5.3). The
+    // roster is a few dozen bytes, so re-sending it is cheap.
+    this.broadcastPresence(room)
   }
 
   // Snapshots go out as a BINARY frame: a small JSON header plus the raw RGBA
@@ -1473,6 +1516,21 @@ export default class RoomManager {
     if (socket.readyState !== socket.OPEN) {
       return
     }
+
+    // Backpressure. `send` queues into a kernel/library buffer that the server
+    // owns; a client that reads slowly — or deliberately never reads — otherwise
+    // accumulates that buffer without limit across snapshots, playbacks and
+    // every broadcast, which is a memory exhaustion the message rate limiter
+    // cannot see, because the client need not send anything at all to cause it.
+    //
+    // Dropping is safe for exactly the reason the revision heartbeat exists: a
+    // client that misses a broadcast notices the revision gap and resyncs (§5.3).
+    // Closing outright would be worse — a brief network stall would evict an
+    // honest user mid-stroke.
+    if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      return
+    }
+
     socket.send(payload)
   }
 

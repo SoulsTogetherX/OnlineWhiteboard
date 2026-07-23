@@ -6,42 +6,163 @@
   /* Fill the panel so the footer's margin-top:auto can pin download to the
      bottom-right. */
   min-height: 100%;
+  /* The panel deliberately has none, so the sticky footer's containing block
+     reaches the panel's edge — see SideBar/styles.css. */
+  padding: 1rem;
 }
 
-.room-request-editor {
-  align-self: flex-start;
+/* Room id + connection status + change-room field — moved here from the floating
+   top bar / popup. */
+.room-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 
-  padding: 0.4rem 0.75rem;
-
-  border: 1px solid var(--accent-color);
-  border-radius: 0.4rem;
-
-  background-color: var(--popup-background);
-  color: var(--accent-color);
-  font-size: 0.85rem;
-
-  cursor: pointer;
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-color);
 }
 
-.room-request-editor:focus-visible {
-  outline: 2px solid var(--focus-color);
-  outline-offset: 2px;
+.room-header-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.room-header-id {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.room-header-conn {
+  flex-shrink: 0;
+  font-size: 0.8rem;
+  color: var(--muted-text-color, var(--text-color));
+  opacity: 0.75;
+}
+
+.room-change-label {
+  display: block;
+  font-size: 0.75rem;
+  opacity: 0.75;
+  margin-bottom: 0.2rem;
+}
+
+.room-change-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.room-change-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--surface-background);
+  color: var(--text-color);
+}
+
+/* The account row at the foot of the tab: who you are, and the one control that
+   changes it. */
+.room-account {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  padding-top: 0.6rem;
+  border-top: 1px solid var(--border-color);
+}
+
+.room-account-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+
+  min-width: 0;
+}
+
+.room-account-dot {
+  flex: none;
+
+  width: 0.65rem;
+  height: 0.65rem;
+
+  border-radius: 50%;
+}
+
+.room-account-name {
+  overflow: hidden;
+
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* Clear sits at the left, download at the far right (bottom-right of the tab). */
+/* Pinned to the bottom of the panel, OVERLAYING the content that scrolls past
+   beneath it, so clear and download are reachable without scrolling to the end
+   of a long tab.
+ *
+ * `position: sticky` with `bottom: 0` rather than `fixed`: sticky stays inside
+ * the sidebar's scroll container, so it keeps the panel's width and moves with
+ * the drawer when it opens and closes. A fixed footer would have to re-derive
+ * both, and would still be sitting there when the drawer was shut.
+ *
+ * The negative margins let the bar span the panel's padding, so content passes
+ * under a full-width edge rather than beside a floating strip. */
 .room-tab-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
 
-  margin-top: auto;
-  padding-top: 0.5rem;
+  margin: auto -1rem -1rem;
+  padding: 0.6rem 1rem;
 
-  border-top: 1px solid var(--border-color);
+  /* A deliberately heavy rule: this is the boundary between "the tab" and "the
+     actions", and it has to read as an edge over moving content. */
+  border-top: 3px solid var(--border-color);
+
+  background: var(--panel-background);
 }
 
-/* The destructive action reads red so it isn't fired absent-mindedly. */
+/* The destructive action reads red so it isn't fired absent-mindedly. Uses the
+   theme's danger colour rather than the hardcoded hex it used to carry, which
+   was the same red in both themes and too dark to read on the dark surface. */
 .room-clear:not(:disabled) {
-  border-color: #b42318;
-  color: #b42318;
+  border-color: var(--danger-color);
+  color: var(--danger-color);
+}
+
+/* The footer sits at the bottom-right of the sidebar, so its buttons' tooltips
+   must open UPWARD (not off the bottom of the viewport) and grow away from the
+   nearest edge: clear (left) grows right, download (right) grows left — instead
+   of the default centered-below tooltip that ran off the bottom and right. */
+.room-tab-footer .icon-button-tooltip {
+  top: auto;
+  bottom: calc(100% + 0.35rem);
+}
+.room-tab-footer .room-clear .icon-button-tooltip {
+  left: 0;
+  right: auto;
+  transform: none;
+}
+.room-tab-footer .icon-button:not(.room-clear) .icon-button-tooltip {
+  left: auto;
+  right: 0;
+  transform: none;
+}
+
+.room-change-row input:hover {
+  border-color: var(--accent-color);
 }

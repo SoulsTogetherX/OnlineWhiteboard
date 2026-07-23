@@ -2,7 +2,7 @@
   display: grid;
   gap: 18px;
 
-  width: min(420px, calc(100vw - 64px));
+  width: min(420px, 100%);
 }
 
 .color-picker-header {
@@ -24,7 +24,7 @@
 
   margin: 4px 0 0;
 
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 }
 
 .color-preview {
@@ -72,7 +72,7 @@
   border: 1px solid hsl(from var(--border-color) h s l / 0.2);
   border-radius: 8px;
 
-  background: var(--popup-background);
+  background: var(--surface-background);
 }
 
 .rgba-grid {
@@ -105,7 +105,7 @@
 .color-picker-heading p {
   margin: 4px 0 0;
 
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.86em;
 }
@@ -117,7 +117,7 @@
 }
 
 .swatch-row-label {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.72em;
   font-weight: 600;
@@ -126,7 +126,7 @@
 }
 
 .swatch-row-empty {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
 
   font-size: 0.82em;
 }
@@ -185,7 +185,7 @@
   border-radius: 50%;
 
   background: var(--text-color);
-  color: var(--popup-background);
+  color: var(--surface-background);
 
   font-size: 12px;
   line-height: 1;
@@ -202,6 +202,21 @@
   display: flex;
   align-items: center;
   gap: 10px;
+
+  /* Pinned to the foot of the dialog's scroll area. On a short screen the
+     picker is taller than the window, and Cancel/Apply are the last things in
+     it — so without this you had to scroll past every swatch to commit a colour
+     you had already chosen. The negative margin + padding let the sticky bar
+     span the dialog's padding, so content scrolls under it rather than beside
+     it. */
+  position: sticky;
+  bottom: -20px;
+  z-index: 1;
+
+  margin: 0 -20px -20px;
+  padding: 10px 20px 20px;
+
+  background: var(--surface-background);
 }
 
 .color-popup-spacer {
@@ -217,7 +232,7 @@
   border-radius: 8px;
 
   color: var(--text-color);
-  background: var(--popup-background);
+  background: var(--surface-background);
 
   cursor: pointer;
 }
@@ -236,7 +251,7 @@
   border-radius: 8px;
 
   color: var(--text-color);
-  background: var(--popup-background);
+  background: var(--surface-background);
 
   text-align: center;
 
@@ -247,5 +262,29 @@
   border-color: var(--accent-color);
   background: var(--accent-color);
 
-  color: var(--popup-background);
+  color: var(--surface-background);
+}
+
+/* Short viewports — a laptop with the browser chrome open, or a phone in
+   landscape. The dialog already scrolls rather than overflowing; this keeps it
+   from NEEDING to scroll by tightening the parts that are pure breathing room. */
+@media (max-height: 720px) {
+  .color-picker-module {
+    gap: 10px;
+  }
+
+  .rgba-grid,
+  .hex-picker-row,
+  .rgba-control {
+    gap: 8px;
+  }
+
+  .color-preview {
+    width: 44px;
+    height: 44px;
+  }
+
+  .hex-picker-row input[type="color"] {
+    height: 32px;
+  }
 }

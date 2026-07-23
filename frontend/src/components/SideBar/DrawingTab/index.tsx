@@ -1,10 +1,15 @@
 //#region Imports
+import { useEffect } from "react"
 import IconButton from "@/components/IconButton"
 
 import ToolPicker from "./ToolPicker"
 import ColorControls from "./ColorControls"
 import StrokePanel from "./StrokePanel"
+import SprayPanel from "./SprayPanel"
+import BlurPanel from "./BlurPanel"
 import { toolById } from "./tools"
+import { CYCLE_SLIDER_LABEL } from "@/hooks/useKeymap"
+import { refreshWheelTargetMark } from "@/utils/recentSlider"
 import type { AppTool } from "./tools"
 
 import type { ColorPalette } from "@shared/types/primitive"
@@ -44,6 +49,16 @@ export interface DrawingTabProps {
   onSelectTool: (tool: AppTool) => void
   strokeSize: number
   onStrokeSizeChange: (size: number) => void
+  sprayDensity: number
+  onSprayDensityChange: (density: number) => void
+  blurBlend: number
+  onBlurBlendChange: (blend: number) => void
+  blurOpacity: number
+  onBlurOpacityChange: (opacity: number) => void
+  lockAlpha: boolean
+  onLockAlphaChange: (locked: boolean) => void
+  stabilization: number
+  onStabilizationChange: (strength: number) => void
   colorPalette: React.RefObject<ColorPalette>
   onSwap: () => void
   openColorPopup: (primary: boolean) => void
@@ -61,6 +76,16 @@ export default function DrawingTab({
   onSelectTool,
   strokeSize,
   onStrokeSizeChange,
+  sprayDensity,
+  onSprayDensityChange,
+  blurBlend,
+  onBlurBlendChange,
+  blurOpacity,
+  onBlurOpacityChange,
+  lockAlpha,
+  onLockAlphaChange,
+  stabilization,
+  onStabilizationChange,
   colorPalette,
   onSwap,
   openColorPopup,
@@ -70,6 +95,13 @@ export default function DrawingTab({
   canRedo,
 }: DrawingTabProps) {
   const activeTool = toolById(selectedTool)
+
+  // After the panel for this tool has rendered, make sure the wheel has a target
+  // — the first slider, unless one is already marked. In an effect because it
+  // reads the DOM the render just produced.
+  useEffect(() => {
+    refreshWheelTargetMark()
+  }, [selectedTool])
 
   return (
     <div className="drawing-tab">
@@ -101,11 +133,44 @@ export default function DrawingTab({
         openColorPopup={openColorPopup}
       />
 
-      {/* Contextual: only the stroke-based tools show the brush-size panel. */}
+      {/* Stated once, above every panel, rather than repeated on each slider —
+          and only when there is more than one slider to switch between. */}
+      {activeTool.sliderCount > 1 && (
+        <p className="drawing-tab-wheel-hint">
+          Press <kbd>{CYCLE_SLIDER_LABEL}</kbd> to switch focused slider
+        </p>
+      )}
+
+      {/* Contextual panels per tool: stroke width for pencil/eraser, size +
+          density for the spray. */}
       {activeTool.usesStroke && (
         <StrokePanel
           strokeSize={strokeSize}
           onStrokeSizeChange={onStrokeSizeChange}
+          stabilization={stabilization}
+          onStabilizationChange={onStabilizationChange}
+        />
+      )}
+      {activeTool.id === "blur" && (
+        <BlurPanel
+          strokeSize={strokeSize}
+          onStrokeSizeChange={onStrokeSizeChange}
+          blurBlend={blurBlend}
+          onBlurBlendChange={onBlurBlendChange}
+          blurOpacity={blurOpacity}
+          onBlurOpacityChange={onBlurOpacityChange}
+          lockAlpha={lockAlpha}
+          onLockAlphaChange={onLockAlphaChange}
+        />
+      )}
+      {activeTool.id === "spray" && (
+        <SprayPanel
+          strokeSize={strokeSize}
+          onStrokeSizeChange={onStrokeSizeChange}
+          sprayDensity={sprayDensity}
+          onSprayDensityChange={onSprayDensityChange}
+          stabilization={stabilization}
+          onStabilizationChange={onStabilizationChange}
         />
       )}
     </div>

@@ -1,39 +1,85 @@
 .tab-bar {
   display: flex;
+  flex-direction: column;
   flex-shrink: 0;
 
   border-bottom: 1px solid var(--border-color);
-  background-color: var(--toolbar-background);
+  background-color: var(--panel-background);
+}
+
+.tab-bar-list {
+  display: flex;
+}
+
+/* The track the sliding underline runs along. Both the indicator's width and its
+   offset are shares of this row, so the maths stays right if a tab is ever added
+   or removed. */
+.tab-bar-underline {
+  display: flex;
+
+  height: 2px;
+}
+
+.tab-bar-indicator {
+  height: 100%;
+
+  background-color: var(--accent-color);
+
+  /* Width and offset come from the component as percentages. */
+  transition: margin-inline-start 220ms cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
 }
 
 .tab-bar-button {
   flex: 1 1 0;
 
-  padding: 0.6rem 0.4rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.2rem;
+
+  padding: 0.5rem 0.4rem;
 
   border-bottom: 2px solid transparent;
 
   color: var(--text-color);
-  font-size: 0.9rem;
+  font-size: 0.8rem;
   text-align: center;
 
   cursor: pointer;
   user-select: none;
 }
 
+.tab-bar-icon {
+  display: inline-flex;
+}
+
+.tab-bar-icon svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  fill: currentColor;
+}
+
+/* Hover LIGHTENS the tab. It used to be a translucent grey overlay, which
+   darkens on a light theme — so hovering made a tab recede exactly where it
+   should have come forward. */
 .tab-bar-button:hover {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: var(--hover-background);
+}
+
+.tab-bar-button:active {
+  background-color: var(--active-background);
 }
 
 .tab-bar-button:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
 }
 
-/* The active tab reads as raised: it carries the accent underline and drops the
-   toolbar tint so it visually joins the panel below it. */
+/* The active tab reads as raised: it drops the toolbar tint so it visually joins
+   the panel below it. The underline is the sliding indicator above, not a border
+   here, so switching tabs moves one line instead of swapping two. */
 .tab-bar-button-active {
-  border-bottom-color: var(--accent-color);
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   font-weight: 600;
 }

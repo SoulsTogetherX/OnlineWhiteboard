@@ -1,8 +1,13 @@
 //#region Imports
+import { useRef } from "react"
+
 import useDrag from "./useDrag"
 import useDrawActions, { type OnCommitAction } from "../useDrawActions"
 
 import type { DrawAction, DrawInstruction } from "@shared/types/drawProtocol"
+import { createStabilizer } from "@/utils/stabilizer"
+
+import type { Stabilizer } from "@/utils/stabilizer"
 import type { ColorPalette } from "@shared/types/primitive"
 //#endregion
 
@@ -25,19 +30,52 @@ export default function useCanvasDrawing(
   disabledRef?: React.RefObject<boolean>,
   // Brush diameter, forwarded to the draw actions (read at gesture start).
   strokeSizeRef?: React.RefObject<number>,
+  // Spray density, forwarded to the draw actions (read at gesture start).
+  sprayDensityRef?: React.RefObject<number>,
+  blurSettingsRef?: React.RefObject<{
+    blend: number
+    opacity: number
+    lockAlpha: boolean
+  }>,
+  // True while the grabber tool is held — see isNavigating below.
+  grabbingRef?: React.RefObject<boolean>,
   // When true, this client is a viewer — block drawing entirely. The server
   // also rejects a viewer's draws, but blocking locally avoids strokes flashing
   // on the viewer's own canvas and then being reverted on the next resync.
   viewOnlyRef?: React.RefObject<boolean>,
+  // Stroke smoothing strength. Purely local: it changes WHERE the gesture
+  // reports the pointer to be, before any instruction is built (see
+  // utils/stabilizer), so nothing about the protocol changes.
+  stabilizationRef?: React.RefObject<number>,
 ): void {
+  // One stabilizer for the component's lifetime; it is reset at each gesture
+  // start rather than recreated, so there is no per-stroke allocation on a path
+  // that runs on every pointer event.
+  const stabilizer = useRef<Stabilizer | null>(null)
+  if (stabilizer.current === null) {
+    stabilizer.current = createStabilizer(stabilizationRef ?? { current: 0 })
+  }
+
   const [start, finish, motion, leave] = useDrawActions(
     canvasRef,
     onCommitAction,
     strokeSizeRef,
+    sprayDensityRef,
+    blurSettingsRef,
   )
 
   const isDisabled = () =>
     disabledRef?.current === true || viewOnlyRef?.current === true
+
+  // Shift is the navigate modifier (see useCanvasMotion): while it is held the
+  // pointer pans the board, so it must not also lay down paint. Checked per
+  // event rather than as a mode flag, so releasing shift mid-gesture behaves.
+  // Shift OR the grabber. The grabber is defined as "shift, latched on", so
+  // every place that asks "are we navigating?" has to consult both — otherwise a
+  // drag with the grabber pans AND paints, because the previously held brush is
+  // still what drawAction points at.
+  const isNavigating = (ev: PointerEvent) =>
+    ev.shiftKey || grabbingRef?.current === true
 
   // Each of these runs from a pointer event, so reading `.current` here is
   // correct — it picks up the tool and palette as they are at gesture time
@@ -48,14 +86,35 @@ export default function useCanvasDrawing(
     }
   }
 
+  const blocked = (ev: PointerEvent) => isDisabled() || isNavigating(ev)
+
+  // Smoothing applies only to the tools you DRAG. A bucket fill and an
+  // eyedropper act on the single pixel you clicked, so a lagging average would
+  // just put the click somewhere you did not aim.
+  const smooths = (type: string) =>
+    type === "pencil" || type === "eraser" || type === "spray"
+
+  const steady = (ev: PointerEvent): PointerEvent =>
+    smooths(drawAction.current.type)
+      ? (stabilizer.current as Stabilizer).step(ev)
+      : ev
+
   const onDrawStart = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(start(drawAction.current, colorPalette.current, ev))
+    blocked(ev)
+      ? undefined
+      : emit(
+          start(
+            drawAction.current,
+            colorPalette.current,
+            (stabilizer.current as Stabilizer).begin(ev),
+          ),
+        )
   const onDrawFinish = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(finish(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(finish(drawAction.current, steady(ev)))
   const onDrawMotion = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(motion(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(motion(drawAction.current, steady(ev)))
   const onDrawLeave = (ev: PointerEvent) =>
-    isDisabled() ? undefined : emit(leave(drawAction.current, ev))
+    blocked(ev) ? undefined : emit(leave(drawAction.current, steady(ev)))
 
   useDrag(
     canvasRef,

@@ -103,24 +103,29 @@ describe.skipIf(!DB_CONFIGURED)("canvasRepository (integration)", () => {
     expect([row.rgba[0], row.rgba[1]]).toEqual([0x1f, 0x8b])
   })
 
-  it("keeps only the latest snapshot when saved repeatedly", async () => {
+  it("keeps the base and head snapshots, pruning intermediate ones", async () => {
     const roomId = freshRoomId()
 
+    // The first save establishes the base (revision 1 here); later saves advance
+    // the head and prune the snapshots strictly between base and head.
     await saveCanvas(roomId, patternedCanvas(), 1, DEFAULT_CANVAS_DIMS)
     await saveCanvas(roomId, patternedCanvas(), 2, DEFAULT_CANVAS_DIMS)
     await saveCanvas(roomId, patternedCanvas(), 3, DEFAULT_CANVAS_DIMS)
 
-    // loadCanvas reads the newest revision...
+    // loadCanvas reads the newest revision (the head)...
     const loaded = await loadCanvas(roomId)
     expect(loaded.revision).toBe(3)
 
-    // ...and the superseded checkpoints were pruned, so exactly one row remains.
+    // ...and exactly two snapshots survive: the base (1) and the head (3), with
+    // the intermediate rolling snapshot (2) pruned. The base is what start-to-end
+    // playback replays forward from.
     const rows = await db
       .selectFrom("canvas_snapshots")
       .select("revision")
       .where("room_id", "=", roomId)
+      .orderBy("revision", "asc")
       .execute()
-    expect(rows).toEqual([{ revision: 3 }])
+    expect(rows).toEqual([{ revision: 1 }, { revision: 3 }])
   })
 
   it("creates and then advances the room's head revision on save", async () => {

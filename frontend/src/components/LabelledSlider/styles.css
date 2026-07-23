@@ -14,7 +14,7 @@
 }
 
 .labelled-slider-value {
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
   font-variant-numeric: tabular-nums;
 }
 
@@ -23,6 +23,6 @@
 }
 
 .labelled-slider input[type="range"]:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: 2px;
 }

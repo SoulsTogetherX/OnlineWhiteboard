@@ -4,5 +4,5 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
 }

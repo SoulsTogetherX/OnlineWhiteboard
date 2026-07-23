@@ -8,6 +8,7 @@ import {
   getPos,
   updateCanvas,
   withRecording,
+  withChangeCount,
   getLookAtMethod,
 } from "./helperProtocolMethods"
 
@@ -205,12 +206,20 @@ export function handleDrawLineLeave(
 ): LineInstruction | null {
   return handleDraw(canvas, base, da, ev, dims, record)
 }
+// Returns how many pixels the line actually CHANGED, so a caller can tell a real
+// stroke from one that repainted a colour over itself. See withChangeCount.
 export function handleDrawLineInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: LineInstruction,
   dims: CanvasDims,
-): void {
-  const drawer = getDrawerMethod(inst.type, pixels)
+): number {
+  const counter = { changed: 0 }
+  const drawer = withChangeCount(
+    getLookAtMethod(inst.type, pixels),
+    getDrawerMethod(inst.type, pixels),
+    counter,
+  )
   setPixelLine(inst, inst.color ?? DEFAULT_COLOR, drawer, dims, inst.size)
+  return counter.changed
 }
 //#endregion

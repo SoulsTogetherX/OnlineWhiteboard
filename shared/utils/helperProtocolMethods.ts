@@ -1,5 +1,6 @@
 //#region Imports
 import { DEFAULT_COLOR, canvasBytes } from "../constants/canvas"
+import { colorsEqual } from "../types/primitive"
 
 import type { CanvasDims } from "../constants/canvas"
 
@@ -310,6 +311,65 @@ export function withRecording(
     sink.push({ idx, from: getColor(idx), to: color })
     setColor(idx, color)
   }
+}
+
+// Wraps a setColor callback so it also counts how many writes actually CHANGED
+// a pixel. The counter is an object because the wrapper has to mutate something
+// its caller can read afterwards.
+//
+// This is what lets an instruction say "I did nothing". Drawing black over black
+// writes pixels and changes none of them, and without this the server had no way
+// to tell that apart from real work: it bumped the revision, logged the event and
+// broadcast it, so the timeline filled with steps that render no visible change.
+export function withChangeCount(
+  getColor: PixelColorMethod,
+  setColor: PixelInteractionMethod,
+  counter: { changed: number },
+): PixelInteractionMethod {
+  return (idx: number, color: ColorType): void => {
+    if (!colorsEqual(getColor(idx), color)) {
+      counter.changed += 1
+    }
+    setColor(idx, color)
+  }
+}
+
+// Collapses a gesture's raw recording into the patch that undoes it: one entry
+// per pixel, holding the colour it had before the gesture started and the colour
+// it ended on, with untouched-in-net pixels dropped entirely.
+//
+// This is required, not an optimisation. withRecording appends one entry per
+// WRITE, and a brush repaints the same pixels on every pointermove — so a stroke
+// that covers the canvas records several times more entries than the canvas has
+// pixels. Patch validation caps entries at width * height, so the undo for a big
+// stroke failed that check and was rejected: undo lit up, did nothing, and said
+// nothing. Coalescing keeps the recording bounded by the only thing that
+// actually bounds it — how many distinct pixels the gesture touched.
+//
+// Dropping from-equals-to entries matters for the same reason it matters for a
+// bucket fill that finds the colour already there: a pixel the gesture left
+// exactly as it found it was never changed, so undoing it is a no-op that would
+// otherwise be logged, broadcast and replayed for nothing.
+export function coalesceRecording(entries: PatchEntry[]): PatchEntry[] {
+  // Map keeps first-insertion order, so the result stays in first-touch order.
+  const byPixel = new Map<number, PatchEntry>()
+  for (const entry of entries) {
+    const seen = byPixel.get(entry.idx)
+    if (seen) {
+      // Keep the ORIGINAL `from` — that is the colour undo has to restore.
+      seen.to = entry.to
+    } else {
+      byPixel.set(entry.idx, { idx: entry.idx, from: entry.from, to: entry.to })
+    }
+  }
+
+  const coalesced: PatchEntry[] = []
+  for (const entry of byPixel.values()) {
+    if (!colorsEqual(entry.from, entry.to)) {
+      coalesced.push(entry)
+    }
+  }
+  return coalesced
 }
 //#endregion
 

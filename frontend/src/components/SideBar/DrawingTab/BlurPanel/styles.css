@@ -1,0 +1,13 @@
+.blur-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+/* Lock alpha is the one control here whose effect is invisible until you use it
+   near an edge, so it gets a line of explanation the sliders do not need. */
+.blur-panel-hint {
+  margin: 0;
+  color: var(--muted-text-color);
+  font-size: 0.75rem;
+}

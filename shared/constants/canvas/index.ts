@@ -27,10 +27,14 @@ const DEFAULT_CANVAS_DIMS: CanvasDims = {
 //     worst-case patch (a full-canvas undo is one entry per pixel), which is
 //     what sets the socket maxPayload. Raising it costs memory and loosens that
 //     ceiling; see backend/src/server.ts.
-//   - MIN keeps a canvas from being degenerate (a 1x1 board is not a board) and
-//     stops a resize request asking for zero or negative dimensions.
+//   - MIN only stops a resize asking for zero or negative dimensions. 1x1 is
+//     allowed: it is a legal, if eccentric, board, and there is no technical
+//     reason to forbid it. This number MUST match the rooms_dimension_bounds
+//     CHECK in the initial migration — when they disagreed (16 in the database,
+//     4 here) every resize in between was accepted by the client and then failed
+//     server-side, which is why an out-of-range resize appeared to do nothing.
 const MAX_CANVAS_DIMENSION = 512
-const MIN_CANVAS_DIMENSION = 16
+const MIN_CANVAS_DIMENSION = 1
 
 // The dimensions the SOCKET ENVELOPE validates coordinates against, before the
 // room's actual (possibly smaller) size is known. Its only job there is to stop
@@ -86,6 +90,18 @@ const MAX_STROKE_SIZE = 32
 // a thousand pixels per puff and turn one message into a fill.
 const MAX_SPRAY_RADIUS = 40
 const MAX_SPRAY_DENSITY = 64
+
+// Blur. `blend` is the kernel radius — how far each pixel samples for its
+// average — and it is capped low on purpose: cost is O(area x kernel-area), so a
+// generous-looking 16 would be ~64x the work of 2 for a result that is visually
+// indistinguishable from "completely smeared". 8 already reaches that point.
+const MAX_BLUR_BLEND = 8
+const DEFAULT_BLUR_BLEND = 2
+// Percent of the blurred value mixed in. Defaulting below 100 makes the tool
+// build up with repeated passes rather than flattening an area on first contact,
+// which is what people expect from a smudge.
+const MAX_BLUR_OPACITY = 100
+const DEFAULT_BLUR_OPACITY = 60
 //#endregion
 
 //#region Patch
@@ -120,6 +136,10 @@ export {
   MAX_STROKE_SIZE,
   MAX_SPRAY_RADIUS,
   MAX_SPRAY_DENSITY,
+  MAX_BLUR_BLEND,
+  DEFAULT_BLUR_BLEND,
+  MAX_BLUR_OPACITY,
+  DEFAULT_BLUR_OPACITY,
   MAX_PATCH_ENTRIES,
 }
 //#endregion

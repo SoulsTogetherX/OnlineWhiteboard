@@ -4,9 +4,10 @@ import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import { db } from "../pool"
-import { loadCanvas, saveCanvas } from "../canvasRepository"
+import { loadBaseCanvas, loadCanvas, saveCanvas } from "../canvasRepository"
 import {
   appendDrawEvents,
+  decimateRoomHistory,
   ensureRoom,
   loadEventsSince,
   type DrawEvent,
@@ -78,12 +79,15 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
     expect(remaining.map((e) => e.revision)).toEqual([4, 5])
   })
 
-  it("keeps the event log bounded across many checkpoints", async () => {
+  it("retains the full event history above the base across many saves", async () => {
     const roomId = freshRoomId()
     await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
+    // Seed the genesis base at revision 0 (as loadRoom does for a new room), so
+    // the timeline replays from the start and nothing above it is pruned.
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 0, DEFAULT_CANVAS_DIMS)
 
     let revision = 0
-    // Simulate 10 rounds of "draw 20 strokes, then checkpoint".
+    // Simulate 10 rounds of "draw 20 strokes, then roll a snapshot".
     for (let round = 0; round < 10; round += 1) {
       const batch: DrawEvent[] = []
       for (let i = 0; i < 20; i += 1) {
@@ -92,15 +96,71 @@ describe.skipIf(!DB_CONFIGURED)("event-log compaction (integration)", () => {
       }
       await appendDrawEvents(roomId, batch)
       await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), revision, DEFAULT_CANVAS_DIMS)
-
-      // After each checkpoint the log is empty — everything drawn this round was
-      // folded into the snapshot. It never grows with total drawing, only with
-      // drawing-since-last-checkpoint.
-      expect(await eventCount(roomId)).toBe(0)
     }
 
-    // 200 strokes drawn, zero events retained.
-    expect(await eventCount(roomId)).toBe(0)
+    // All 200 strokes survive above the base — the log grows with total drawing
+    // now (start-to-end scrub), bounded only by uniform decimation (Stage 3), not
+    // by compaction.
+    expect(await eventCount(roomId)).toBe(200)
+
+    // Only two snapshots remain: the base (revision 0) and the head.
+    const snaps = await db
+      .selectFrom("canvas_snapshots")
+      .select("revision")
+      .where("room_id", "=", roomId)
+      .orderBy("revision", "asc")
+      .execute()
+    expect(snaps).toEqual([{ revision: 0 }, { revision }])
+  })
+
+  it("keeps a genesis base to replay from AND a head to recover from", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 0, DEFAULT_CANVAS_DIMS)
+    await appendDrawEvents(roomId, [event(1), event(2), event(3)])
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 3, DEFAULT_CANVAS_DIMS)
+
+    const base = await loadBaseCanvas(roomId)
+    const head = await loadCanvas(roomId)
+    expect(base?.revision).toBe(0) // start-to-end playback replays forward from here
+    expect(head.revision).toBe(3) // recovery reads from here
+    // The whole span stays available after the base for scrubbing.
+    expect((await loadEventsSince(roomId, 0)).map((e) => e.revision)).toEqual([
+      1, 2, 3,
+    ])
+  })
+
+  it("uniformly decimates the retained log past the cap, sparing recovery", async () => {
+    const roomId = freshRoomId()
+    await ensureRoom(roomId, DEFAULT_CANVAS_DIMS)
+    await saveCanvas(roomId, new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS)), 0, DEFAULT_CANVAS_DIMS)
+
+    // 100 events, then a head snapshot that bakes them all in.
+    const canvas = new Uint8ClampedArray(canvasBytes(DEFAULT_CANVAS_DIMS))
+    const batch: DrawEvent[] = []
+    for (let r = 1; r <= 100; r += 1) {
+      applyDrawInstructionToCanvas(canvas, pencilAt(r), DEFAULT_CANVAS_DIMS)
+      batch.push(evAt(r))
+    }
+    await appendDrawEvents(roomId, batch)
+    await saveCanvas(roomId, canvas, 100, DEFAULT_CANVAS_DIMS)
+    expect(await eventCount(roomId)).toBe(100) // fully retained before decimation
+
+    // Thin to 10.
+    await decimateRoomHistory(roomId, 100, 10)
+
+    const survivors = (await loadEventsSince(roomId, 0)).map((e) => e.revision)
+    expect(survivors.length).toBeLessThanOrEqual(10)
+    expect(survivors[0]).toBe(1) // first event kept (scrub start)
+    expect(survivors[survivors.length - 1]).toBe(100) // last event kept (scrub end)
+    const gaps = survivors.slice(1).map((r, i) => r - survivors[i])
+    expect(Math.max(...gaps) - Math.min(...gaps)).toBeLessThanOrEqual(1) // even
+
+    // Recovery is untouched — decimation only deleted events baked into the head
+    // snapshot, so the head still holds the exact canvas.
+    const stored = await loadCanvas(roomId)
+    expect(stored.revision).toBe(100)
+    expect(Array.from(stored.pixels)).toEqual(Array.from(canvas))
   })
 
   it("still recovers the exact canvas after compaction (snapshot + surviving events)", async () => {

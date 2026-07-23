@@ -71,24 +71,60 @@ export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
   }
 }
 
-// Writes a checkpoint AND compacts the event log. In one transaction it: ensures
-// the room exists, stores the pixel buffer at this revision, keeps only the
-// latest snapshot, and deletes every draw_event the new snapshot now
-// supersedes. Doing all of it atomically is what makes it crash-safe — a crash
-// mid-save can never leave a room without a snapshot, two snapshots both
-// claiming to be current, or (the compaction hazard) events deleted before the
-// snapshot that replaced them was durably committed.
-// `retainEventsAfter` is the compaction floor for the event log: events with a
-// revision GREATER than it are kept even though the snapshot supersedes them.
-// The room manager passes the oldest checkpoint's revision here, which is what
-// lets history be replayed forward from any checkpoint. null (no checkpoints) =
-// prune everything the snapshot covers, the original bounded behaviour.
+// Loads a room's GENESIS base snapshot — the EARLIEST one, which the timeline
+// replays forward from for start-to-end playback. Mirror of loadCanvas, which
+// loads the latest/head snapshot for recovery. Returns null for a room with no
+// snapshot at all (a brand-new room before its base is seeded) or an unreadable
+// base row, so the caller can fall back.
+export async function loadBaseCanvas(
+  roomId: string,
+): Promise<StoredCanvas | null> {
+  const row = await db
+    .selectFrom("canvas_snapshots")
+    .select(["rgba", "revision", "width", "height"])
+    .where("room_id", "=", roomId)
+    .orderBy("revision", "asc")
+    .limit(1)
+    .executeTakeFirst()
+
+  if (!row) {
+    return null
+  }
+
+  const dims = { width: row.width, height: row.height }
+  const pixels = unpackPixels(row.rgba, dims)
+  if (pixels === null) {
+    return null
+  }
+
+  return { pixels, revision: row.revision, width: dims.width, height: dims.height }
+}
+
+// Writes a snapshot AND maintains the retained history. In one transaction it:
+// ensures the room exists, stores the pixel buffer at this revision, keeps the
+// right snapshots, and prunes the draw_events the retained history no longer
+// needs. Doing all of it atomically is what makes it crash-safe — a crash
+// mid-save can never leave a room without a snapshot or events deleted before
+// the snapshot that replaced them was durably committed.
+//
+// Two snapshots are kept per room: the genesis BASE (earliest) and the HEAD
+// (this revision). Recovery reads the head + events after it; start-to-end
+// playback reads the base + events after it — so every event after the base is
+// retained (the span is bounded separately by uniform decimation, see
+// saveRoom/historyDecimation). Anything at or below the base is baked into the
+// base snapshot, so pruning it is safe.
+//
+// `resetBase = true` collapses to a single snapshot: it prunes all older
+// snapshots AND all events this snapshot supersedes, making this revision the
+// new base+head. Only a RESIZE uses it — old-canvas-coordinate events cannot
+// replay onto the new buffer, so the timeline restarts at the resize (the
+// Phase 4 hard history boundary).
 export async function saveCanvas(
   roomId: string,
   pixels: Uint8ClampedArray,
   revision: number,
   dims: CanvasDims,
-  retainEventsAfter: number | null = null,
+  resetBase = false,
 ): Promise<void> {
   // Gzipped for storage — see pixelStorage.ts. Captured before the transaction
   // so the compressed bytes match the revision being written, even though live
@@ -140,34 +176,53 @@ export async function saveCanvas(
       )
       .execute()
 
-    // Prune superseded checkpoints — a snapshot is only a recovery shortcut, so
-    // only the newest is worth keeping. Without this, every 15s save would leak
-    // another full-canvas row forever.
+    if (resetBase) {
+      // RESET (resize): this snapshot becomes the sole snapshot — the new
+      // base+head — and every event it supersedes is dropped, because they are
+      // in old-canvas coordinates and cannot replay onto the new buffer.
+      await trx
+        .deleteFrom("canvas_snapshots")
+        .where("room_id", "=", roomId)
+        .where("revision", "<", revision)
+        .execute()
+      await trx
+        .deleteFrom("draw_events")
+        .where("room_id", "=", roomId)
+        .where("revision", "<=", revision)
+        .execute()
+      return
+    }
+
+    // Keep the genesis BASE (earliest snapshot) and the HEAD (this revision);
+    // prune the snapshots strictly between them — intermediate rolling snapshots
+    // are only recovery shortcuts, and the base + head are the two we replay from
+    // (playback from the base, recovery from the head).
+    const baseRow = await trx
+      .selectFrom("canvas_snapshots")
+      .select("revision")
+      .where("room_id", "=", roomId)
+      .orderBy("revision", "asc")
+      .limit(1)
+      .executeTakeFirst()
+    // No earlier snapshot (a first save with no seeded base) → this revision is
+    // itself the base, so nothing before it is retained.
+    const baseRevision = baseRow?.revision ?? revision
+
     await trx
       .deleteFrom("canvas_snapshots")
       .where("room_id", "=", roomId)
+      .where("revision", ">", baseRevision)
       .where("revision", "<", revision)
       .execute()
 
-    // COMPACTION. Every event at or below the snapshot revision is baked into
-    // the snapshot, so recovery ("latest snapshot + events after it") never needs
-    // them. Normally we delete all of them, bounding the log.
-    //
-    // BUT for time-travel we keep the events newer than the oldest checkpoint, so
-    // history can be replayed forward from that checkpoint. The prune ceiling is
-    // therefore min(revision, oldest-checkpoint-revision): with no checkpoints it
-    // stays `revision` (fully bounded); with checkpoints it drops to the oldest
-    // one, retaining the events between it and now. Storage is then bounded by
-    // how far back the oldest checkpoint is — which an editor controls by
-    // deleting old checkpoints. Atomic with the snapshot write, as before.
-    const pruneCeiling =
-      retainEventsAfter === null
-        ? revision
-        : Math.min(revision, retainEventsAfter)
+    // COMPACTION. Everything at or below the base is baked into the base
+    // snapshot, so neither recovery nor playback needs it. Retain every event
+    // ABOVE the base so the timeline replays start-to-end; its growth is bounded
+    // separately by uniform decimation (saveRoom).
     await trx
       .deleteFrom("draw_events")
       .where("room_id", "=", roomId)
-      .where("revision", "<=", pruneCeiling)
+      .where("revision", "<=", baseRevision)
       .execute()
   })
 }

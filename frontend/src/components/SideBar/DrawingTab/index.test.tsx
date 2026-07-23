@@ -18,6 +18,16 @@ function renderTab(overrides: Partial<Parameters<typeof DrawingTab>[0]> = {}) {
     onSelectTool: vi.fn(),
     strokeSize: 4,
     onStrokeSizeChange: vi.fn(),
+    sprayDensity: 16,
+    onSprayDensityChange: vi.fn(),
+    blurBlend: 2,
+    onBlurBlendChange: vi.fn(),
+    blurOpacity: 60,
+    onBlurOpacityChange: vi.fn(),
+    lockAlpha: false,
+    onLockAlphaChange: vi.fn(),
+    stabilization: 0,
+    onStabilizationChange: vi.fn(),
     colorPalette,
     onSwap: vi.fn(),
     openColorPopup: vi.fn(),
@@ -33,13 +43,16 @@ function renderTab(overrides: Partial<Parameters<typeof DrawingTab>[0]> = {}) {
 describe("DrawingTab", () => {
   it("shows the stroke panel for a stroke tool (pencil)", () => {
     renderTab({ selectedTool: "pencil" })
-    expect(screen.getByRole("slider")).toBeInTheDocument()
     expect(screen.getByText("Brush size")).toBeInTheDocument()
+    // Stabilization rides along with every tool you drag, not just the spray.
+    expect(screen.getByText("Stabilization")).toBeInTheDocument()
   })
 
   it("hides the stroke panel for a non-stroke tool (bucket)", () => {
+    // A fill acts on the pixel you click, so neither size nor smoothing applies.
     renderTab({ selectedTool: "bucket" })
     expect(screen.queryByRole("slider")).not.toBeInTheDocument()
+    expect(screen.queryByText("Stabilization")).not.toBeInTheDocument()
   })
 
   it("reflects undo/redo availability", () => {

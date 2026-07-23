@@ -1,5 +1,6 @@
 //#region Imports
 import { db } from "./pool"
+import { selectDecimatedSurvivors } from "./historyDecimation"
 
 import type { CanvasDims } from "@shared/constants/canvas"
 import type { DrawInstruction } from "@shared/types/drawProtocol"
@@ -98,5 +99,81 @@ export async function loadEventsSince(
     revision: row.revision,
     instruction: row.instruction,
   }))
+}
+//#endregion
+
+//#region Decimation support
+// How many events are retained above a revision — the size of the timeline span,
+// used to decide whether it has grown past the decimation cap.
+export async function countEvents(
+  roomId: string,
+  sinceRevision: number,
+): Promise<number> {
+  const row = await db
+    .selectFrom("draw_events")
+    .select((eb) => eb.fn.countAll<string>().as("count"))
+    .where("room_id", "=", roomId)
+    .where("revision", ">", sinceRevision)
+    .executeTakeFirst()
+  return Number(row?.count ?? 0)
+}
+
+// The revisions of the retained span (baseRevision, upToRevision], ascending —
+// just the revisions, not the (heavy) instruction payloads, since decimation
+// only needs to choose which ones to keep. `upToRevision` is bounded to the head
+// snapshot so decimation can never touch the recovery tail (events past it).
+export async function loadEventRevisions(
+  roomId: string,
+  sinceRevision: number,
+  upToRevision: number,
+): Promise<number[]> {
+  const rows = await db
+    .selectFrom("draw_events")
+    .select("revision")
+    .where("room_id", "=", roomId)
+    .where("revision", ">", sinceRevision)
+    .where("revision", "<=", upToRevision)
+    .orderBy("revision", "asc")
+    .execute()
+  return rows.map((row) => row.revision)
+}
+
+// Deletes the given revisions for a room — the non-survivors chosen by uniform
+// decimation. A no-op for an empty list.
+export async function deleteEvents(
+  roomId: string,
+  revisions: number[],
+): Promise<void> {
+  if (revisions.length === 0) {
+    return
+  }
+  await db
+    .deleteFrom("draw_events")
+    .where("room_id", "=", roomId)
+    .where("revision", "in", revisions)
+    .execute()
+}
+
+// Thin the retained event log to `cap` entries once it has grown past it (§16
+// uniform decimation). Operates STRICTLY within (0, headRevision]: since
+// saveCanvas prunes everything at or below the base, that range IS the retained
+// timeline, and every event in it is baked into the head snapshot — so this can
+// never touch the recovery tail (events past head) and is decoupled from
+// durability. The count gate keeps the common case (under cap) to a single cheap
+// COUNT; only an over-cap room pays for the load + delete.
+export async function decimateRoomHistory(
+  roomId: string,
+  headRevision: number,
+  cap: number,
+): Promise<void> {
+  if ((await countEvents(roomId, 0)) <= cap) {
+    return
+  }
+  const revisions = await loadEventRevisions(roomId, 0, headRevision)
+  const survivors = new Set(selectDecimatedSurvivors(revisions, cap))
+  await deleteEvents(
+    roomId,
+    revisions.filter((revision) => !survivors.has(revision)),
+  )
 }
 //#endregion

@@ -6,73 +6,101 @@
 
 # Online Whiteboard
 
-A real-time collaborative whiteboard web app where users can draw on a shared canvas and see updates broadcast live to everyone in the same room.
-Built for desktop and mobile, with tools for freehand drawing, filling areas, and real-time collaboration.
+A real-time collaborative whiteboard. People join a **room** by name and draw together on a
+shared canvas — every stroke appears on everyone's screen live, with their cursors moving in
+real time. It works across devices (open the same room on a laptop and a phone), keeps a
+durable per-room canvas that survives server restarts, and offers optional accounts with
+room ownership, a saved colour palette, and a scrubbable history of how each canvas was
+drawn.
 
-<img width="1920" height="882" alt="Example Image" src="https://github.com/user-attachments/assets/764d1d05-62f6-45a1-9438-43840e77acf6" />
+<img width="1920" height="882" alt="The whiteboard in use" src="https://github.com/user-attachments/assets/764d1d05-62f6-45a1-9438-43840e77acf6" />
+
+> The screenshots in this README predate the current UI (lobby, grouped sidebar, dark mode)
+> and are worth recapturing.
 
 ## Features
 
-* Real-time shared drawing across users in the same room
-* **Live presence** — see who else is in the room and their cursors moving in real time
-* **Accounts** (optional) — draw as a guest, or sign in to get a persistent identity and a
-  saved colour palette that follows you across devices
-* **Full colour picker** — visual hue/saturation/value picker, recent colours, a saved
-  palette, and an eyedropper that samples from the canvas
-* Undo/redo that is safe under concurrent editing
-* Durable canvases — survive server restarts and hard crashes with sub-second data loss
-* Desktop and mobile-friendly interface
-* Responsive UI for collaborative use
+**Drawing**
 
-## Tech Stack
+* Real-time shared drawing across everyone in the same room, with live cursors that show
+  each person's current tool
+* A full tool set: **grab** (pan/zoom), **pencil**, **eraser**, **fill** (flood fill),
+  **spray**, **blur**, and an **eyedropper** that samples a colour off the canvas
+* Adjustable brush **size**, spray **density**, and pointer **stabilization** (smoothing) —
+  a live dotted outline previews exactly which pixels a tool will change
+* A full **colour picker** — hue/saturation/value, recent colours, a saved palette, and
+  primary/secondary colours you can swap
+* **Undo / redo that is safe under concurrent editing** — undoing never clobbers a
+  collaborator's later work
+* **Export** the canvas as PNG, WebP, JPEG, or Bitmap
+* Per-room **canvas resize**, light/**dark mode**, and a desktop + mobile layout
 
-* Frontend: React + Vite
-* Backend: Express + Node.js + WebSockets (`ws`)
-* Auth: email + password (scrypt-hashed) with httpOnly cookie sessions stored server-side
-* Database: PostgreSQL, accessed with [Kysely](https://kysely.dev/) (typed SQL query builder)
-  and evolved through a tracked, ordered migration system
-* Language: TypeScript
-* Deployment: Docker (multi-stage) + nginx
+**Rooms, accounts & history**
 
-## Requirements
+* **Live presence** — see who else is in the room
+* **Accounts (optional)** — draw as a guest, or sign in for a persistent identity and a
+  saved palette that follows you across devices. Registration screens passwords against
+  known breaches, and email addresses are encrypted at rest
+* **Ownership & roles** — claim an unowned room to become its owner; owners control who may
+  draw (open editing on/off), resize or clear the canvas, and promote members. Editors draw
+  and manage history; viewers are read-only
+* **Timeline** — save named **checkpoints**, restore the canvas to one, and **scrub** the
+  whole drawing back to front like a recording
+* **Durable canvases** — survive server restarts and hard crashes with sub-second data loss
 
-* Docker Desktop or Docker Engine
+## Tech stack
 
-## Running the project
+* **Frontend:** React + Vite (TypeScript), served in production as a static bundle by nginx
+* **Backend:** Node.js + Express + WebSockets (`ws`), compiled to a single bundle with esbuild
+* **Shared:** the drawing protocol and pixel algorithms live in `shared/` and run on **both**
+  sides — one implementation, so the server and every client stay pixel-identical
+* **Database:** PostgreSQL via [Kysely](https://kysely.dev/) (typed SQL), with ordered
+  migrations that run automatically on startup
+* **Auth:** email + password (scrypt), httpOnly cookie sessions stored server-side as
+  hashes, a breached-password (HIBP k-anonymity) check, and email-at-rest encryption
+* **Deployment:** Docker (multi-stage) + nginx; one health endpoint at `GET /api/health`
 
-The project ships two stacks: a **development** stack with hot reload, and a **production**
-stack that serves an optimized build behind nginx.
+A deep, file-by-file explanation of *how and why* every part works — the crypto and what it
+defends against, the convergence model, the event-sourced recovery, the compression, the
+permission model — lives in **`CLAUDE.md`** at the repository root.
 
-Both read configuration from a single `.env` file at the repository root.
+---
+
+## Running it locally
+
+You need **Docker** (Desktop or Engine). Everything runs in containers; you do not need
+Node installed to run the app.
 
 ### First-time setup
 
-1. Install [Docker Desktop](https://docs.docker.com/desktop/) and make sure it is running.
-2. Clone the repository.
-3. Copy `.env.example` to `.env`, then open it and set `POSTGRES_PASSWORD` to a password of
-   your choice. (`.env` is gitignored and never baked into an image.)
+1. Clone the repository.
+2. Copy `.env.example` to `.env`.
+3. Set `POSTGRES_PASSWORD` to any value. That is all you need for local development — the
+   email-at-rest secrets fall back to insecure dev defaults with a warning (see
+   [deployment](#deploying-online) for what production requires instead).
 
-### Development
+### Development (hot reload)
 
-Hot reload for both the frontend (Vite HMR) and the backend (`tsx watch`). Source is
-bind-mounted, so edits on your machine apply immediately inside the containers.
+Frontend (Vite HMR) and backend (`tsx watch`) both reload on save; your source is
+bind-mounted into the containers.
 
 ```bash
 docker compose up --build
 ```
 
-Open **http://localhost:5173**.
+Open **http://localhost:5173**, type a room name, and start drawing. Open the same URL and
+room in another tab, browser, or device on your network to collaborate.
 
 ```bash
-docker compose logs -f frontend   # follow logs for one service
+docker compose logs -f frontend   # follow one service's logs
 docker compose down               # stop (keeps saved canvases)
 docker compose down -v            # stop AND delete the database volume
 ```
 
-### Production
+### Production build (locally)
 
-Serves the minified, content-hashed Rollup bundle from nginx, with the backend compiled to
-a single JavaScript file and run as an unprivileged user.
+Serves the minified, content-hashed bundle from nginx with the backend compiled and run as
+an unprivileged user — the same images you would deploy.
 
 ```bash
 docker compose -f docker-compose.prod.yaml up --build -d
@@ -80,230 +108,247 @@ docker compose -f docker-compose.prod.yaml up --build -d
 
 Open **http://localhost:8080** (change with `PROD_PORT` in `.env`).
 
-```bash
-docker compose -f docker-compose.prod.yaml logs -f
-docker compose -f docker-compose.prod.yaml down
-```
-
-> Run one stack at a time. They use separate database volumes, so canvases drawn in
+> Run one stack at a time. They use **separate** database volumes, so canvases drawn in
 > development do not appear in production.
-
-**What the production stack does differently:**
 
 | | Development | Production |
 |---|---|---|
-| Frontend | Vite dev server, HMR, unminified | nginx serving a Rollup bundle (~69 KB gzipped) |
-| Backend | `tsx watch`, types stripped unchecked | `tsc --noEmit` + esbuild bundle, run as `node` user |
+| Frontend | Vite dev server, HMR | nginx serving a Rollup bundle |
+| Backend | `tsx watch`, types stripped unchecked | typechecked, esbuild bundle, run as `node` user |
 | `/api` + `/ws` proxy | Vite `server.proxy` | nginx `proxy_pass` |
 | Source on disk | bind-mounted | none — images are self-contained |
-| Exposed ports | 5173, 3000, 5432 | **8080 only** |
-| Image size | ~509 MB frontend | **~93 MB** frontend |
+| Exposed host ports | 5173, 3000, 5432 | **nginx only** (8080) |
+| Image size | ~500 MB frontend | ~50 MB frontend (nginx + static assets) |
 
-### Deploying to a server
+---
 
-The production stack is self-contained and runs anywhere Docker runs — a VPS, a
-DigitalOcean droplet, an EC2 instance, or any platform that accepts a `docker-compose.yaml`.
+## Deploying online
 
-The client connects to a **relative** `/ws` path rather than a hardcoded host, so the same
-built image works on any domain with no rebuild: whatever origin serves the page also
-proxies the WebSocket.
+The production stack runs anywhere Docker runs — a VPS, a droplet, an EC2 instance, or any
+platform that accepts a Compose file. Because the client connects to a **relative** `/ws`
+path (never a hardcoded host), the exact same image works on any domain with no rebuild:
+whatever origin serves the page also proxies the socket.
 
-To deploy:
+### 1. Set real secrets in `.env`
 
-1. Copy the repository (or just the compose file and Dockerfiles) to the host.
-2. Create `.env` there with a **strong** `POSTGRES_PASSWORD`.
-3. Set `PROD_PORT=80` (or keep 8080 and put a reverse proxy in front).
-4. `docker compose -f docker-compose.prod.yaml up --build -d`
+Production **will not start** with placeholder email secrets, and its session cookie is
+`Secure` (see step 3). Generate strong values:
 
-For a public deployment, terminate TLS in front of the stack — for example with
-[Caddy](https://caddyserver.com/) or nginx on the host, or Cloudflare. The app already
-upgrades `http:`→`ws:` and `https:`→`wss:` automatically based on the page's origin, so no
-code changes are needed to run behind HTTPS.
+```bash
+# a strong database password (any long random string)
+openssl rand -base64 24
 
-Health endpoint for load balancers and platform probes: **`GET /api/health`**.
+# the two email-at-rest secrets — each a 32-byte base64 key, and deliberately different
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # EMAIL_INDEX_PEPPER
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # EMAIL_ENCRYPTION_KEY
+```
 
-## How to use
+Set `POSTGRES_PASSWORD`, `EMAIL_INDEX_PEPPER`, and `EMAIL_ENCRYPTION_KEY` in `.env`. Keep
+`.env` off version control (it already is).
 
-<img width="1280" height="720" alt="Example Image with listed terms" src="https://github.com/user-attachments/assets/290d0ae9-1e0c-4656-8ac5-d4c1dcc76b9d" />
+### 2. Lock the origin allowlist to your domain
 
-### Terminology
-The "ToolBar" contains a list of tools that you can access to interact with the application in a variety of ways. It is open by default on desktop platforms. On mobile platforms, you can open it by pressing the hamburger button in the top-left.
+`ALLOWED_ORIGINS` is the CSRF / cross-site-WebSocket-hijacking allowlist. Set it to your
+real site origin(s), comma-separated — e.g. `ALLOWED_ORIGINS=https://draw.example.com`. A
+request whose `Origin` is not listed is rejected. (Left empty it fails *open* with a startup
+warning, which is fine for a private test box and wrong for a public one.)
 
-The "Room Selector" is where you can change rooms. Pressing it will open a popup, asking for a new room id to enter.
+### 3. Put HTTPS in front — this is required, not optional
 
-The "Tools" are the drawing/action buttons. Pressing one will change how you interact with the "Canvas". Hovering over them will reveal their name.
+The stack publishes plain HTTP on `PROD_PORT` (default 8080) and is designed to sit **behind
+a TLS-terminating reverse proxy**. Two reasons it must:
 
-The "Canvas" displays and allows users to edit the current room’s drawing.
+* The session cookie is `Secure` in production, so browsers only send it back over HTTPS. On
+  a real domain served over plain `http://`, logins silently fail to persist. (This is
+  correct hardening, not a bug — the fix is TLS, not disabling the flag.)
+* You want encrypted traffic for a public app regardless.
 
-The "Color Picker" allows you to switch between primary/secondary colors, or change the primary/secondary colors. Click on the Brush to swap the primary and secondary. Click on the colored rectangle to open a popup to change that color.
+The app already upgrades `https:` → `wss:` from the page's own origin, so **no code or config
+change is needed** to run behind HTTPS. The simplest turnkey option is
+[Caddy](https://caddyserver.com/), which obtains and renews Let's Encrypt certificates
+automatically and proxies WebSockets transparently:
 
-The "Room Info" shows the current room details.
+```caddyfile
+# /etc/caddy/Caddyfile on the host — point your domain's DNS at this server first
+draw.example.com {
+    reverse_proxy localhost:8080
+}
+```
 
-### Desktop Shortcuts
-* Left-click will use the primary color, while right-click will use the secondary color.
-* Middle-click and drag to pan the canvas; scroll to zoom.
-* `Ctrl/Cmd + Z` to undo, `Ctrl/Cmd + Shift + Z` to redo.
+```bash
+# start the app, then Caddy in front of it
+docker compose -f docker-compose.prod.yaml up --build -d
+caddy run --config /etc/caddy/Caddyfile
+```
 
-More shortcuts will be added in the future.
+nginx-on-the-host, a cloud load balancer, or Cloudflare work equally well — anything that
+terminates TLS and forwards to `localhost:8080` with WebSocket upgrades passed through.
+
+### 4. Operate it
+
+* **Health check** for load balancers / platform probes: `GET /api/health` (returns `200`
+  without touching the database, so a DB blip doesn't fail the liveness probe).
+* **Multiple devices / users:** there is nothing per-device to configure — anyone who can
+  reach the domain and enters the same room name is collaborating. Guests can draw
+  immediately; accounts are only needed for ownership, a saved palette, or a cross-device
+  identity.
+* **Backups:** all durable state (canvases, history, accounts) is in the Postgres volume
+  (`whiteboard-database-prod-v`). Back that up.
+* **Graceful deploys:** the backend flushes every room to Postgres on `SIGTERM`, so a normal
+  `docker compose ... down` / redeploy loses nothing. A *hard* kill loses at most the last
+  ~250 ms of drawing.
+
+> **Scale limit — read before you grow.** Room state, presence, rate limiting and sessions
+> all live in the backend process's memory, so the app runs as a **single backend instance**.
+> Vertical scaling (a bigger box) is fine; running two backend replicas would split rooms
+> across them. Multi-instance would need a shared bus (Redis pub/sub) for broadcasts and a
+> shared store for limits — noted in `CLAUDE.md §14`.
+
+---
+
+## Using the app
+
+You open onto a **lobby**: sign in or register (optional), enter a **room name**, and you are
+in. Everything else lives in the right-hand **sidebar**, which has three tabs:
+
+* **Drawing** — the tool picker, colour controls, undo/redo, and the size/density/
+  stabilization sliders for the active tool.
+* **Room** — foldable sections for this room: **Permissions & canvas** (ownership, open
+  editing, resize), **Cursors** (show/hide others' cursors and names), **Checkpoints** (save,
+  restore, replay the timeline), and **Rooms** (change room, browse *My Rooms*, leave). Clear
+  and download are pinned to the bottom.
+* **Account** — sign in/out, change your display name, or delete your account.
+
+The light/dark toggle sits top-left; the *My Rooms* dashboard and members list (when signed
+in) sit top-right.
+
+### Shortcuts & pointer
+
+* **Draw** with the left button (primary colour) or right button (secondary colour).
+* **Pan / zoom the canvas** by holding **Shift** — Shift+drag pans, Shift+wheel zooms — or by
+  selecting the **Grab** tool (the default on load), which makes pan/zoom the plain drag/wheel
+  without holding anything. While Shift is held a move-arrows cue appears top-left, because
+  the mode is otherwise invisible.
+* **Bare mouse wheel** (over the canvas, no Shift) adjusts the tool's **last-used slider** —
+  size the brush, try it, resize it, without going back to the sidebar. Press **`D`** to
+  switch which slider the wheel drives.
+* **Tool keys** (while the sidebar is open): **G** grab · **P** pencil · **E** eraser ·
+  **F** fill · **S** spray · **B** blur · **I** eyedropper.
+* **`Ctrl/Cmd + Z`** undo · **`Ctrl/Cmd + Shift + Z`** redo.
+
+---
 
 ## How it works
 
-The application uses a client-server architecture in which **the server owns an
-authoritative pixel buffer** for every room — not a list of shapes.
+The core idea: **the server owns an authoritative pixel buffer for every room** — not a list
+of shapes. Clients draw optimistically for instant feedback and reconcile to the server's
+truth continuously.
 
-When a user joins a room, the backend loads that room's canvas from its in-memory cache or
-from PostgreSQL and sends it as a one-time snapshot. Drawing gestures are converted into
-small instructions (`pencil`, `eraser`, `bucket`) and broadcast to everyone in the room;
-each client applies the instruction locally so all canvases stay in sync. Room state is
-saved to the database periodically and whenever the last client leaves.
+* **One drawing implementation, run on both sides.** `shared/` holds the pixel algorithms
+  (Bresenham lines, flood fill, spray scatter, blur, compare-and-swap patches) and the wire
+  protocol, imported by *both* the browser and the Node server. There is no second copy to
+  drift, which is what lets the server keep a canvas provably identical to what clients render.
+* **Instructions, not pixels, on the wire.** A gesture becomes a small instruction
+  (`pencil`, `spray`, `bucket`, …) that the server applies, logs, and broadcasts; every client
+  replays it. A spray sends a *seed*, not a pixel list, and everyone scatters identically — so
+  the message stays tiny no matter how much it paints.
+* **Cheap synchronization.** Instead of re-broadcasting the canvas, the server sends a small
+  revision heartbeat; only a client that has actually fallen behind requests a fresh snapshot.
+  The common case costs a few dozen bytes and does not grow with canvas size.
+* **Concurrency-safe undo.** Undo is a compare-and-swap patch: each entry only applies if the
+  pixel still holds the colour it expects, so undoing over a collaborator's later work skips
+  those pixels rather than clobbering them (and tells you it applied partially).
+* **Instant-feel input.** A pixel you just painted is held on screen for ~100 ms even if a
+  collaborator overwrites it at the same instant — a display-only overlay that never changes
+  what actually converges, so your input never *feels* eaten while the final canvas stays
+  identical for everyone.
+* **Durable by event sourcing.** Every applied instruction is appended to a `draw_events`
+  log; snapshots are written periodically. Recovery is "load the latest snapshot, replay every
+  newer event," so a hard crash loses ~250 ms, not the 15 s between snapshots. The log is
+  compacted and uniformly **decimated** so storage stays bounded while the whole timeline
+  remains scrubbable, and a resize is a clean history boundary.
+* **Identity, ownership & security.** Connections get an identity at the WebSocket upgrade
+  (a signed-in user from the session cookie, or a generated guest). Permission checks use the
+  same shared rules on both sides, but the server's are authoritative. The auth surface is
+  hardened per OWASP/NIST: scrypt password hashing, hashed session tokens, a breached-password
+  check, AES-GCM email-at-rest with a slow blind index, per-IP rate limits, a per-socket
+  token-bucket flood limiter, origin allow-listing, and a strict Content-Security-Policy.
 
-Two details are worth calling out:
-
-**Shared drawing code.** The `shared/` folder holds the pixel algorithms — Bresenham line
-drawing, flood fill, patch application — and is imported and executed by *both* the browser
-and the Node server. There is one implementation rather than two that must be kept in sync,
-which is what lets the server maintain a canvas provably identical to what clients render.
-
-**Cheap synchronization.** Rather than periodically broadcasting the whole canvas, the
-server sends a tiny `revision_check` heartbeat. Clients compare it against their own last
-applied revision, and only a client that has actually fallen behind requests a fresh
-snapshot — so the common case costs a few dozen bytes instead of the full canvas, and that
-cost does not grow with canvas size.
-
-**Concurrency-safe undo.** Undo/redo is expressed as compare-and-swap patches: each entry
-records the pixel's previous and next color, and only applies if the pixel still holds the
-expected previous color. If a collaborator has painted over that area in the meantime, the
-affected entries are skipped rather than clobbering their work, and the user is told the
-undo applied only partially.
-
-**Durable by event sourcing.** The database does not just store the latest picture. Every
-applied instruction is appended to a `draw_events` log, and full-canvas **snapshots** are
-written periodically as checkpoints. Recovery after a crash is "load the latest snapshot,
-then replay every event newer than it" — so a hard `docker kill` loses at most the events
-buffered in the last ~250 ms, not the 15 s between snapshots. When a snapshot is written it
-also **compacts** the log (deletes the events it now supersedes), keeping storage bounded.
-On a clean shutdown (`SIGTERM`) the server flushes every room before exiting, so a normal
-deploy loses nothing at all. The schema is created and evolved by ordered SQL migrations
-that run automatically on startup.
-
-**Identity, presence and cursors.** Every connection is given an identity when the
-WebSocket opens: a logged-in user (recognised from their session cookie, sent on the
-upgrade request) draws under their account name and colour; everyone else is an anonymous
-guest with a generated name and colour. The server broadcasts the room's roster on every
-join and leave, and relays each client's cursor position to the others — ephemerally, never
-touching the canvas or the event log. Logging in or out reconnects the socket so the server
-re-resolves who you are without a page reload.
-
-**Accounts.** Registration hashes the password with scrypt (salted, memory-hard) and never
-stores the password itself. A login creates a server-side session whose token lives in an
-httpOnly, SameSite cookie — the database stores only a hash of that token, so a database
-leak can't be replayed as live logins. The saved colour palette is per-account (the
-`/api/colors` endpoints); guests keep theirs in the browser.
-
-**Security hardening.** The auth surface defends against the usual web attacks: login and
-register are rate-limited per IP; the WebSocket upgrade and state-changing API requests are
-checked against an `ALLOWED_ORIGINS` allowlist (blocking cross-site WebSocket hijacking and
-CSRF on top of the SameSite cookie); passwords are checked against a common-password
-blocklist; presence broadcasts carry no account identifier; and nginx serves a
-Content-Security-Policy plus HSTS, `X-Frame-Options`, and `nosniff`. Known remaining work —
-email verification, a breached-password (HIBP) check, and a Redis-backed store so rate
-limiting and sessions work across multiple backend instances — is noted in `CLAUDE.md`.
+Every one of these has a full write-up — including the threat model and the exact bugs each
+guard exists to prevent — in `CLAUDE.md`.
 
 ## Project structure
 
-This is a monorepo full-stack application. All server-side and client-side code is shared here.
-
 ```
-├── frontend/     React + Vite SPA, nginx config for production
-├── backend/      Express + ws server; owns the DB schema (migrations) and all access
-├── shared/       Drawing protocol + algorithms, imported by BOTH sides
-├── database/     Stock PostgreSQL image (schema lives in backend/src/db/migrations)
+├── frontend/     React + Vite SPA; nginx config for production
+├── backend/      Express + ws server; owns the DB schema (migrations) and all DB access
+├── shared/       Drawing protocol + pixel algorithms, imported by BOTH sides
+├── database/     PostgreSQL image (schema lives in backend/src/db/migrations)
+├── scripts/      Zero-dependency end-to-end probes (smoke / security / permissions)
 └── loadtest/     Standalone WebSocket load-testing harness
 ```
 
-`CLAUDE.md` at the repository root holds detailed architecture notes.
-
 ## Tests
 
-Two layers, matched to what each is best at.
+Five layers, each matched to what it is best at; `TESTING.md` is the full guide.
 
-**Unit tests** cover the `shared/` drawing protocol with [Vitest](https://vitest.dev/). It is
-the highest-value code in the repo to test: pure, dependency-free and deterministic (no DOM,
-no network, no database), and **both** the browser and the server execute it — so a bug
-there desynchronises every client from the server's authoritative canvas.
-
-```bash
-npm ci             # once, at the repo root
-npm test           # shared protocol unit tests
-npm run test:watch
-npm run test:coverage
-```
-
-They live next to the code they cover, in `shared/utils/__tests__/`, covering Bresenham
-line drawing, flood fill, the compare-and-swap patch logic behind undo, and rejection of
-malformed input from the network. The frontend also unit-tests its pure colour-space maths
-(`cd frontend && npm test`), and password hashing is unit-tested on the backend.
-
-**Integration tests** cover the database repository and auth layers against a real
-PostgreSQL — migrations, upserts, event append/replay, compaction, `ON DELETE CASCADE`,
-user/session lifecycle, and the saved-colour palette. These can only be verified against a
-real database, so they are gated on one being reachable and skip otherwise.
+* **Shared protocol unit tests** (Vitest) — the highest-value code in the repo: pure,
+  deterministic, and executed by both sides, so a bug there desyncs everyone. Covers line
+  drawing, fill, spray, blur, the CAS patch logic, the codecs, and rejection of malformed
+  network input.
+* **Frontend unit tests** — the pure colour-space and slider-tracking logic.
+* **Backend integration tests** — the repository and auth layers against a **real** Postgres
+  (migrations, event append/replay, compaction, `ON DELETE CASCADE`, session lifecycle).
+* **End-to-end probes** (`scripts/*.mjs`) — drive the *running production stack* over HTTP and
+  WebSocket: a **smoke** test (the happy path through nginx and the real bundle), a
+  **security** probe (adversarial — the server survives each abuse), and a **permissions**
+  probe (the ownership/role model with real accounts).
+* **Load test** (`loadtest/`) — many concurrent sockets against a live server.
 
 ```bash
-cd backend && npm ci
-# point at any Postgres (e.g. a throwaway container) and run:
-POSTGRES_HOST=localhost POSTGRES_PORT=5432 POSTGRES_USER=postgre \
-POSTGRES_PASSWORD=... POSTGRES_DB=info_db npm test
+npm ci && npm test                 # shared protocol (from the repo root)
+cd frontend && npm ci && npm test  # frontend unit tests
+node scripts/smoke-test.mjs http://localhost:8080   # against a running prod stack
 ```
 
-CI runs both layers on every pull request, then builds the production images and drives the
-whole stack end-to-end over HTTP and WebSocket (`.github/workflows/ci.yml`).
+CI runs the unit/integration layers on every pull request, then builds the production images
+and runs all three e2e probes against the real stack (`.github/workflows/ci.yml`).
 
 ## Development reference
 
-Docker is the supported way to run the app, but these scripts are useful when working on
-the code directly.
+Docker is the supported way to run the app; these scripts are useful when working on the
+code directly.
 
 ```bash
-# Root — tests for the shared protocol
-npm ci
-npm test
-npm run typecheck:shared
+# Root — shared protocol
+npm ci && npm test && npm run typecheck:shared
 
 # Frontend
-cd frontend
-npm ci
+cd frontend && npm ci
 npm run dev        # Vite dev server
-npm run build      # tsc -b && vite build  -> dist/
-npm run preview    # serve dist/ locally to check the real bundle
+npm run build      # tsc -b && vite build  (tsc is the ONLY typecheck)
 npm run lint
 
 # Backend
-cd backend
-npm ci
+cd backend && npm ci
 npm run dev        # tsx watch
 npm run typecheck  # tsc --noEmit
 npm run build      # esbuild bundle -> dist/server.js
-npm start          # node dist/server.js
-npm test           # repository integration tests (needs a reachable Postgres)
-
-# Load testing (see loadtest/README.md)
-cd loadtest
-npm ci
-npm run run -- --clients 50 --room demo --durationMs 30000
-npm run ramp -- --room demo --levels 5,10,25,50,100,200
+npm test           # integration tests (needs a reachable Postgres)
 ```
 
-> **Note:** Vite and `tsx` strip TypeScript types *without checking them*. Only
-> `npm run build` (frontend) and `npm run typecheck` (backend) actually verify types, and
-> both now run inside the production image build — so a type error fails the build instead
-> of shipping.
+> Vite and `tsx` strip TypeScript types **without checking them**. Only `npm run build`
+> (frontend) and `npm run typecheck` (backend) verify types, and both run inside the
+> production image build — so a type error fails the build instead of shipping.
 
-## Future improvements
+## Known limitations & future work
 
-* Horizontal scaling — room state is currently an in-process `Map`; broadcasting across
-  instances would need a shared bus (e.g. Redis pub/sub)
-* Email verification and password reset
-* Stroke size controls
-* Export/import canvas
-* Prompt for a room ID before loading the canvas (i.e. removing the default 'TestRoom')
+* **Single backend instance** — see the scale note above; horizontal scaling needs Redis.
+* **Email verification and password reset** are not implemented (the breached-password check
+  *is*).
+* Rooms are entered by name with no access control beyond ownership — anyone with a room name
+  can join it.
+
+## License
+
+[Apache 2.0](./LICENSE).

@@ -78,9 +78,25 @@ export function messageCost(message: ClientSocketMessage): number {
         case "spray":
           return 3
         // A patch is proportional to its entry count, which validation has
-        // already bounded to the pixel count.
+        // already bounded to the pixel count. The DIVISOR is the load-bearing
+        // part, and it was originally 500 — which priced a full-canvas undo at
+        // 132 units (256 canvas) or 525 (512 canvas) against a 600 burst
+        // budget. That is backwards twice over:
+        //
+        //   - It is not what the work costs. Each entry is one compare-and-set;
+        //     a flood fill costs 10 for a queue-driven traversal that can repaint
+        //     just as many pixels. A patch is CHEAPER per pixel than a bucket,
+        //     so it must not be priced two orders of magnitude above one.
+        //   - The budget is never full when the message arrives. The gesture
+        //     that produced a full-canvas patch is the stroke that just spent
+        //     the bucket drawing it, so the undo was charged a near-full budget
+        //     at the exact moment the least was left, and got dropped.
+        //
+        // At /10_000 the worst legal patch costs 27 — the same order as a
+        // resync, comfortably inside a drained bucket, and still metered enough
+        // that a sustained flood of them is bounded (~7/sec).
         case "patch":
-          return 1 + Math.floor(message.instruction.entries.length / 500)
+          return 1 + Math.floor(message.instruction.entries.length / 10_000)
         // clear is rejected from clients anyway, but cost it as expensive so a
         // flood of rejected clears still burns budget.
         case "clear":
@@ -209,8 +225,39 @@ export class SocketRateLimiter {
 const MAX_CONNECTIONS_PER_USER = 8
 const MAX_CONNECTIONS_PER_IP = 32
 
+// Both keys a connection is counted against. The session key is null for a
+// visitor with no cookie at all.
+export interface ConnectionKeys {
+  ip: string
+  session: string | null
+}
+
 export class ConnectionCounter {
   private counts = new Map<string, number>()
+
+  // Acquires BOTH slots, or neither.
+  //
+  // Partial acquisition is the bug worth guarding against here: taking the IP
+  // slot, failing the session slot and returning false would leak an IP slot on
+  // every refused connection, so a client that hit its session cap would slowly
+  // exhaust the whole IP allowance for everyone behind that address.
+  tryAcquireAll(keys: ConnectionKeys): boolean {
+    if (!this.tryAcquire(keys.ip, false)) {
+      return false
+    }
+    if (keys.session && !this.tryAcquire(keys.session, true)) {
+      this.release(keys.ip)
+      return false
+    }
+    return true
+  }
+
+  releaseAll(keys: ConnectionKeys): void {
+    this.release(keys.ip)
+    if (keys.session) {
+      this.release(keys.session)
+    }
+  }
 
   // Returns false when the cap is already reached, in which case the caller must
   // NOT call release() — nothing was acquired.
@@ -258,15 +305,21 @@ export class ConnectionCounter {
 //
 // Everyone else falls back to IP, which is much blunter, hence the far looser
 // limit that pairs with it.
-export function connectionKey(request: IncomingMessage): {
-  key: string
-  isAuthenticated: boolean
-} {
-  const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
-  if (token) {
-    return { key: `s:${hashSessionToken(token)}`, isAuthenticated: true }
-  }
-
+export function connectionKeys(request: IncomingMessage): ConnectionKeys {
+  // Always keyed by IP, whether or not a cookie is present.
+  //
+  // This used to return the session key INSTEAD when a cookie existed, without
+  // validating it — deliberately, to keep the cap free of a database query. But
+  // the token was never checked against a session, so anyone could send
+  // `sid=<random>` and be handed a private 8-slot bucket, a fresh one per forged
+  // value, and the IP cap was never reached. Since the token bucket is per
+  // socket, unlimited sockets meant unlimited aggregate budget — precisely the
+  // bypass this module exists to prevent.
+  //
+  // Keying on BOTH closes it while keeping the no-query property: a forged
+  // cookie still consumes an IP slot, so it buys nothing, and an honest signed-in
+  // user is bounded by whichever limit is tighter.
+  //
   // Same trust reasoning as the HTTP limiter: in production the backend
   // publishes no host port, so X-Real-IP can only come from our own nginx.
   const header = request.headers["x-real-ip"]
@@ -274,7 +327,15 @@ export function connectionKey(request: IncomingMessage): {
     typeof header === "string" && header.length > 0
       ? header
       : (request.socket.remoteAddress ?? "unknown")
-  return { key: `ip:${ip}`, isAuthenticated: false }
+
+  // The raw token is never used as a map key — hashing it means the live key set
+  // isn't a pile of usable session tokens sitting in memory.
+  const token = parseCookies(request.headers.cookie)[SESSION_COOKIE]
+
+  return {
+    ip: `ip:${ip}`,
+    session: token ? `s:${hashSessionToken(token)}` : null,
+  }
 }
 //#endregion
 

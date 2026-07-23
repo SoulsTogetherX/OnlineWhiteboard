@@ -1,6 +1,8 @@
 //#region Imports
 import {
   MAX_SPRAY_DENSITY,
+  MAX_BLUR_BLEND,
+  MAX_BLUR_OPACITY,
   MAX_SPRAY_RADIUS,
   MAX_STROKE_SIZE,
   canvasBytes,
@@ -165,6 +167,26 @@ export function isValidDrawInstruction(
         isBoundedInt(spray.radius, 1, MAX_SPRAY_RADIUS) &&
         isBoundedInt(spray.density, 1, MAX_SPRAY_DENSITY) &&
         isValidSeed(spray.seed)
+      )
+    }
+    case "blur": {
+      const blur = candidate as {
+        pos?: unknown
+        radius?: unknown
+        blend?: unknown
+        opacity?: unknown
+        lockAlpha?: unknown
+      }
+      // Every field is checked because every field changes the OUTPUT. A blur is
+      // computed from the canvas, so an out-of-range kernel or mix would not just
+      // look wrong — it would make this client's pixels disagree with everyone
+      // else's, permanently.
+      return (
+        isValidVec(blur.pos, dims) &&
+        isBoundedInt(blur.radius, 1, MAX_SPRAY_RADIUS) &&
+        isBoundedInt(blur.blend, 1, MAX_BLUR_BLEND) &&
+        isBoundedInt(blur.opacity, 1, MAX_BLUR_OPACITY) &&
+        typeof blur.lockAlpha === "boolean"
       )
     }
     case "patch":

@@ -1,9 +1,13 @@
 //#region Types
-// The three sidebar tabs. Kept as a shared union so the shell, the TabBar and
+// The three sidebar tabs. The timeline used to be one of these; it now lives
+// inside the Room tab, because a room's history belongs to the room, and this
+// slot holds the account instead.
+//
+// Original note: Kept as a shared union so the shell, the TabBar and
 // the composition root in App all name a tab with the same string — a mistyped
 // "timline" is then a compile error at every site, not a tab that silently never
 // renders (§12.8: one concept, one name).
-export type TabId = "drawing" | "room" | "timeline"
+export type TabId = "drawing" | "room" | "account"
 
 export interface TabDescriptor {
   id: TabId
@@ -16,7 +20,7 @@ export interface TabDescriptor {
 export const SIDEBAR_TABS: TabDescriptor[] = [
   { id: "drawing", label: "Drawing" },
   { id: "room", label: "Room" },
-  { id: "timeline", label: "Timeline" },
+  { id: "account", label: "Account" },
 ]
 
 // Each panel is identified so its tab can point at it with aria-controls and the

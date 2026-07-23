@@ -77,13 +77,21 @@ function waitFor(seen, predicate, what, ms = 5000) {
   })
 }
 
+// Each stroke must land on its OWN pixels. These were all the same line in the
+// same colour, so every stroke after the first repainted pixels that were
+// already that colour — and an instruction that changes no pixel is now
+// correctly treated as a no-op: not logged, not broadcast. The probe was
+// therefore waiting forever for the echo of a stroke that did nothing.
+//
+// Offsetting by the instruction id keeps each one a genuinely new mark, which is
+// what "this role can still draw" was always meant to test.
 const stroke = (id) => ({
   type: "draw",
   roomId: ROOM,
   instruction: {
     type: "pencil",
-    prevPos: [1, 1],
-    nextPos: [4, 4],
+    prevPos: [1, 4 * id],
+    nextPos: [4, 4 * id + 3],
     instructionId: id,
     sessionId: "perm-probe",
     color: { r: 10, g: 20, b: 30, a: 255 },

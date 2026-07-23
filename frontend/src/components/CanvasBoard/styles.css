@@ -3,8 +3,8 @@
   top: 50%;
   left: 50%;
 
-  width: min(90vw, 80vh);
-  height: min(90vw, 80vh);
+  /* width/height are set inline (CanvasBoard) to preserve the pixel aspect ratio
+     — a non-square canvas must not be squashed into a square box. */
 
   border: solid var(--border-color) 4px;
 
@@ -23,4 +23,16 @@
   transform: translate(-50%, -50%)
     translate(var(--drag-pos-x, 0px), var(--drag-pos-y, 0px))
     scale(var(--scroll-scale, 1));
+}
+
+/* The brush-footprint overlay. Inherits every positioning rule from
+   .draw-canvas above so the two stay pixel-aligned through pan and zoom; only
+   the things that would double up are overridden. */
+.draw-canvas-preview {
+  z-index: 1;
+
+  border-color: transparent;
+  background-image: none;
+
+  pointer-events: none;
 }

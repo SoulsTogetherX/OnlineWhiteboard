@@ -17,6 +17,7 @@ import {
 } from "./testHelpers"
 
 import type { DrawInstruction, PatchInstruction } from "../../types/drawProtocol"
+import type { ColorType } from "../../types/primitive"
 
 describe("applyDrawInstructionToCanvas — dispatch", () => {
   it("applies a pencil instruction and hands it straight back", () => {
@@ -264,5 +265,80 @@ describe("applyDrawInstructionToCanvas — hostile input", () => {
 
     expect(applied).not.toBeNull()
     expect(getPixel(pixels, DIMS.width - 1, DIMS.height - 1)).toEqual(RED)
+  })
+})
+
+describe("an instruction that changes nothing reports nothing", () => {
+  // The server turns a null here into "no revision bump, no logged event, no
+  // broadcast". Without it, drawing a colour over itself produced timeline steps
+  // that render no visible change — scrubbing sat still through stretches of
+  // history where nothing had actually happened.
+  const line = (color: ColorType): DrawInstruction =>
+    ({
+      type: "pencil",
+      prevPos: [0, 0],
+      nextPos: [10, 0],
+      color,
+      ...BASE,
+    }) as DrawInstruction
+
+  it("returns null for a stroke drawn in the colour already there", () => {
+    const pixels = makeCanvas()
+    expect(applyDrawInstructionToCanvas(pixels, line(RED), DIMS)).not.toBeNull()
+
+    // The identical stroke a second time changes not one pixel.
+    expect(applyDrawInstructionToCanvas(pixels, line(RED), DIMS)).toBeNull()
+  })
+
+  it("still reports a stroke that changes even one pixel", () => {
+    const pixels = makeCanvas()
+    applyDrawInstructionToCanvas(pixels, line(RED), DIMS)
+
+    expect(applyDrawInstructionToCanvas(pixels, line(BLUE), DIMS)).not.toBeNull()
+  })
+
+  it("returns null for a bucket fill of the colour already there", () => {
+    const pixels = makeCanvas()
+    const fill = (color: ColorType): DrawInstruction =>
+      ({ type: "bucket", pos: [5, 5], color, ...BASE }) as DrawInstruction
+
+    expect(applyDrawInstructionToCanvas(pixels, fill(GREEN), DIMS)).not.toBeNull()
+    expect(applyDrawInstructionToCanvas(pixels, fill(GREEN), DIMS)).toBeNull()
+  })
+
+  it("returns null for a spray puff that lands only on its own colour", () => {
+    const pixels = makeCanvas()
+    const puff = (color: ColorType): DrawInstruction =>
+      ({
+        type: "spray",
+        pos: [60, 60],
+        radius: 8,
+        density: 32,
+        seed: 12345,
+        color,
+        ...BASE,
+      }) as DrawInstruction
+
+    // Flood the canvas red first, so the puff has nothing left to change.
+    applyDrawInstructionToCanvas(
+      pixels,
+      { type: "bucket", pos: [0, 0], color: RED, ...BASE } as DrawInstruction,
+      DIMS,
+    )
+
+    expect(applyDrawInstructionToCanvas(pixels, puff(RED), DIMS)).toBeNull()
+    expect(applyDrawInstructionToCanvas(pixels, puff(BLUE), DIMS)).not.toBeNull()
+  })
+
+  it("writes the pixels either way — only the REPORT changes", () => {
+    // A replaying caller ignores the return value and must still end up with the
+    // same canvas, which is what keeps clients byte-identical to the server.
+    const pixels = makeCanvas()
+    applyDrawInstructionToCanvas(pixels, line(RED), DIMS)
+    const painted = paintedCount(pixels)
+
+    expect(applyDrawInstructionToCanvas(pixels, line(RED), DIMS)).toBeNull()
+    expect(paintedCount(pixels)).toBe(painted)
+    expect(getPixel(pixels, 5, 0)).toEqual(RED)
   })
 })

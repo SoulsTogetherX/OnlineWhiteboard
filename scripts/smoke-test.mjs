@@ -16,6 +16,8 @@
  * each is marked REGRESSION with what it guards.
  */
 
+import { encodePatchFrame } from "./lib/patchWire.mjs"
+
 import { inflateRawSync } from "node:zlib"
 
 const BASE = process.argv[2] ?? "http://localhost:8080"
@@ -106,38 +108,6 @@ function waitFor(seen, predicate, what, timeoutMs = 8_000) {
 
 const draw = (roomId, instruction) =>
   JSON.stringify({ type: "draw", roomId, instruction })
-
-// Encodes a patch draw as the binary frame a real client now sends: the draw
-// message (minus entries) as the JSON header, 12 packed bytes per entry as the
-// payload. Hand-rolled to keep this probe dependency-free; keep it in step with
-// shared/utils/patchCodec.ts, same as decodeFrame mirrors binaryFrame.ts.
-function encodePatchFrame(roomId, instruction) {
-  const { entries, ...instructionHeader } = instruction
-  const payload = Buffer.alloc(entries.length * 12)
-  entries.forEach((e, i) => {
-    const o = i * 12
-    payload.writeUInt32BE(e.idx, o)
-    payload[o + 4] = e.from.r
-    payload[o + 5] = e.from.g
-    payload[o + 6] = e.from.b
-    payload[o + 7] = e.from.a
-    payload[o + 8] = e.to.r
-    payload[o + 9] = e.to.g
-    payload[o + 10] = e.to.b
-    payload[o + 11] = e.to.a
-  })
-  const header = Buffer.from(
-    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
-    "utf8",
-  )
-  const frame = Buffer.alloc(3 + header.length + payload.length)
-  frame[0] = BINARY_FRAME_VERSION
-  frame[1] = (header.length >> 8) & 0xff
-  frame[2] = header.length & 0xff
-  header.copy(frame, 3)
-  payload.copy(frame, 3 + header.length)
-  return frame
-}
 
 async function main() {
   console.log(`smoke test -> ${BASE} (room "${ROOM}")\n`)
@@ -279,7 +249,7 @@ async function main() {
     }),
   )
 
-  await waitFor(
+  const good = await waitFor(
     b.seen,
     (m) => m.type === "draw" && m.instruction.sessionId === "smoke-good",
     "a legitimate stroke sent right after a hostile one",
@@ -296,6 +266,30 @@ async function main() {
   presenceCount === 2
     ? pass("presence roster lists both clients in the room")
     : fail(`presence roster had ${presenceCount} participants, expected 2`)
+
+  // --- History playback (start-to-end, Phase 6) ---------------------------
+  // Playback with no checkpoint now replays from the GENESIS base — the blank
+  // canvas seeded at revision 0 when the room was created — so the scrub covers
+  // the whole room history, not just "since the last save". Ask A for it.
+  a.ws.send(JSON.stringify({ type: "request_playback", roomId: ROOM }))
+  const playback = await waitFor(a.seen, (m) => m.type === "playback", '"playback"')
+
+  playback.baseRevision === 0
+    ? pass("playback replays from the genesis base (revision 0), start-to-end")
+    : fail(`playback baseRevision was ${playback.baseRevision}, expected 0`)
+
+  // The two valid strokes (the hostile one was rejected) are the first and last
+  // events, so the steps must run from revision 1 to the head — proving the log
+  // was retained from the start, not compacted to the latest snapshot.
+  const stepRevisions = (playback.steps ?? []).map((s) => s.revision)
+  stepRevisions[0] === 1 &&
+  stepRevisions[stepRevisions.length - 1] === good.revision
+    ? pass(
+        `playback steps span the whole session (revisions ${stepRevisions[0]}..${stepRevisions[stepRevisions.length - 1]})`,
+      )
+    : fail(
+        `playback steps did not span 1..${good.revision}: ${JSON.stringify(stepRevisions)}`,
+      )
 
   // --- Live cursors -------------------------------------------------------
   // A's cursor should relay to B (ephemeral, never touches the canvas), tagged

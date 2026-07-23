@@ -1,16 +1,51 @@
 /* The overlay/card chrome now comes from PopupBase's .popup-front; this panel is
    just the sized, scrollable content container inside it. */
 .dashboard-panel {
-  width: min(60rem, 82vw);
-  max-height: 80vh;
-  overflow-y: auto;
+  /* Sized against the VIEWPORT, not the dialog.
+     `100%` was circular here and quietly collapsed the grid to a single column:
+     .popup-front is width:fit-content, so its width comes from its content —
+     this panel — while this panel asked for a percentage OF that width. With
+     nothing to resolve against, both settled on the cards' min-content and the
+     dialog rendered ~310px wide on a 1400px screen.
+     A vw basis breaks the cycle; the calc leaves room for the dialog's own
+     padding and the overlay's margin so it never overflows the screen.
+     Sized for THREE columns rather than as many as fit — see the grid. */
+  width: min(58rem, calc(100vw - 5rem));
 }
 
+/* Pinned while the list scrolls under it. The negative margins let the bar span
+   the dialog's padding, so cards pass under a full-width edge instead of beside
+   a floating strip; the matching positive padding puts its own content back
+   where it was. Same trick as the sidebar's sticky footer. */
 .dashboard-header {
+  position: sticky;
+  /* Must equal the negative top margin below, and that is not a coincidence to
+     be tidied away.
+     A sticky element sits at its FLOW position until the scroll offset would
+     push it past `top`. The -20px margin puts this bar's flow position 20px
+     above the scrollport, so with `top: -1px` it was already past its threshold
+     at rest — pinned 19px BELOW where the layout had reserved space for it,
+     overlapping the first row of cards while the grid stayed put. Matching the
+     two means no displacement at rest, and when the list scrolls the bar pins
+     with its 20px top padding above the visible edge, so cards are covered from
+     off-screen downwards and none can appear above it. */
+  top: -20px;
+  z-index: 1;
+
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 1rem;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+
+  /* 20px matches .popup-front's padding exactly — the bar has to span it and
+     then put its own content back, so these two numbers are one decision. */
+  margin: -20px -20px 1rem;
+  padding: 20px;
+
+  border-bottom: 1px solid var(--border-color);
+  /* The dialog's own surface, so nothing shows through as cards pass beneath. */
+  background: var(--surface-background);
 }
 
 .dashboard-title {
@@ -18,19 +53,97 @@
   font-size: 1.3rem;
 }
 
-.dashboard-close {
-  padding: 0.35rem 0.85rem;
+.dashboard-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.dashboard-selection {
+  color: var(--muted-text-color);
+  font-size: 0.8rem;
+  /* Reserves its own space so the buttons beside it do not shuffle sideways as
+     the count appears, changes width, and disappears. */
+  min-width: 5.5rem;
+  text-align: right;
+}
+
+/* The tooltip host. Must not be the button itself: a disabled button receives no
+   pointer events, so a title on it would be unreadable in exactly the state that
+   needs explaining. */
+.dashboard-bin-wrap {
+  display: inline-flex;
+}
+
+.dashboard-bin {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 2rem;
+  height: 2rem;
+
+  border: 1px solid var(--border-color);
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+
   background: transparent;
+  color: var(--text-color);
+
   cursor: pointer;
 }
 
-.dashboard-error {
-  color: #c62828;
+.dashboard-bin svg {
+  width: 1rem;
+  height: 1rem;
+  fill: currentColor;
 }
+
+/* Destructive-looking only once it can actually do something. */
+.dashboard-bin:not(:disabled):hover {
+  border-color: var(--danger-color);
+  background: var(--hover-background);
+  color: var(--danger-color);
+}
+
+.dashboard-bin:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.dashboard-error {
+  color: var(--danger-color);
+}
+/* Centred on both axes in the space the grid would have occupied, rather than
+   sitting as a stray line of text under the header. The min-height is what gives
+   it something to be vertically centred WITHIN — without it the paragraph is
+   only as tall as its own text, and centring in that is a no-op. */
 .dashboard-empty {
-  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  margin: 0;
+  padding: 0 1rem;
+
+  color: var(--muted-text-color);
+  text-align: center;
+  text-wrap: balance;
+}
+
+/* Responsive, but capped at THREE columns.
+   `auto-fill` alone fits as many tracks as it can, which at six across left each
+   card too narrow for its own title. The `max()` sets each track's floor to a
+   THIRD of the row (minus the two gaps between three tracks), so the browser can
+   never fit a fourth; on a narrower screen the 15rem floor takes over instead and
+   it drops to two, then one. Still no media query — the two floors express
+   "at most three" and "never thinner than readable", and whichever binds, wins. */
+/* The list area keeps a floor height whether or not there is anything in it, so
+   the dialog does not resize itself around its contents — opening it with one
+   room and opening it with none should not be two different-sized windows, and
+   removing the last few rooms should not make it collapse under the pointer. */
+.dashboard-grid,
+.dashboard-empty {
+  min-height: 12rem;
 }
 
 .dashboard-grid {
@@ -38,33 +151,105 @@
   margin: 0;
   padding: 0;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
+  /* Rows size to content; without this the floor above stretches a single row
+     to fill all 12rem. */
+  grid-auto-rows: min-content;
+  grid-template-columns: repeat(
+    auto-fill,
+    minmax(max(15rem, calc((100% - 1.5rem) / 3)), 1fr)
+  );
   gap: 0.75rem;
+}
+
+/* The card and its checkbox are SIBLINGS in a row: the tick sits outside the
+   button entirely.
+   It used to be absolutely positioned over the card's corner, which put a
+   1rem target on top of a large button whose action is "leave this room and
+   open that one" — miss the tick and you are somewhere else entirely. Out here
+   the two targets cannot overlap at all. */
+.dashboard-item {
+  display: flex;
+  align-items: stretch;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+/* A label, not a bare input, so the whole padded area is a hit target rather
+   than just the 1rem box the browser draws. */
+.dashboard-select-label {
+  display: flex;
+  align-items: center;
+  flex: none;
+
+  padding: 0 0.35rem;
+
+  border-radius: 0.4rem;
+
+  cursor: pointer;
+}
+
+.dashboard-select-label:hover {
+  background: var(--hover-background);
+}
+
+.dashboard-select {
+  width: 1.05rem;
+  height: 1.05rem;
+
+  cursor: pointer;
+  /* The card beside it is themed, so the native tick must be too, or it renders
+     in the OS accent and reads as something the page does not own. */
+  accent-color: var(--accent-color);
+}
+
+.dashboard-select:focus-visible {
+  outline: 2px solid var(--focus-ring-color);
+  outline-offset: 2px;
+}
+
+/* Selection has to be legible at a glance across a grid, so it changes the
+   card's border and fill rather than relying on the small tick alone. */
+.dashboard-item-selected .dashboard-card {
+  border-color: var(--accent-color);
+  background: var(--hover-background);
 }
 
 .dashboard-card {
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  width: 100%;
+  /* flex:1 + min-width:0 is the pair that makes truncation work. Without the
+     min-width a flex item refuses to shrink below its CONTENT's intrinsic size,
+     so a long room name pushed the card wider than its grid track instead of
+     ellipsing — the text overflowed rather than being contained. */
+  flex: 1 1 auto;
+  min-width: 0;
   text-align: left;
   padding: 0.6rem;
   border-radius: 0.5rem;
-  border: 1px solid var(--border, #ddd);
-  background: var(--card-bg, #fafafa);
+  border: 1px solid var(--border-color);
+  background: var(--panel-background);
+  color: var(--text-color);
   cursor: pointer;
 }
 .dashboard-card:hover {
-  border-color: #888;
+  border-color: var(--accent-color);
+  background: var(--hover-background);
+}
+.dashboard-card:active {
+  background: var(--active-background);
 }
 .dashboard-card-current {
-  outline: 2px solid #2e7d32;
+  outline: 2px solid var(--accent-color);
 }
 
 .dashboard-card-body {
   display: flex;
   flex-direction: column;
   gap: 0.3rem;
+  /* Same reason as the card: this is the item that must give way, so the
+     thumbnail keeps its size and the TEXT is what ellipses. */
+  flex: 1 1 auto;
   min-width: 0;
 }
 
@@ -79,22 +264,38 @@
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
   font-size: 0.75rem;
+}
+
+/* The role chip keeps its size; the timestamp is what gives way, because
+   "owner" truncated to "own…" is worse than "3 hours…". */
+.dashboard-when {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dashboard-role {
   padding: 0.1rem 0.4rem;
   border-radius: 0.25rem;
-  background: #eee;
+  /* Role chips read off the theme instead of three fixed pastels that only
+     worked on a light background. */
+  border: 1px solid var(--border-color);
+  background: var(--hover-background);
+  color: var(--muted-text-color);
   text-transform: capitalize;
 }
 .dashboard-role.role-owner {
-  background: #ffe082;
+  border-color: var(--accent-color);
+  background: var(--accent-color);
+  color: var(--on-accent-color);
 }
 .dashboard-role.role-viewer {
-  background: #cfd8dc;
+  background: var(--surface-background);
 }
 
 .dashboard-when {
   opacity: 0.6;
 }
+

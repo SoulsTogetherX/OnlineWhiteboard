@@ -7,6 +7,7 @@ import {
   getLookAtMethod,
   getPosCorrected,
   updateCanvas,
+  withChangeCount,
   withRecording,
 } from "./helperProtocolMethods"
 import { mulberry32, randomSeed } from "./random"
@@ -85,7 +86,12 @@ function handlePuff(
   // edge should still stipple the nearby border, not draw nothing.
   const [pos] = getPosCorrected(ev, canvas)
   const radius = sprayRadiusFor(base.size ?? DEFAULT_STROKE_SIZE)
-  const density = sprayDensityFor(radius)
+  // A client-set density (the Spray panel's slider) overrides the radius-derived
+  // default, clamped to the same abuse cap the server validates against.
+  const density =
+    base.density !== undefined
+      ? clamp(Math.round(base.density), 1, MAX_SPRAY_DENSITY)
+      : sprayDensityFor(radius)
   const seed = randomSeed()
 
   const canvasState = getCanvasState(canvas, dims)
@@ -145,12 +151,21 @@ export function handleDrawSprayFinish(
 ): SprayInstruction | null {
   return null
 }
+// Returns how many pixels the puff actually CHANGED. A spray whose scatter lands
+// entirely on pixels that are already that colour did nothing. See
+// withChangeCount.
 export function handleDrawSprayInstruction(
   pixels: ImageData | Uint8ClampedArray<ArrayBufferLike>,
   inst: SprayInstruction,
   dims: CanvasDims,
-): void {
-  const drawer = getDrawerMethod("spray", pixels)
+): number {
+  const counter = { changed: 0 }
+  const drawer = withChangeCount(
+    getLookAtMethod("spray", pixels),
+    getDrawerMethod("spray", pixels),
+    counter,
+  )
   setPixelSpray(inst, inst.color ?? DEFAULT_COLOR, drawer, dims)
+  return counter.changed
 }
 //#endregion

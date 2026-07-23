@@ -17,10 +17,19 @@ services:
     container_name: ${FRONTEND_HOST}
     volumes:
       # Bind mounts: edits on the host appear instantly in the container, which
-      # is what drives HMR. Only src/ and shared/ are mounted, so the image's
-      # own vite.config.ts / package.json are used.
+      # is what drives HMR. Config (vite.config.ts / package.json) is NOT
+      # mounted, so the image's own copies are used and changing one is a
+      # rebuild.
       - ./frontend/src:/app/src
       - ./shared:/shared
+      # index.html and public/ are source too, and were missing here.
+      # index.html is Vite's build entry (it rewrites the script tags in it), and
+      # public/ is served verbatim at the web root. Unmounted, editing either
+      # changed nothing in dev until the image was rebuilt — and the failure
+      # presents as "my edit had no effect", not as "the container is stale",
+      # which is a much worse thing to debug.
+      - ./frontend/index.html:/app/index.html
+      - ./frontend/public:/app/public
       # Anonymous volume masking the host's node_modules. Without this, a host
       # node_modules (Windows binaries) could shadow the container's Linux ones.
       - /app/node_modules

@@ -1,18 +1,105 @@
+/* The palette.
+ *
+ * Every name says WHERE the colour is used, not what it looks like, so a
+ * stylesheet reads as "the panel background" rather than "the toolbar colour
+ * that also happens to be behind the tab bar". The previous names had drifted
+ * away from their use — --normal-color was only ever a tooltip background, and
+ * --popup-background was painting inputs and buttons as much as popups.
+ *
+ * The scheme itself stays where it was, warm amber, but is built as a
+ * COMPLEMENTARY pair rather than an analogous one. It used to be an orange
+ * accent on a yellow ground with a yellow focus ring: neighbours on the wheel,
+ * so the accent had nothing to push against and the focus ring disappeared into
+ * the page. Now the surfaces are warm neutrals carrying a trace of the accent's
+ * hue, and the two colours that must be SEEN against them — the focus ring and
+ * the live/among-us markers — come from the opposite side of the wheel (teal).
+ */
 :root {
-  --normal-color: #1f2933;
-  --focus-color: #1677ff;
-  --accent-color: #1677ff;
+  /* Surfaces, from furthest back to nearest front. */
+  --app-background: #f3ecdd;
+  --grid-color: #e5d9c1;
+  --panel-background: #f5efe2;
+  --surface-background: #fffdf8;
 
-  --text-color: black;
-  --sub-text-color: #373737;
+  /* Interaction states, shared so hover and press feel the same everywhere
+     instead of each component inventing its own shade.
+     Hover LIGHTENS — a control coming toward you — and press moves the other
+     way, so the two states can never be mistaken for each other. */
+  --hover-background: #fdfaf3;
+  --active-background: #ebe1cd;
 
-  --popup-background: #ffffff;
+  --text-color: #26221b;
+  --muted-text-color: #6d6456;
 
-  --room-background: bisque;
-  --toolbar-background: burlywood;
+  /* The accent, plus the two states it needs to react to a pointer. */
+  --accent-color: #d97d16;
+  --accent-hover-color: #c26c0d;
+  --accent-active-color: #a55a07;
+  --on-accent-color: #fffaf3;
 
-  --border-color: black;
-  --shadow-color: black;
+  /* Teal: the accent's complement. Reserved for "look here" — it cannot be
+     mistaken for an accent-coloured control. */
+  --focus-ring-color: #17788c;
+
+  /* Tooltips are the one deliberately inverted surface, in both themes. */
+  --tooltip-background: #2b271f;
+  --tooltip-text-color: #f7f2e7;
+
+  --danger-color: #b42318;
+  --border-color: #d8cbb2;
+  --shadow-color: rgba(70, 52, 22, 0.18);
+
+  --grid-size: 32px;
+}
+
+/* Dark theme — applied when useTheme stamps data-theme="dark" on <html>. Same
+   names, same roles, so every var-driven surface flips together. */
+:root[data-theme="dark"] {
+  --app-background: #191712;
+  /* Was #252119 — only ~12 levels off the ground it sits on, which read as no
+     grid at all on a dark screen. Dark surfaces need a WIDER absolute gap than
+     light ones to show the same amount of contrast, so the dark grid steps
+     further from its background than the light one does. */
+  --grid-color: #322d21;
+  --panel-background: #221f18;
+  --surface-background: #2b271f;
+
+  /* Same rule in the dark theme: hover lightens, press separates from it. */
+  --hover-background: #2e2a20;
+  --active-background: #3d3628;
+
+  --text-color: #ece5d6;
+  --muted-text-color: #a49a86;
+
+  --accent-color: #eda23f;
+  --accent-hover-color: #f5b257;
+  --accent-active-color: #d78c26;
+  --on-accent-color: #241a09;
+
+  --focus-ring-color: #4dbcd2;
+
+  /* Stays dark rather than flipping light: white text sits on it either way. */
+  --tooltip-background: #454033;
+  --tooltip-text-color: #f7f2e7;
+
+  --danger-color: #f27166;
+  --border-color: #7c6e51;
+  --shadow-color: rgba(0, 0, 0, 0.55);
+}
+
+/* Tie the UA's own widgets (range thumbs, scrollbars, the caret) to OUR theme
+   rather than the operating system's.
+ *
+ * This was `light dark` on :root, which tells the browser "either is fine, use
+ * the OS preference". On a machine set to dark mode that rendered every native
+ * control dark WHILE the app was in light mode — which is exactly why the
+ * sliders and inputs looked wrong in the light theme. */
+:root {
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
 }
 
 /* Border-box everywhere so width includes padding + border. Without this a
@@ -26,12 +113,65 @@
 }
 
 body {
-  width: 100vw;
+  /* 100% not 100vw: vw INCLUDES the vertical scrollbar, so 100vw is wider
+     than the content box wherever a scrollbar exists and forces a spurious
+     horizontal scrollbar. Same reason height is dvh-aware below. */
+  width: 100%;
   height: 100vh;
+  height: 100dvh;
 
   margin: 0;
   padding: 0;
+
+  /* The grid lives on the body, behind everything — the canvas, the sidebar and
+     every popup — so it reads as the surface the app sits on rather than as
+     part of any one panel. Two repeating gradients rather than an image keeps it
+     theme-aware for free: both the ground and the rule colour are variables, so
+     it flips with the theme like everything else. */
+  background-color: var(--app-background);
+  background-image:
+    repeating-linear-gradient(
+      to right,
+      var(--grid-color) 0 1px,
+      transparent 1px var(--grid-size)
+    ),
+    repeating-linear-gradient(
+      to bottom,
+      var(--grid-color) 0 1px,
+      transparent 1px var(--grid-size)
+    );
 }
+/* One motion rule for everything interactive, so a control that gains a hover
+   or press colour animates it without each component remembering to say so.
+   Colour and shadow only — never layout properties, which would animate reflow. */
+button,
+input,
+select,
+textarea,
+a,
+.tab-bar-button,
+.swatch-chip {
+  transition:
+    background-color 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease,
+    transform 140ms ease;
+}
+
+/* Motion is a preference, not a decoration. Anyone who has asked their system to
+   reduce it gets the same interface with the movement taken out. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 button {
   all: unset;
   /* `all: unset` resets box-sizing back to content-box (it doesn't inherit), so

@@ -1,0 +1,149 @@
+.account-tab {
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+
+  min-height: 100%;
+  /* Owned here rather than by the panel — see SideBar/styles.css. */
+  padding: 1rem;
+}
+
+.account-guest {
+  margin: 0;
+
+  color: var(--muted-text-color);
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+
+.account-identity {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  padding-bottom: 0.6rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.account-dot {
+  flex: none;
+
+  width: 0.8rem;
+  height: 0.8rem;
+
+  border-radius: 50%;
+}
+
+.account-name {
+  overflow: hidden;
+
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-rename {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.account-label {
+  color: var(--muted-text-color);
+  font-size: 0.75rem;
+}
+
+.account-rename-row {
+  display: flex;
+  gap: 0.4rem;
+}
+
+.account-rename-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.35rem 0.5rem;
+
+  border: 1px solid var(--border-color);
+  border-radius: 0.35rem;
+
+  background: var(--surface-background);
+  color: var(--text-color);
+}
+
+.account-rename-row input:hover {
+  border-color: var(--accent-color);
+}
+
+.account-rename-row button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  padding: 0.35rem 0.75rem;
+
+  border: 1px solid var(--accent-color);
+  border-radius: 0.35rem;
+
+  background: var(--accent-color);
+  color: var(--on-accent-color);
+
+  cursor: pointer;
+}
+
+.account-rename-row button:hover:not(:disabled) {
+  border-color: var(--accent-hover-color);
+  background: var(--accent-hover-color);
+}
+
+.account-rename-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.account-hint {
+  margin: 0;
+
+  color: var(--muted-text-color);
+  font-size: 0.72rem;
+}
+
+.account-status {
+  margin: 0;
+
+  color: var(--muted-text-color);
+  font-size: 0.78rem;
+}
+
+.account-error {
+  margin: 0;
+
+  color: var(--danger-color);
+  font-size: 0.78rem;
+}
+
+/* Destructive actions read red and sit at the very bottom, pushed there by the
+   auto margin so they are never next to something you press routinely. */
+.account-danger {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+
+  margin-top: auto;
+  padding-top: 0.6rem;
+
+  border-top: 1px solid var(--border-color);
+}
+
+.account-danger-warning {
+  margin: 0;
+
+  color: var(--muted-text-color);
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.account-danger-row {
+  display: flex;
+  gap: 0.4rem;
+}
+

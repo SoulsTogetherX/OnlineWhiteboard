@@ -129,20 +129,4 @@ export async function countCheckpoints(roomId: string): Promise<number> {
 export function maxCheckpointsPerRoom(): number {
   return MAX_CHECKPOINTS_PER_ROOM
 }
-
-// The revision of the OLDEST surviving checkpoint, or null if none. This is the
-// compaction floor: draw_events newer than this are retained so history can be
-// replayed forward from any checkpoint (see canvasRepository.saveCanvas).
-export async function oldestCheckpointRevision(
-  roomId: string,
-): Promise<number | null> {
-  const row = await db
-    .selectFrom("checkpoints")
-    .select("revision")
-    .where("room_id", "=", roomId)
-    .orderBy("revision", "asc")
-    .limit(1)
-    .executeTakeFirst()
-  return row?.revision ?? null
-}
 //#endregion

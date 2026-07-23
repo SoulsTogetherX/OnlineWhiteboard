@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 
 import {
   clamp,
+  coalesceRecording,
   getDirectColor,
   getDrawerMethod,
   getIdxFromVec,
@@ -64,6 +65,84 @@ describe("getLookAtMethod / getDrawerMethod", () => {
     const read = getLookAtMethod("pencil", pixels)
 
     expect(read(getIdxFromVec([0, 0], DIMS))).toEqual({ r: 0, g: 0, b: 0, a: 0 })
+  })
+})
+
+describe("coalesceRecording", () => {
+  // Why this exists: withRecording appends one entry per WRITE, and a brush
+  // rewrites the same pixels on every pointermove. A long stroke therefore
+  // records far more entries than the canvas has pixels — and a patch is
+  // validated against `entries.length <= width * height`, so the undo for a big
+  // stroke was rejected outright and undo silently did nothing.
+  //
+  // Coalescing to one entry per pixel is not just a size trick, it is the
+  // correct undo semantics: restore the colour the pixel had BEFORE the gesture
+  // (its first `from`) and treat the gesture's net effect as its last `to`.
+  const at = (x: number, y: number): number => getIdxFromVec([x, y], DIMS)
+
+  it("keeps one entry per pixel: the first `from` and the last `to`", () => {
+    const a = at(1, 1)
+
+    expect(
+      coalesceRecording([
+        { idx: a, from: DEFAULT_COLOR, to: RED },
+        { idx: a, from: RED, to: BLUE },
+      ]),
+    ).toEqual([{ idx: a, from: DEFAULT_COLOR, to: BLUE }])
+  })
+
+  it("never exceeds one entry per touched pixel, however many writes landed", () => {
+    const a = at(1, 1)
+    const b = at(2, 2)
+    const many: PatchEntry[] = [
+      { idx: a, from: DEFAULT_COLOR, to: RED },
+      { idx: b, from: DEFAULT_COLOR, to: BLUE },
+    ]
+    for (let i = 0; i < 500; i += 1) {
+      many.push({ idx: a, from: RED, to: RED })
+      many.push({ idx: b, from: BLUE, to: BLUE })
+    }
+
+    expect(coalesceRecording(many)).toHaveLength(2)
+  })
+
+  it("drops pixels the gesture left the colour it found them", () => {
+    // Drawing red over red changes nothing, so there is nothing to undo — and
+    // an entry whose `from` equals its `to` is a no-op the server would log and
+    // broadcast for no reason.
+    const a = at(1, 1)
+    const b = at(2, 2)
+
+    expect(
+      coalesceRecording([
+        { idx: a, from: RED, to: RED },
+        { idx: b, from: DEFAULT_COLOR, to: BLUE },
+      ]),
+    ).toEqual([{ idx: b, from: DEFAULT_COLOR, to: BLUE }])
+  })
+
+  it("drops a pixel that was changed and then changed back", () => {
+    const a = at(1, 1)
+
+    expect(
+      coalesceRecording([
+        { idx: a, from: DEFAULT_COLOR, to: RED },
+        { idx: a, from: RED, to: DEFAULT_COLOR },
+      ]),
+    ).toEqual([])
+  })
+
+  it("preserves first-touch order", () => {
+    const a = at(1, 1)
+    const b = at(2, 2)
+
+    expect(
+      coalesceRecording([
+        { idx: b, from: DEFAULT_COLOR, to: BLUE },
+        { idx: a, from: DEFAULT_COLOR, to: RED },
+        { idx: b, from: BLUE, to: RED },
+      ]).map((entry) => entry.idx),
+    ).toEqual([b, a])
   })
 })
 

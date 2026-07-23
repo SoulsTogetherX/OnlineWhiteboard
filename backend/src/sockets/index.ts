@@ -5,7 +5,7 @@ import WebSocket, { WebSocketServer } from "ws"
 import RoomManager from "./roomManager"
 import { resolveConnectionIdentity } from "@/auth/connectionIdentity"
 import { isAllowedOrigin } from "@/security/origin"
-import { ConnectionCounter, connectionKey } from "@/security/socketLimits"
+import { ConnectionCounter, connectionKeys } from "@/security/socketLimits"
 import { MAX_ROOM_ID_LENGTH } from "@shared/constants/protocol"
 import { SESSION_COOKIE, parseCookies } from "@/auth/cookies"
 import { hashSessionToken } from "@/auth/session"
@@ -68,9 +68,9 @@ export default function configure(
     // Enforce the connection cap BEFORE handing off to the connection handler,
     // which resolves identity against Postgres. A cap that only applies after a
     // database query is a cap an attacker can use to generate database queries.
-    const { key, isAuthenticated } = connectionKey(request)
-    if (!connections.tryAcquire(key, isAuthenticated)) {
-      console.warn(`Connection cap reached for ${key}`)
+    const keys = connectionKeys(request)
+    if (!connections.tryAcquireAll(keys)) {
+      console.warn(`Connection cap reached for ${keys.session ?? keys.ip}`)
       socket.destroy()
       return
     }
@@ -78,7 +78,7 @@ export default function configure(
     wss.handleUpgrade(request, socket, head, (ws) => {
       // Release on close, whatever the reason — a slot leaked here would
       // permanently shrink that client's allowance until the process restarts.
-      ws.once("close", () => connections.release(key))
+      ws.once("close", () => connections.releaseAll(keys))
 
       // Record which session authorised this socket, so logout can disconnect
       // it immediately and the periodic sweep can re-check it. A socket is

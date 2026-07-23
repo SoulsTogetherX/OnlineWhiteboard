@@ -1,12 +1,15 @@
 //#region Imports
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import PopupBase from "@/components/Popups/PopupBase"
+
+import { computeCheckpointMarks } from "./marks"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
 import { createImageDataFromBase64 } from "@shared/utils/helperProtocolMethods"
 
 import type { PlaybackData } from "@/hooks/useRoomConnection"
+import type { CheckpointInfo } from "@shared/types/socketProtocol"
 
 import "./styles.css"
 //#endregion
@@ -18,6 +21,10 @@ const STEP_MS = 80
 //#region Component
 export interface PlaybackViewerProps {
   playback: PlaybackData | null
+  // Checkpoints, for the scrubber's tick-marks and prev/next jump. Read-only for
+  // everyone — restoring the board to one stays a privileged action on the
+  // Timeline tab (unchanged); navigating the timeline is open to all.
+  checkpoints: CheckpointInfo[]
   onClose: () => void
 }
 
@@ -32,6 +39,7 @@ export interface PlaybackViewerProps {
 // and no inert. Playback is read-only, so anyone (including viewers) may watch.
 export default function PlaybackViewer({
   playback,
+  checkpoints,
   onClose,
 }: PlaybackViewerProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -42,6 +50,13 @@ export default function PlaybackViewer({
   const [step, setStep] = useState(0)
   const [playing, setPlaying] = useState(true)
   const total = playback?.steps.length ?? 0
+
+  // Checkpoint tick positions in step space; recomputed only when the playback or
+  // the checkpoint list changes.
+  const marks = useMemo(
+    () => (playback ? computeCheckpointMarks(playback.steps, checkpoints) : []),
+    [playback, checkpoints],
+  )
 
   // Reset the position when a NEW playback arrives. Done during render (the
   // allowed React pattern for "adjust state when a prop changes", also used by
@@ -128,6 +143,21 @@ export default function PlaybackViewer({
   }, [playing, playback, step, total])
 
   const atEnd = step >= total
+  const hasPrevCheckpoint = marks.some((mark) => mark.step < step)
+  const hasNextCheckpoint = marks.some((mark) => mark.step > step)
+  // Jump the scrub position to the adjacent checkpoint (pausing playback). marks
+  // are sorted, so the first ahead / last behind is the neighbour.
+  const jumpToCheckpoint = (direction: 1 | -1) => {
+    setPlaying(false)
+    const target =
+      direction === 1
+        ? marks.find((mark) => mark.step > step)
+        : [...marks].reverse().find((mark) => mark.step < step)
+    if (target) {
+      setStep(target.step)
+    }
+  }
+
   return (
     <PopupBase
       isOpen={playback !== null}
@@ -155,6 +185,17 @@ export default function PlaybackViewer({
           </div>
 
           <div className="playback-controls">
+            {marks.length > 0 && (
+              <button
+                type="button"
+                className="playback-jump"
+                onClick={() => jumpToCheckpoint(-1)}
+                disabled={!hasPrevCheckpoint}
+                aria-label="Previous checkpoint"
+              >
+                ⏮
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
@@ -168,17 +209,42 @@ export default function PlaybackViewer({
             >
               {playing && !atEnd ? "⏸ Pause" : atEnd ? "↻ Replay" : "▶ Play"}
             </button>
-            <input
-              type="range"
-              min={0}
-              max={total}
-              value={step}
-              aria-label="Playback position"
-              onChange={(ev) => {
-                setPlaying(false)
-                setStep(Number(ev.target.value))
-              }}
-            />
+            {marks.length > 0 && (
+              <button
+                type="button"
+                className="playback-jump"
+                onClick={() => jumpToCheckpoint(1)}
+                disabled={!hasNextCheckpoint}
+                aria-label="Next checkpoint"
+              >
+                ⏭
+              </button>
+            )}
+            <div className="playback-scrubber">
+              <input
+                type="range"
+                min={0}
+                max={total}
+                value={step}
+                aria-label="Playback position"
+                onChange={(ev) => {
+                  setPlaying(false)
+                  setStep(Number(ev.target.value))
+                }}
+              />
+              {marks.length > 0 && total > 0 && (
+                <div className="playback-marks" aria-hidden="true">
+                  {marks.map((mark) => (
+                    <span
+                      key={mark.id}
+                      className="playback-mark"
+                      style={{ left: `${(mark.step / total) * 100}%` }}
+                      title={mark.name}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
             <span className="playback-count">
               {step} / {total}
             </span>

@@ -20,17 +20,17 @@
 .tool-picker-trigger {
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
 }
 
 .tool-picker-trigger:hover,
 .tool-picker-option:hover {
-  background-color: rgba(0, 0, 0, 0.06);
+  background-color: var(--hover-background);
 }
 
 .tool-picker-trigger:focus-visible,
 .tool-picker-option:focus-visible {
-  outline: 2px solid var(--focus-color);
+  outline: 2px solid var(--focus-ring-color);
   outline-offset: -2px;
 }
 
@@ -68,7 +68,9 @@
 
 .tool-picker-menu {
   position: absolute;
-  z-index: 1;
+  /* Above the colour swatches below it (z-index 2 in the same sidebar stacking
+     context) — a dropdown must paint over sibling controls. */
+  z-index: 10;
   top: calc(100% + 0.25rem);
   left: 0;
   right: 0;
@@ -81,7 +83,7 @@
   border: 1px solid var(--border-color);
   border-radius: 0.4rem;
 
-  background-color: var(--popup-background);
+  background-color: var(--surface-background);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
 }
 
@@ -106,5 +108,10 @@
 
   font-size: 0.7rem;
   font-family: monospace;
-  color: var(--sub-text-color);
+  color: var(--muted-text-color);
+}
+
+.tool-picker-trigger:active,
+.tool-picker-option:active {
+  background-color: var(--active-background);
 }

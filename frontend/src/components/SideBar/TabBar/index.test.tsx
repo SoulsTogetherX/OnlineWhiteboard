@@ -42,8 +42,8 @@ describe("TabBar", () => {
     render(
       <TabBar tabs={SIDEBAR_TABS} activeTab="drawing" onTabChange={onTabChange} />,
     )
-    await user.click(screen.getByRole("tab", { name: "Timeline" }))
-    expect(onTabChange).toHaveBeenCalledWith("timeline")
+    await user.click(screen.getByRole("tab", { name: "Account" }))
+    expect(onTabChange).toHaveBeenCalledWith("account")
   })
 
   it("moves selection with Left/Right arrows, wrapping at the ends", async () => {
@@ -58,7 +58,7 @@ describe("TabBar", () => {
 
     // Left from the first tab wraps to the last.
     await user.keyboard("{ArrowLeft}")
-    expect(onTabChange).toHaveBeenLastCalledWith("timeline")
+    expect(onTabChange).toHaveBeenLastCalledWith("account")
   })
 
   it("jumps to the first/last tab with Home/End", async () => {
@@ -69,7 +69,7 @@ describe("TabBar", () => {
     )
     screen.getByRole("tab", { name: "Room" }).focus()
     await user.keyboard("{End}")
-    expect(onTabChange).toHaveBeenLastCalledWith("timeline")
+    expect(onTabChange).toHaveBeenLastCalledWith("account")
     await user.keyboard("{Home}")
     expect(onTabChange).toHaveBeenLastCalledWith("drawing")
   })

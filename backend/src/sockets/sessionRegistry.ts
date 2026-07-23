@@ -90,6 +90,35 @@ export function closeSocketsForSession(sessionHash: string): number {
   return closed
 }
 
+// Closes every socket belonging to a USER, across all of their sessions.
+//
+// Deleting an account only closed the sockets of the session that made the
+// request. The other sessions' rows cascade away with the user, but their
+// sockets stayed open — each holding a `userId` for a row that no longer exists
+// — until the next revalidation sweep, up to 30 minutes later. The delete route
+// closes sockets first precisely so nothing keeps acting as a deleted user, and
+// that guarantee only held for one session out of however many.
+//
+// This scans rather than keeping a second index: it runs on account deletion and
+// (in future) password change, both rare, and a parallel index is one more thing
+// that can fall out of step with this one.
+export function closeSocketsForUser(userId: string): number {
+  let closed = 0
+  for (const [hash, set] of sockets) {
+    for (const socket of set) {
+      if (socket.userId === userId) {
+        socket.close(CLOSE_SESSION_ENDED, "Account closed")
+        set.delete(socket)
+        closed += 1
+      }
+    }
+    if (set.size === 0) {
+      sockets.delete(hash)
+    }
+  }
+  return closed
+}
+
 // Test/observability helper.
 export function socketCountForSession(sessionHash: string): number {
   return sockets.get(sessionHash)?.size ?? 0

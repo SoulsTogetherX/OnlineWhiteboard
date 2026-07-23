@@ -27,6 +27,8 @@
  * the backend rather than through the proxy.
  */
 
+import { encodePatchFrame } from "./lib/patchWire.mjs"
+
 const BASE = process.argv[2] ?? "http://localhost:8080"
 const WS_BASE = BASE.replace(/^http/, "ws")
 const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
@@ -39,40 +41,8 @@ const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
 // patch on a 512^2 board and is correctly broadcast.
 const MAX_PATCH_ENTRIES = 512 * 512
 
-// Packs a patch draw as the binary frame real clients send. Mirrors
-// shared/utils/patchCodec.ts. The oversized-patch check below MUST use this: as
-// JSON, MAX_PATCH_ENTRIES+1 entries is ~25 MB, which trips maxPayload (4 MiB)
-// and closes the socket — testing the wrong bound. Packed at 12 bytes an entry
-// it is ~3.0 MB, under maxPayload, so it reaches the COUNT check this test is
-// about.
-const BINARY_FRAME_VERSION = 1
-function encodePatchFrame(roomId, instruction) {
-  const { entries, ...instructionHeader } = instruction
-  const payload = Buffer.alloc(entries.length * 12)
-  entries.forEach((e, i) => {
-    const o = i * 12
-    payload.writeUInt32BE(e.idx, o)
-    payload[o + 4] = e.from.r
-    payload[o + 5] = e.from.g
-    payload[o + 6] = e.from.b
-    payload[o + 7] = e.from.a
-    payload[o + 8] = e.to.r
-    payload[o + 9] = e.to.g
-    payload[o + 10] = e.to.b
-    payload[o + 11] = e.to.a
-  })
-  const header = Buffer.from(
-    JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
-    "utf8",
-  )
-  const frame = Buffer.alloc(3 + header.length + payload.length)
-  frame[0] = BINARY_FRAME_VERSION
-  frame[1] = (header.length >> 8) & 0xff
-  frame[2] = header.length & 0xff
-  header.copy(frame, 3)
-  payload.copy(frame, 3 + header.length)
-  return frame
-}
+// The patch wire encoder lives in ./lib/patchWire.mjs — one copy shared by the
+// probes, kept byte-identical to the real codec by a parity test.
 
 let pass = 0
 let fail = 0

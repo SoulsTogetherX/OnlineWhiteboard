@@ -2,6 +2,8 @@ import { render, screen } from "@testing-library/react"
 import userEvent from "@testing-library/user-event"
 import { describe, expect, it, vi } from "vitest"
 
+import { TOOLS } from "../tools"
+
 import ToolPicker from "./index"
 
 describe("ToolPicker", () => {
@@ -54,10 +56,21 @@ describe("ToolPicker", () => {
     render(<ToolPicker selectedTool="pencil" onSelectTool={() => {}} />)
     await user.click(screen.getByRole("button", { name: "Tool: Pencil" }))
 
+    // First and last are read from TOOLS rather than named, because this test is
+    // about Home/End reaching the ENDS of the list — not about which tool
+    // happens to sit there. Naming them meant reordering the picker failed a
+    // keyboard-navigation test, which says nothing about keyboard navigation.
+    const first = TOOLS[0].name
+    const last = TOOLS[TOOLS.length - 1].name
+
     await user.keyboard("{End}")
-    expect(screen.getByRole("option", { name: /Eyedropper/ })).toHaveFocus()
+    expect(
+      screen.getByRole("option", { name: new RegExp(last) }),
+    ).toHaveFocus()
     await user.keyboard("{Home}")
-    expect(screen.getByRole("option", { name: /Pencil/ })).toHaveFocus()
+    expect(
+      screen.getByRole("option", { name: new RegExp(first) }),
+    ).toHaveFocus()
   })
 
   it("marks the active tool as the selected option", async () => {

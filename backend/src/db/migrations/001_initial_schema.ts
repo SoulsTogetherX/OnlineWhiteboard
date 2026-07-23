@@ -53,13 +53,16 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // act, not the default.
   //
   // The `rooms_dimension_bounds` CHECK (folded in from the old 004) bounds the
-  // stored size to [16, 512], the MIN/MAX a room may be resized within (Phase 4).
+  // stored size to [1, 512], the MIN/MAX a room may be resized within (Phase 4).
   // Per-room resize makes width/height attacker-influenced (the resize request
   // carries them), so the database itself refuses an out-of-range value rather
   // than trusting the app. The literals are hardcoded on purpose — a migration is
-  // a frozen fact — and MUST stay in step with MIN_CANVAS_DIMENSION (16) and
+  // a frozen fact — and MUST stay in step with MIN_CANVAS_DIMENSION (1) and
   // MAX_CANVAS_DIMENSION (512) in shared/constants/canvas. Changing the range
-  // means a NEW migration that ALTERs the constraint, never editing this one.
+  // means a NEW migration that ALTERs the constraint on a deployed database; this
+  // baseline is edited directly only while no database has it recorded (the same
+  // pre-deploy licence the re-squash above relies on — the 1 came from lowering
+  // the floor to allow a 1x1 canvas).
   await sql`
     CREATE TABLE rooms (
       id           TEXT PRIMARY KEY,
@@ -71,8 +74,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT rooms_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)
@@ -92,8 +95,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       PRIMARY KEY (room_id, revision),
       CONSTRAINT canvas_snapshots_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)
@@ -254,8 +257,8 @@ export async function up(db: Kysely<unknown>): Promise<void> {
       created_by UUID REFERENCES users(id) ON DELETE SET NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
       CONSTRAINT checkpoints_dimension_bounds CHECK (
-        width  >= 16 AND width  <= 512 AND
-        height >= 16 AND height <= 512
+        width  >= 1 AND width  <= 512 AND
+        height >= 1 AND height <= 512
       )
     );
   `.execute(db)

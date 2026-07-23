@@ -38,7 +38,7 @@ export default function AuthPopup({
   // Reset the form each time the popup opens — PopupBase never unmounts its
   // children (it only toggles a class), so without this a cancelled attempt's
   // fields and error would still be there next time. Adjusted during render, the
-  // same pattern ColorPopup and RoomPopup use.
+  // same during-render pattern ColorPopup uses.
   const [wasOpen, setWasOpen] = useState<boolean>(isOpen)
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen)

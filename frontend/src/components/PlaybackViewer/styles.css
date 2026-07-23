@@ -20,7 +20,7 @@
 .playback-close {
   padding: 0.3rem 0.75rem;
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--border-color);
   background: transparent;
   cursor: pointer;
 }
@@ -55,13 +55,45 @@
 .playback-controls button {
   padding: 0.35rem 0.75rem;
   border-radius: 0.35rem;
-  border: 1px solid var(--border, #ccc);
+  border: 1px solid var(--border-color);
   background: transparent;
   cursor: pointer;
   white-space: nowrap;
 }
-.playback-controls input[type="range"] {
+.playback-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* The range input plus an overlay of checkpoint tick-marks, taking the flexible
+   space in the controls row. */
+.playback-scrubber {
+  position: relative;
   flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+}
+.playback-scrubber input[type="range"] {
+  width: 100%;
+}
+
+/* Ticks sit over the track; decorative (aria-hidden) — prev/next carry the
+   accessible navigation. Positioned by fraction of the timeline, so their
+   placement is approximate at the extremes (thumb overhang), which is fine for a
+   visual cue. */
+.playback-marks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.playback-mark {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  border-radius: 1px;
+  background: var(--accent-color);
 }
 .playback-count {
   font-size: 0.8rem;

@@ -17,6 +17,11 @@ function participant(role: ConnectionRole, isGuest = false): Participant {
 
 function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
   const props = {
+    roomId: "testRoom",
+    socketLabel: "Connected",
+    onLoadRoom: vi.fn(),
+    onLeaveRoom: vi.fn(),
+    onOpenDashboard: vi.fn(),
     participants: [participant("owner")],
     self: participant("owner"),
     openEditing: true,
@@ -32,6 +37,12 @@ function renderTab(overrides: Partial<Parameters<typeof RoomTab>[0]> = {}) {
     editorRequests: [],
     onRequestEditor: vi.fn(),
     onRespondEditor: vi.fn(),
+    checkpoints: [],
+    canEditHistory: true,
+    onCreateCheckpoint: vi.fn(),
+    onRestoreCheckpoint: vi.fn(),
+    onDeleteCheckpoint: vi.fn(),
+    onReplay: vi.fn(),
     showCursors: true,
     showCursorNames: true,
     onShowCursorsChange: vi.fn(),
@@ -97,5 +108,32 @@ describe("RoomTab permission gating", () => {
   it("download is available to everyone, including guests", () => {
     renderTab({ self: participant("guest", true), hasOwner: false })
     expect(screen.getByRole("button", { name: "Download image" })).toBeEnabled()
+  })
+})
+
+// This tab is about the ROOM. Account controls moved to their own tab, so the
+// only thing left here that is not room state is the way back to the lobby.
+describe("RoomTab is scoped to the room", () => {
+  it("offers a way back to the lobby", () => {
+    const { props } = renderTab()
+    screen.getByRole("button", { name: "Leave room" }).click()
+    expect(props.onLeaveRoom).toHaveBeenCalled()
+  })
+
+  it("carries no account controls", () => {
+    renderTab()
+    expect(
+      screen.queryByRole("button", { name: "Log out" }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Log in" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("holds the room's history, which used to be a tab of its own", () => {
+    renderTab({ canEditHistory: true })
+    expect(
+      screen.getByRole("button", { name: /Replay/ }),
+    ).toBeInTheDocument()
   })
 })

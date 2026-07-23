@@ -23,7 +23,14 @@ import {
   handleDrawSprayStart,
 } from "@shared/utils/handleSprayProtocol"
 import {
+  handleDrawBlurFinish,
+  handleDrawBlurLeave,
+  handleDrawBlurMotion,
+  handleDrawBlurStart,
+} from "@shared/utils/handleBlurProtocol"
+import {
   canvasDimsOf,
+  coalesceRecording,
   getDirectColor,
   getToolColor,
 } from "@shared/utils/helperProtocolMethods"
@@ -83,6 +90,16 @@ export default function useDrawActions(
   // slider mid-session doesn't rebuild the handlers, matching how the tool and
   // palette are threaded.
   strokeSizeRef?: React.RefObject<number>,
+  // Spray density, same ref-at-gesture-start treatment. Only used for spray.
+  sprayDensityRef?: React.RefObject<number>,
+  // Blur settings. On the wire for the same reason the spray's seed is: a blur's
+  // result is computed FROM the canvas, so every client must use identical
+  // numbers or they compute different pixels from the same event.
+  blurSettingsRef?: React.RefObject<{
+    blend: number
+    opacity: number
+    lockAlpha: boolean
+  }>,
 ): UseDrawActionsReturn {
   const sessionId = useSessionID()
   const baseInstruction = useRef<BaseInstruction>({
@@ -90,6 +107,34 @@ export default function useDrawActions(
     sessionId,
   })
   const record = useRef<PatchEntry[]>([])
+
+  // Re-reads the brush settings off their refs into the instruction being built.
+  //
+  // Called on every motion event, not once at gesture start. A stroke is not one
+  // instruction — it is one per pointermove, each carrying its own `size` — so
+  // re-reading here makes the width you are currently set to the width the next
+  // segment draws at. That is what lets the wheel resize the brush MID-STROKE
+  // and have the line respond under the pointer, instead of the change sitting
+  // unused until you lift and press again.
+  //
+  // Nothing about the protocol changed to allow this: every instruction already
+  // carried its own size, and the old behaviour was simply the client choosing
+  // to send the same number every time.
+  const refreshBrushSettings = (da: DrawAction): void => {
+    if (da.type === "blur" && blurSettingsRef?.current) {
+      // Written onto the ACTION, not the base instruction: these are blur-only
+      // fields, and the blur handler reads them from the action when it builds
+      // its instruction.
+      da.blend = blurSettingsRef.current.blend
+      da.opacity = blurSettingsRef.current.opacity
+      da.lockAlpha = blurSettingsRef.current.lockAlpha
+    }
+    baseInstruction.current.size = strokeSizeRef?.current ?? DEFAULT_STROKE_SIZE
+    // Density is spray-only; leave it off other instructions so it doesn't ride
+    // the wire for pencil/eraser/bucket.
+    baseInstruction.current.density =
+      da.type === "spray" ? sprayDensityRef?.current : undefined
+  }
 
   const handleDrawActionStart = (
     da: DrawAction,
@@ -107,9 +152,7 @@ export default function useDrawActions(
       da.type,
       getDirectColor(cp, ev),
     )
-    // Captured once per gesture; motion/leave reuse the same baseInstruction, so
-    // the whole stroke draws at one width.
-    baseInstruction.current.size = strokeSizeRef?.current ?? DEFAULT_STROKE_SIZE
+    refreshBrushSettings(da)
     record.current = []
 
     switch (da.type) {
@@ -125,6 +168,15 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillStart(canvas, baseInstruction.current, da, ev)
+      case "blur":
+        return handleDrawBlurStart(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+          dims,
+          record.current,
+        )
       case "spray":
         return handleDrawSprayStart(
           canvas,
@@ -167,6 +219,14 @@ export default function useDrawActions(
           record.current,
         )
         break
+      case "blur":
+        instruction = handleDrawBlurFinish(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+        )
+        break
       case "spray":
         instruction = handleDrawSprayFinish(
           canvas,
@@ -177,14 +237,21 @@ export default function useDrawActions(
         break
     }
 
-    if (record.current.length > 0) {
+    // One entry per PIXEL, not one per write. A brush repaints the same pixels
+    // on every pointermove, so the raw recording of a large stroke runs to
+    // several times the canvas's pixel count — past the ceiling patch validation
+    // enforces, which is what made undo of a big stroke fail outright while
+    // still lighting up the button. See coalesceRecording.
+    const undoEntries = coalesceRecording(record.current)
+    record.current = []
+
+    if (undoEntries.length > 0) {
       // Hold the pixels this stroke just painted so a colliding remote
       // instruction cannot visibly wipe them for the next 100 ms (see
       // @/utils/localHold). Display-only — the recorded writes are already in the
       // authoritative buffer; this just keeps them SHOWN briefly.
-      holdLocalPixels(record.current, Date.now())
-      onCommitAction?.(baseInstruction.current.instructionId, record.current)
-      record.current = []
+      holdLocalPixels(undoEntries, Date.now())
+      onCommitAction?.(baseInstruction.current.instructionId, undoEntries)
     }
     return instruction
   }
@@ -197,6 +264,10 @@ export default function useDrawActions(
       return null
     }
     const dims = canvasDimsOf(canvas)
+
+    // Picks up a size changed since the last segment, so the line thickens or
+    // thins under the pointer while you are still drawing it.
+    refreshBrushSettings(da)
 
     switch (da.type) {
       case "pencil":
@@ -211,6 +282,15 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillMotion(canvas, baseInstruction.current, da, ev)
+      case "blur":
+        return handleDrawBlurMotion(
+          canvas,
+          baseInstruction.current,
+          da,
+          ev,
+          dims,
+          record.current,
+        )
       case "spray":
         return handleDrawSprayMotion(
           canvas,
@@ -245,6 +325,8 @@ export default function useDrawActions(
         )
       case "bucket":
         return handleDrawFillLeave(canvas, baseInstruction.current, da, ev)
+      case "blur":
+        return handleDrawBlurLeave(canvas, baseInstruction.current, da, ev)
       case "spray":
         return handleDrawSprayLeave(
           canvas,

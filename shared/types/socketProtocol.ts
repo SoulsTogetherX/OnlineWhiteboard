@@ -1,7 +1,31 @@
 //#region Imports
-import type { DrawInstruction } from "./drawProtocol"
+import type { DrawInstruction, ToolType } from "./drawProtocol"
 import type { Participant, RoomRole } from "./identity"
 import type { Vec } from "./primitive"
+//#endregion
+
+//#region Cursor tool
+// What a cursor can be holding. The drawing tools, plus the eyedropper — which
+// produces no draw instruction, so it is not a ToolType, but IS something other
+// people can watch you use.
+//
+// It lives in the socket protocol rather than in the frontend because it now
+// travels between clients, and the two sides have to agree on the spelling.
+// "grabber" is here but is NOT a ToolType: it draws nothing, it changes what
+// dragging the canvas means. It still belongs on a cursor, because someone
+// holding it is about to move the view rather than mark the board, and that is
+// worth seeing.
+export type CursorTool = ToolType | "eyedropper" | "grabber"
+
+export const CURSOR_TOOLS: readonly CursorTool[] = [
+  "pencil",
+  "eraser",
+  "bucket",
+  "spray",
+  "blur",
+  "eyedropper",
+  "grabber",
+] as const
 //#endregion
 
 //#region Socket Message Types
@@ -27,6 +51,10 @@ export type ClientSocketMessage =
       type: "cursor"
       roomId: string
       pos: Vec | null
+      // Which tool this pointer is holding, so other people's cursors show what
+      // someone is about to do rather than a generic arrow. Optional: a client
+      // that omits it still gets a cursor, drawn with the default glyph.
+      tool?: CursorTool
     }
   | {
       // A room-wide destructive action, applied immediately. OWNER ONLY.
@@ -229,6 +257,7 @@ export type ServerSocketMessage =
       roomId: string
       connectionId: string
       pos: Vec | null
+      tool?: CursorTool
     }
   | {
       // The room's permission state. Sent on join and broadcast whenever it

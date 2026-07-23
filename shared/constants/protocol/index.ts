@@ -11,6 +11,17 @@
 // short enough that a million of them is trivial storage.
 const MAX_ROOM_ID_LENGTH = 64
 
+// What a room-name INPUT accepts, which is deliberately stricter than what the
+// protocol allows. The two are different jobs: the 64 above is the anti-abuse
+// ceiling the server enforces on anything arriving over the wire, while this is
+// a usability cap on what someone types — long enough to be descriptive, short
+// enough to fit a dashboard card and a sidebar header without truncating.
+//
+// Shared rather than repeated on each input, because it was previously written
+// out at all three call sites (the lobby, the change-room field, and the room
+// popup) and that is exactly how three 22s become a 22, a 22 and a 30.
+const MAX_ROOM_NAME_INPUT_LENGTH = 30
+
 // Checkpoint and account ids are server-generated UUIDs (36 chars). The cap exists
 // so a client can't hand back a megabyte where an id belongs; it is not a format
 // check — the lookup itself is what rejects an id that doesn't exist.
@@ -25,5 +36,10 @@ const MAX_CHECKPOINT_NAME_LENGTH = 60
 //#endregion
 
 //#region Exports
-export { MAX_ROOM_ID_LENGTH, MAX_ID_LENGTH, MAX_CHECKPOINT_NAME_LENGTH }
+export {
+  MAX_ROOM_ID_LENGTH,
+  MAX_ROOM_NAME_INPUT_LENGTH,
+  MAX_ID_LENGTH,
+  MAX_CHECKPOINT_NAME_LENGTH,
+}
 //#endregion
