@@ -1262,15 +1262,47 @@ in the repo of a bug that is really two bugs.
   panel scrollbar is thin and themed, over a generated `feTurbulence` grain so a large flat
   fill does not read as unfinished.
 
-### Phase 7 — Real-world Usablity
+### ✅ Phase 7 — Real-world usability
 
-Detail how to implement this in a real sever and run on multiple devices. Implement anything needed
-for real-world productivity and explain how to start running it online. Alter the README.md with new images
-and text detailed how everything work, how to use it, and how to run it on your computer (local or on a sever).
+The app was already deployable (the prod stack existed); Phase 7 made "run it online for
+real" a documented, correct path rather than tribal knowledge. No new app code was needed —
+the gaps were all deployment truth that lived only in comments and one real footgun.
 
-### Phase 8 — Fundamentals writeup
+- **README rewritten** to the current app: the full tool set (grab/pencil/eraser/fill/spray/
+  blur/eyedropper), the lobby + three-tab sidebar, the *settled* input rules (Shift or the
+  Grab tool pans/zooms; the bare wheel drives the last-used slider; `D` switches slider; tool
+  keys G/P/E/F/S/B/I), timeline/checkpoints, roles/ownership, export formats, and dark mode.
+  The stale "middle-click to pan", "stroke size controls (future)", "HIBP (remaining)" and
+  "prompt for a room id (future)" lines are gone — all shipped.
+- **The deployment section is the substance.** Three things a real deploy MUST get right,
+  now written down: (1) generate the two email-at-rest secrets or the server refuses to boot;
+  (2) set `ALLOWED_ORIGINS` to the real domain; (3) **TLS is required, not optional** — the
+  session cookie is `Secure` in production, so on a real domain served over plain HTTP logins
+  silently fail to persist. A concrete Caddy recipe (automatic Let's Encrypt, transparent WS
+  proxy) is given, plus the health endpoint, backup target (the Postgres volume), the
+  graceful-deploy guarantee, and the single-instance scale ceiling.
+- **Deliberately NOT implemented:** a TLS-terminating service inside the compose stack (BYO
+  reverse proxy is the honest, platform-agnostic answer), email verification / password
+  reset, and horizontal scaling — all recorded as known limitations rather than hidden.
 
-How every change works at a fundamental level: the crypto and what each part defends
-against, why the 100 ms hold preserves convergence, where the bytes go, the permission
-model, how is auth and tokens handled, how data is compressed, and the decimation maths.
-Written to be defensible in an interview.
+Note: screenshots in the README predate the lobby/dark-mode/grouped-sidebar overhaul and
+want recapturing — flagged inline, not silently shipped as current.
+
+### ✅ Phase 8 — Fundamentals writeup
+
+A file-by-file, decision-by-decision walkthrough of the whole system, written to be
+defensible in an interview and complete enough to rebuild from. Delivered as five parts:
+`shared/` (the contract layer), the backend in four installments (bootstrap + connection
+gauntlet; the room manager + event-sourced recovery; auth/crypto + the security primitives;
+the REST routes + DB plumbing + the two compression codecs), the frontend (the optimistic
+mirror and how it consumes `shared/` and talks to the backend), and the operational layer
+(Docker/nginx topology, CI + the three e2e probes, dev-vs-prod build differences).
+
+Each part explains not just *what* but *why*: the crypto and what each piece defends against
+(scrypt, hashed session tokens, the email blind-index-plus-AES-GCM split, HIBP k-anonymity),
+why the 100 ms hold preserves convergence (display-only, never touches what converges), where
+the bytes go (instructions not pixels; the 11-byte u24 patch codec; gzip-at-rest vs
+deflate-raw-on-wire and why one is not in `shared/`), the permission model (shared predicates,
+server-authoritative, the partial-unique one-owner index), auth/token handling (opaque token,
+hash at rest, the session registry closing the WebSocket auth gap), and the decimation maths
+(uniform thinning bounded strictly ≤ head, so durability and timeline are independent).
