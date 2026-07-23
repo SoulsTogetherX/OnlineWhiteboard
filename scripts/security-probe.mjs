@@ -40,26 +40,29 @@ const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
 const MAX_PATCH_ENTRIES = 512 * 512
 
 // Packs a patch draw as the binary frame real clients send. Mirrors
-// shared/utils/patchCodec.ts. The oversized-patch check below MUST use this: as
-// JSON, MAX_PATCH_ENTRIES+1 entries is ~25 MB, which trips maxPayload (4 MiB)
-// and closes the socket — testing the wrong bound. Packed at 12 bytes an entry
-// it is ~3.0 MB, under maxPayload, so it reaches the COUNT check this test is
-// about.
+// shared/utils/patchCodec.ts: 11 bytes an entry, a u24 PIXEL index (idx >> 2)
+// then two RGBA quads. The oversized-patch check below MUST use this: as JSON,
+// MAX_PATCH_ENTRIES+1 entries is ~25 MB, which trips maxPayload (3 MiB) and
+// closes the socket — testing the wrong bound. Packed it is ~2.75 MB, under
+// maxPayload, so it reaches the COUNT check this test is about.
 const BINARY_FRAME_VERSION = 1
 function encodePatchFrame(roomId, instruction) {
   const { entries, ...instructionHeader } = instruction
-  const payload = Buffer.alloc(entries.length * 12)
+  const payload = Buffer.alloc(entries.length * 11)
   entries.forEach((e, i) => {
-    const o = i * 12
-    payload.writeUInt32BE(e.idx, o)
-    payload[o + 4] = e.from.r
-    payload[o + 5] = e.from.g
-    payload[o + 6] = e.from.b
-    payload[o + 7] = e.from.a
-    payload[o + 8] = e.to.r
-    payload[o + 9] = e.to.g
-    payload[o + 10] = e.to.b
-    payload[o + 11] = e.to.a
+    const o = i * 11
+    const pixel = e.idx >>> 2
+    payload[o] = (pixel >>> 16) & 0xff
+    payload[o + 1] = (pixel >>> 8) & 0xff
+    payload[o + 2] = pixel & 0xff
+    payload[o + 3] = e.from.r
+    payload[o + 4] = e.from.g
+    payload[o + 5] = e.from.b
+    payload[o + 6] = e.from.a
+    payload[o + 7] = e.to.r
+    payload[o + 8] = e.to.g
+    payload[o + 9] = e.to.b
+    payload[o + 10] = e.to.a
   })
   const header = Buffer.from(
     JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),

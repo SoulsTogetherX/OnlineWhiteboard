@@ -108,23 +108,27 @@ const draw = (roomId, instruction) =>
   JSON.stringify({ type: "draw", roomId, instruction })
 
 // Encodes a patch draw as the binary frame a real client now sends: the draw
-// message (minus entries) as the JSON header, 12 packed bytes per entry as the
-// payload. Hand-rolled to keep this probe dependency-free; keep it in step with
+// message (minus entries) as the JSON header, 11 packed bytes per entry as the
+// payload — a u24 PIXEL index (idx >> 2) plus two RGBA quads. Hand-rolled to
+// keep this probe dependency-free; keep it in step with
 // shared/utils/patchCodec.ts, same as decodeFrame mirrors binaryFrame.ts.
 function encodePatchFrame(roomId, instruction) {
   const { entries, ...instructionHeader } = instruction
-  const payload = Buffer.alloc(entries.length * 12)
+  const payload = Buffer.alloc(entries.length * 11)
   entries.forEach((e, i) => {
-    const o = i * 12
-    payload.writeUInt32BE(e.idx, o)
-    payload[o + 4] = e.from.r
-    payload[o + 5] = e.from.g
-    payload[o + 6] = e.from.b
-    payload[o + 7] = e.from.a
-    payload[o + 8] = e.to.r
-    payload[o + 9] = e.to.g
-    payload[o + 10] = e.to.b
-    payload[o + 11] = e.to.a
+    const o = i * 11
+    const pixel = e.idx >>> 2
+    payload[o] = (pixel >>> 16) & 0xff
+    payload[o + 1] = (pixel >>> 8) & 0xff
+    payload[o + 2] = pixel & 0xff
+    payload[o + 3] = e.from.r
+    payload[o + 4] = e.from.g
+    payload[o + 5] = e.from.b
+    payload[o + 6] = e.from.a
+    payload[o + 7] = e.to.r
+    payload[o + 8] = e.to.g
+    payload[o + 9] = e.to.b
+    payload[o + 10] = e.to.a
   })
   const header = Buffer.from(
     JSON.stringify({ type: "draw", roomId, instruction: instructionHeader }),
