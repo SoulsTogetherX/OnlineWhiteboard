@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import { MAX_PATCH_ENTRIES } from "../../constants/canvas"
 import { isValidClientMessage } from "../validateSocketMessage"
 import {
+  BYTES_PER_ENTRY,
   decodePatchDrawFrame,
   decodePatchEntries,
   encodePatchDrawFrame,
@@ -26,16 +27,43 @@ describe("patch entry packing", () => {
     expect(decoded).toEqual(entries)
   })
 
-  it("packs exactly 12 bytes per entry", () => {
-    expect(encodePatchEntries([entry(0, 0, 0), entry(4, 1, 1)]).length).toBe(24)
+  it("packs exactly 11 bytes per entry", () => {
+    expect(encodePatchEntries([entry(0, 0, 0), entry(4, 1, 1)]).length).toBe(22)
   })
 
-  it("preserves a u32 index that would overflow a u16", () => {
-    // 57,596 is the last pixel's byte offset on a 120x120 canvas — already past
-    // 65,535/... no, past a u16 once the canvas grows. This pins the width now.
+  it("preserves a byte offset whose pixel index overflows a u16", () => {
+    // 57,596 is the last pixel's byte offset on a 120x120 canvas: pixel index
+    // 14,399 (fits a u16 here), but on the 512 max canvas the top pixel index is
+    // 262,143, well past a u16. The u24 pixel encoding holds it, and the byte
+    // offset round-trips because it is a multiple of 4.
     const decoded = decodePatchEntries(encodePatchEntries([entry(57_596, 1, 2)]))
 
     expect(decoded?.[0].idx).toBe(57_596)
+  })
+
+  it("round-trips the largest byte offset the max canvas can produce", () => {
+    // The last pixel of a 512x512 canvas: byte offset 1,048,572, pixel index
+    // 262,143. This is what a u16 could not have held and the u24 must.
+    const topOffset = (512 * 512 - 1) * 4
+    const decoded = decodePatchEntries(encodePatchEntries([entry(topOffset, 3, 9)]))
+
+    expect(decoded?.[0].idx).toBe(topOffset)
+  })
+
+  it("decodes any u24 index as a 4-aligned byte offset", () => {
+    // Whatever bytes arrive, the << 2 on decode makes the offset a multiple of 4,
+    // so a misaligned offset cannot be expressed on the wire at all.
+    const raw = new Uint8Array(BYTES_PER_ENTRY)
+    raw[0] = 0x00
+    raw[1] = 0x00
+    raw[2] = 0x7f // pixel index 127 -> byte offset 508
+
+    const decoded = decodePatchEntries(raw)
+
+    expect(decoded).not.toBeNull()
+    const idx = decoded![0].idx
+    expect(idx).toBe(508)
+    expect(idx % 4).toBe(0)
   })
 
   it("round-trips an empty entry list", () => {
@@ -70,13 +98,13 @@ describe("patch entry packing", () => {
     it("returns null for more entries than a patch may carry", () => {
       // One entry past the cap — decoded straight from a length, so it never
       // allocates the entries first.
-      const tooMany = new Uint8Array((MAX_PATCH_ENTRIES + 1) * 12)
+      const tooMany = new Uint8Array((MAX_PATCH_ENTRIES + 1) * BYTES_PER_ENTRY)
 
       expect(decodePatchEntries(tooMany)).toBeNull()
     })
 
     it("accepts a payload at exactly the entry cap", () => {
-      const atCap = new Uint8Array(MAX_PATCH_ENTRIES * 12)
+      const atCap = new Uint8Array(MAX_PATCH_ENTRIES * BYTES_PER_ENTRY)
 
       expect(decodePatchEntries(atCap)).toHaveLength(MAX_PATCH_ENTRIES)
     })
