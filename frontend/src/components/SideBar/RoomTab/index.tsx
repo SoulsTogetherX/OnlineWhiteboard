@@ -123,8 +123,8 @@ export default function RoomTab({
   const mayRequestEditor = canRequestEditor(role)
 
   // The change-room field, re-seeded to the live room whenever it changes (the
-  // during-render reset pattern, as RoomPopup used) so it always defaults to the
-  // current room and discards a half-typed draft after a switch.
+  // during-render reset pattern) so it always defaults to the current room and
+  // discards a half-typed draft after a switch.
   const [draftRoomId, setDraftRoomId] = useState(roomId)
   const [seenRoomId, setSeenRoomId] = useState(roomId)
   if (roomId !== seenRoomId) {

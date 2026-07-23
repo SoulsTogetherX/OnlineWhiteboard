@@ -43,7 +43,6 @@ import { DEFAULT_CANVAS_DIMS } from "@shared/constants/canvas"
 // Where the shell remembers the last room you were in, so the lobby can offer it
 // back. Exported because the lobby, not this hook, is now what persists it.
 export const ROOM_ID_STORAGE_KEY = "online-whiteboard-room-id"
-export const DEFAULT_ROOM_ID = "testRoom"
 //#endregion
 
 //#region Type Def

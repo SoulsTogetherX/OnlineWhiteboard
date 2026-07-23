@@ -49,8 +49,8 @@ export default function ColorPopup({
   const [draftColor, setDraftColor] = useState<ColorType>(currentColor)
   const cssPreview = colorTypeToString(draftColor)
 
-  // Re-seed the draft each time the popup opens (PopupBase never unmounts). See
-  // RoomPopup for the same during-render pattern.
+  // Re-seed the draft each time the popup opens (PopupBase never unmounts), the
+  // same during-render pattern the other popups use.
   const [wasOpen, setWasOpen] = useState<boolean>(isOpen)
   if (isOpen !== wasOpen) {
     setWasOpen(isOpen)
