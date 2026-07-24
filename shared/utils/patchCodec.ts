@@ -10,9 +10,17 @@
 // feature, and packing is what keeps that ceiling as low as it can go.
 //
 // Packed, an entry is 11 bytes flat: a u24 PIXEL index and two RGBA quadruplets.
-// The same 14,400-entry patch is ~158 KB, roughly a 9x shrink, which lets
-// maxPayload come down to 3 MiB — a real tightening of the attack surface, paid
-// for by the feature that forced it open rather than by weakening it.
+// The same 14,400-entry patch is ~158 KB, roughly a 9x shrink.
+//
+// Packing alone still left the WORST case — a full-canvas undo, one entry per
+// pixel of a 512 board — at ~2.75 MB, which is what pinned maxPayload in the
+// megabytes. So the entries of one undo are no longer required to fit in one
+// frame at all: chunkPatchEntries splits them into messages of at most
+// MAX_PATCH_ENTRIES_PER_MESSAGE (~176 KB packed), the server applies each
+// independently (every entry is its own CAS, so the split is invisible to the
+// result), and maxPayload is sized to that per-message cap instead of the whole
+// undo — a further ~12x tightening of the largest frame an attacker can make the
+// server buffer before any validation runs.
 //
 // Unlike the snapshot COMPRESSION codec (which is split across node:zlib and the
 // browser's DecompressionStream), this pair is symmetric and environment-neutral
@@ -38,7 +46,7 @@
 //#endregion
 
 //#region Imports
-import { MAX_PATCH_ENTRIES } from "../constants/canvas"
+import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "../constants/canvas"
 import { decodeBinaryFrame, encodeBinaryFrame } from "./binaryFrame"
 
 import type { PatchEntry, PatchInstruction } from "../types/drawProtocol"
@@ -80,11 +88,13 @@ export function encodePatchEntries(entries: PatchEntry[]): Uint8Array {
 }
 
 // Returns null for a payload that cannot be a valid entry list: a length that is
-// not a whole number of entries, or more entries than a patch is ever allowed to
-// carry. The count bound matters as its own check — without it a 256 KB frame
-// would still allocate ~21,000 objects before per-entry validation ran, and the
-// point of a cap is to reject BEFORE doing the work (§12.9: bounding the item is
-// not bounding the collection).
+// not a whole number of entries, or more entries than a single patch MESSAGE may
+// carry. The count bound matters as its own check — without it an oversized frame
+// would still allocate a chunk's worth of objects before per-entry validation
+// ran, and the point of a cap is to reject BEFORE doing the work (§12.9: bounding
+// the item is not bounding the collection). It is the per-MESSAGE cap, not the
+// whole-undo total, because a large undo arrives as several messages (see
+// chunkPatchEntries) — so one frame legitimately never exceeds this.
 //
 // The bytes themselves are always in range (each color channel IS a byte), but
 // an idx can still be out of range or misaligned — that is left to
@@ -94,7 +104,7 @@ export function decodePatchEntries(payload: Uint8Array): PatchEntry[] | null {
     return null
   }
   const count = payload.length / BYTES_PER_ENTRY
-  if (count > MAX_PATCH_ENTRIES) {
+  if (count > MAX_PATCH_ENTRIES_PER_MESSAGE) {
     return null
   }
 
@@ -127,6 +137,33 @@ export function decodePatchEntries(payload: Uint8Array): PatchEntry[] | null {
     offset += BYTES_PER_ENTRY
   }
   return entries
+}
+//#endregion
+
+//#region Entry chunking
+// Splits a patch's entries into groups of at most `maxPerChunk`, so a large undo
+// travels as several bounded messages instead of one multi-megabyte frame. Every
+// entry is an independent compare-and-swap, so which message an entry rides in
+// has no effect on the result — the server decides each entry the same way it
+// would in one big patch, and order within/between messages does not matter.
+//
+// Returns one chunk per outgoing message (an empty array for no entries, so the
+// caller sends nothing). A single-chunk result is the common case — a normal
+// stroke's undo is far below the cap — and keeps the send path uniform.
+export function chunkPatchEntries(
+  entries: PatchEntry[],
+  maxPerChunk: number = MAX_PATCH_ENTRIES_PER_MESSAGE,
+): PatchEntry[][] {
+  // Defensive: a non-positive cap would loop forever. Treat as "one chunk" — the
+  // wire cap is a positive constant, so this only guards a caller passing junk.
+  if (maxPerChunk < 1) {
+    return entries.length > 0 ? [entries] : []
+  }
+  const chunks: PatchEntry[][] = []
+  for (let i = 0; i < entries.length; i += maxPerChunk) {
+    chunks.push(entries.slice(i, i + maxPerChunk))
+  }
+  return chunks
 }
 //#endregion
 

@@ -5,6 +5,7 @@ import {
   MAX_BLUR_OPACITY,
   MAX_SPRAY_RADIUS,
   MAX_STROKE_SIZE,
+  MAX_PATCH_ENTRIES_PER_MESSAGE,
   canvasBytes,
 } from "../constants/canvas"
 
@@ -192,11 +193,18 @@ export function isValidDrawInstruction(
     case "patch":
       // The LENGTH check is as important as the per-entry check. Validating each
       // entry bounds what one entry can do; only this bounds how many there are.
-      // The per-room bound is the canvas AREA (one entry per pixel), tighter than
-      // the global MAX_PATCH_ENTRIES the decoder uses before dims are known.
+      // The bound is the tighter of two: the canvas AREA (one entry per pixel is
+      // the most a patch could ever mean), and MAX_PATCH_ENTRIES_PER_MESSAGE (the
+      // per-message wire cap that sizes maxPayload). A legitimate large undo is
+      // split into several messages by the client (chunkPatchEntries), so no
+      // single valid message ever exceeds the per-message cap — and a client that
+      // sends one oversized patch anyway is rejected here rather than trusted to
+      // have split it. On a small canvas the area is the tighter bound; on a big
+      // one the per-message cap is.
       return (
         Array.isArray(candidate.entries) &&
-        candidate.entries.length <= dims.width * dims.height &&
+        candidate.entries.length <=
+          Math.min(dims.width * dims.height, MAX_PATCH_ENTRIES_PER_MESSAGE) &&
         candidate.entries.every((entry) => isValidPatchEntry(entry, dims))
       )
     case "clear":

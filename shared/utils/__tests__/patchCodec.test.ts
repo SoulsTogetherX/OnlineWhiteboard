@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest"
 
-import { MAX_PATCH_ENTRIES } from "../../constants/canvas"
+import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "../../constants/canvas"
 import { isValidClientMessage } from "../validateSocketMessage"
 import {
   BYTES_PER_ENTRY,
+  chunkPatchEntries,
   decodePatchDrawFrame,
   decodePatchEntries,
   encodePatchDrawFrame,
@@ -95,19 +96,72 @@ describe("patch entry packing", () => {
       expect(decodePatchEntries(new Uint8Array(13))).toBeNull()
     })
 
-    it("returns null for more entries than a patch may carry", () => {
-      // One entry past the cap — decoded straight from a length, so it never
-      // allocates the entries first.
-      const tooMany = new Uint8Array((MAX_PATCH_ENTRIES + 1) * BYTES_PER_ENTRY)
+    it("returns null for more entries than a single message may carry", () => {
+      // One entry past the per-message cap — decoded straight from a length, so it
+      // never allocates the entries first.
+      const tooMany = new Uint8Array(
+        (MAX_PATCH_ENTRIES_PER_MESSAGE + 1) * BYTES_PER_ENTRY,
+      )
 
       expect(decodePatchEntries(tooMany)).toBeNull()
     })
 
-    it("accepts a payload at exactly the entry cap", () => {
-      const atCap = new Uint8Array(MAX_PATCH_ENTRIES * BYTES_PER_ENTRY)
+    it("accepts a payload at exactly the per-message entry cap", () => {
+      const atCap = new Uint8Array(
+        MAX_PATCH_ENTRIES_PER_MESSAGE * BYTES_PER_ENTRY,
+      )
 
-      expect(decodePatchEntries(atCap)).toHaveLength(MAX_PATCH_ENTRIES)
+      expect(decodePatchEntries(atCap)).toHaveLength(
+        MAX_PATCH_ENTRIES_PER_MESSAGE,
+      )
     })
+  })
+})
+
+describe("chunkPatchEntries", () => {
+  const entries = (n: number): PatchEntry[] =>
+    Array.from({ length: n }, (_, i) => entry(i * 4, i % 256, (i + 1) % 256))
+
+  it("keeps a below-cap patch as a single chunk", () => {
+    const list = entries(MAX_PATCH_ENTRIES_PER_MESSAGE - 1)
+
+    const chunks = chunkPatchEntries(list)
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toEqual(list)
+  })
+
+  it("keeps a patch exactly at the cap as a single chunk", () => {
+    const chunks = chunkPatchEntries(entries(MAX_PATCH_ENTRIES_PER_MESSAGE))
+
+    expect(chunks).toHaveLength(1)
+    expect(chunks[0]).toHaveLength(MAX_PATCH_ENTRIES_PER_MESSAGE)
+  })
+
+  it("splits an over-cap patch into chunks that never exceed the cap", () => {
+    const total = MAX_PATCH_ENTRIES_PER_MESSAGE * 2 + 5
+    const list = entries(total)
+
+    const chunks = chunkPatchEntries(list)
+
+    expect(chunks).toHaveLength(3)
+    for (const chunk of chunks) {
+      expect(chunk.length).toBeLessThanOrEqual(MAX_PATCH_ENTRIES_PER_MESSAGE)
+    }
+    // Concatenating the chunks reproduces the original in order — the split is
+    // lossless and every entry is preserved exactly once.
+    expect(chunks.flat()).toEqual(list)
+  })
+
+  it("emits no chunks for an empty patch, so nothing is sent", () => {
+    expect(chunkPatchEntries([])).toEqual([])
+  })
+
+  it("respects an explicit smaller cap", () => {
+    const chunks = chunkPatchEntries(entries(10), 4)
+
+    expect(chunks.map((c) => c.length)).toEqual([4, 4, 2])
+    expect(chunks.flat()).toEqual(entries(10))
   })
 })
 
