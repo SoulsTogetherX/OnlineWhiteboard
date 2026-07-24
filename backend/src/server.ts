@@ -7,6 +7,7 @@ import configureRoutes from "./routes"
 import configureWebSockets from "./sockets"
 import { runMigrations } from "./db/migrate"
 import { assertEmailSecretsPresent } from "./auth/emailCrypto"
+import { assertMailerConfigured } from "./auth/mailer"
 import pool from "./db/pool"
 //#endregion
 
@@ -103,6 +104,11 @@ async function start(): Promise<void> {
   // every other caller is lazy (register/login) — so without this, "refuses to
   // start in production" was aspirational rather than true.
   assertEmailSecretsPresent()
+
+  // Likewise fail closed on a production deploy that cannot send email — the
+  // verification and password-reset flows would otherwise silently do nothing.
+  // In development this only warns and falls back to console-logging the links.
+  assertMailerConfigured()
 
   await runMigrations()
 

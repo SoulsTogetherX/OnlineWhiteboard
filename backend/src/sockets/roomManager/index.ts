@@ -20,6 +20,7 @@ import {
   setOpenEditing,
 } from "@/db/roomRepository"
 import { deleteExpiredSessions } from "@/db/sessionRepository"
+import { deleteExpiredAuthTokens } from "@/db/authTokenRepository"
 import {
   claimOwnership,
   ensureMembership,
@@ -235,6 +236,15 @@ export default class RoomManager {
       }
     } catch (error) {
       console.error("Expired-session cleanup failed:", error)
+    }
+
+    try {
+      const removed = await deleteExpiredAuthTokens()
+      if (removed > 0) {
+        console.log(`cleanup: removed ${removed} expired auth token(s)`)
+      }
+    } catch (error) {
+      console.error("Expired auth-token cleanup failed:", error)
     }
   }
 

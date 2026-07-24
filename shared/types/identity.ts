@@ -25,11 +25,17 @@ export type ConnectionRole = RoomRole | "guest"
 // userRepository), and the address is stored encrypted at rest and never sent
 // back. The client only ever submits an email on the login/register forms;
 // nothing renders it, so returning it would be pure exposure with no use.
+//
+// `emailVerified` is a boolean (not the timestamp the database keeps): the
+// client only needs to render "verified or not", and exposing the exact time
+// would be detail with no UI use. It is safe to send back — it is a property of
+// the account the signed-in user already owns, not a cross-account identifier.
 export type AuthUser = {
   id: string
   username: string
   color: string
   isGuest: false
+  emailVerified: boolean
 }
 
 // Everyone in a room has an identity for presence — registered or guest. The

@@ -40,7 +40,9 @@ drawn.
 * **Live presence** — see who else is in the room
 * **Accounts (optional)** — draw as a guest, or sign in for a persistent identity and a
   saved palette that follows you across devices. Registration screens passwords against
-  known breaches, and email addresses are encrypted at rest
+  known breaches, and email addresses are encrypted at rest. **Email verification** (confirm
+  your address from the Account tab) and **password reset** (a "Forgot password?" link that
+  emails a one-hour, single-use reset link) are both supported
 * **Ownership & roles** — claim an unowned room to become its owner; owners control who may
   draw (open editing on/off), resize or clear the canvas, and promote members. Editors draw
   and manage history; viewers are read-only
@@ -57,7 +59,9 @@ drawn.
 * **Database:** PostgreSQL via [Kysely](https://kysely.dev/) (typed SQL), with ordered
   migrations that run automatically on startup
 * **Auth:** email + password (scrypt), httpOnly cookie sessions stored server-side as
-  hashes, a breached-password (HIBP k-anonymity) check, and email-at-rest encryption
+  hashes, a breached-password (HIBP k-anonymity) check, email-at-rest encryption, and
+  email verification + password reset via single-use, hashed, expiring link tokens
+  ([nodemailer](https://nodemailer.com/) over SMTP)
 * **Deployment:** Docker (multi-stage) + nginx; one health endpoint at `GET /api/health`
 
 A deep, file-by-file explanation of *how and why* every part works — the crypto and what it
@@ -76,8 +80,37 @@ Node installed to run the app.
 1. Clone the repository.
 2. Copy `.env.example` to `.env`.
 3. Set `POSTGRES_PASSWORD` to any value. That is all you need for local development — the
-   email-at-rest secrets fall back to insecure dev defaults with a warning (see
-   [deployment](#deploying-online) for what production requires instead).
+   email-at-rest secrets fall back to insecure dev defaults with a warning, and with no SMTP
+   configured the verification and password-reset links are printed to the backend console
+   instead of emailed (`docker compose logs backend`, look for `[mailer:dev]`). See
+   [environment variables](#environment-variables) for the full list and
+   [deployment](#deploying-online) for what production requires instead.
+
+### Environment variables
+
+Everything the app reads lives in `.env` (copied from `.env.example`). The table below is the
+whole surface; **Dev** is what a local `docker compose up` needs, **Prod** is what a public
+deployment additionally requires.
+
+| Variable | Dev | Prod | What it is |
+|---|---|---|---|
+| `POSTGRES_PASSWORD` | **required** | **required** | Database password (any value in dev). |
+| `POSTGRES_USER` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` | preset | preset | Database connection; the defaults in `.env.example` work as-is. |
+| `PUBLIC_SITE_URL` | preset | **required** | The site's own origin. Used to build the links in verification and reset emails, so in production it must be your real URL (e.g. `https://draw.example.com`). |
+| `ALLOWED_ORIGINS` | preset | **required** | CSRF / cross-site-WebSocket allowlist (comma-separated). Lock to your real origin(s) in prod. |
+| `EMAIL_INDEX_PEPPER` | optional¹ | **required** | Secret for the email blind index (login lookup). |
+| `EMAIL_ENCRYPTION_KEY` | optional¹ | **required** | 32-byte base64 key for email-at-rest (AES-256-GCM). |
+| `SMTP_HOST` | optional² | **required** | SMTP server that sends verification/reset mail. |
+| `SMTP_PORT` | preset | preset | `587` for STARTTLS (default), `465` with `SMTP_SECURE=true`. |
+| `SMTP_SECURE` | optional | optional | `true` for implicit TLS (port 465); otherwise leave unset. |
+| `SMTP_USER` / `SMTP_PASSWORD` | optional | usually required | SMTP credentials (omit for an unauthenticated relay). |
+| `EMAIL_FROM` | optional² | **required** | The `From` address, e.g. `Online Whiteboard <no-reply@yourapp.com>`. |
+| `PROD_PORT` | — | preset | Host port the production stack publishes (default `8080`). |
+
+¹ Fall back to insecure built-in defaults in dev, with a loud warning. The server **refuses to
+start** in production without real values.
+² With no `SMTP_HOST`/`EMAIL_FROM`, dev logs the email links to the backend console instead of
+sending. Production **refuses to start** without them, so password reset can't silently fail.
 
 ### Development (hot reload)
 
@@ -145,6 +178,13 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # 
 
 Set `POSTGRES_PASSWORD`, `EMAIL_INDEX_PEPPER`, and `EMAIL_ENCRYPTION_KEY` in `.env`. Keep
 `.env` off version control (it already is).
+
+Also set `PUBLIC_SITE_URL` to your real origin and configure outgoing email — `SMTP_HOST`,
+`EMAIL_FROM`, and usually `SMTP_USER`/`SMTP_PASSWORD` (point them at any transactional-email
+provider). Production **will not start** without SMTP configured, because password reset that
+silently fails to send would lock users out. The links in those emails are built from
+`PUBLIC_SITE_URL`, never from the request's `Host` header, so they can't be poisoned to point
+at another domain.
 
 ### 2. Lock the origin allowlist to your domain
 
@@ -217,7 +257,8 @@ in. Everything else lives in the right-hand **sidebar**, which has three tabs:
   editing, resize), **Cursors** (show/hide others' cursors and names), **Checkpoints** (save,
   restore, replay the timeline), and **Rooms** (change room, browse *My Rooms*, leave). Clear
   and download are pinned to the bottom.
-* **Account** — sign in/out, change your display name, or delete your account.
+* **Account** — sign in/out, verify your email address, change your display name, or delete
+  your account. A "Forgot password?" link on the sign-in form emails a reset link.
 
 The light/dark toggle sits top-left; the *My Rooms* dashboard and members list (when signed
 in) sit top-right.
@@ -344,8 +385,6 @@ npm test           # integration tests (needs a reachable Postgres)
 ## Known limitations & future work
 
 * **Single backend instance** — see the scale note above; horizontal scaling needs Redis.
-* **Email verification and password reset** are not implemented (the breached-password check
-  *is*).
 * Rooms are entered by name with no access control beyond ownership — anyone with a room name
   can join it.
 

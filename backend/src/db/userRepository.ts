@@ -7,16 +7,42 @@ import { db } from "./pool"
 // login looks up by blind index, and nothing in the UI displays it — so the
 // public shape simply does not carry it. The encrypted copy stays in the
 // database for future account recovery; see auth/emailCrypto.ts.
+//
+// `emailVerified` is derived from the nullable email_verified_at timestamp (see
+// toUser): the app only ever needs the boolean, never the exact time.
 export type User = {
   id: string
   username: string
   color: string
+  emailVerified: boolean
 }
 
-// The public shape — never includes password_hash, and never the email columns.
-// Every read below selects columns explicitly so neither can leak into an API
-// response by accident.
-const PUBLIC_COLUMNS = ["id", "username", "color"] as const
+// The columns every public read selects — never password_hash, never the email
+// index/ciphertext, so neither can leak into an API response by accident.
+// email_verified_at is included because the public User carries its boolean
+// projection; toUser collapses the timestamp to that boolean.
+const PUBLIC_COLUMNS = [
+  "id",
+  "username",
+  "color",
+  "email_verified_at",
+] as const
+
+// Collapses a raw row's nullable email_verified_at timestamp into the boolean
+// the User shape exposes. One place does the mapping so every finder agrees.
+function toUser(row: {
+  id: string
+  username: string
+  color: string
+  email_verified_at: Date | null
+}): User {
+  return {
+    id: row.id,
+    username: row.username,
+    color: row.color,
+    emailVerified: row.email_verified_at !== null,
+  }
+}
 //#endregion
 
 //#region Repository
@@ -42,7 +68,7 @@ export async function createUser(input: {
     })
     .returning(PUBLIC_COLUMNS)
     .executeTakeFirstOrThrow()
-  return row
+  return toUser(row)
 }
 
 // Login's lookup. Takes the BLIND INDEX, never a raw address — the database has
@@ -60,8 +86,8 @@ export async function findUserByEmailIndex(
   if (!row) {
     return null
   }
-  const { password_hash, ...user } = row
-  return { ...user, passwordHash: password_hash }
+  const { password_hash, ...rest } = row
+  return { ...toUser(rest), passwordHash: password_hash }
 }
 
 // No production caller today — resolveSessionUser joins users to sessions in one
@@ -74,7 +100,7 @@ export async function findUserById(id: string): Promise<User | null> {
     .select(PUBLIC_COLUMNS)
     .where("id", "=", id)
     .executeTakeFirst()
-  return row ?? null
+  return row ? toUser(row) : null
 }
 
 export async function emailIndexExists(emailIndex: string): Promise<boolean> {
@@ -102,7 +128,38 @@ export async function updateUsername(
     .where("id", "=", id)
     .returning(PUBLIC_COLUMNS)
     .executeTakeFirst()
-  return row ?? null
+  return row ? toUser(row) : null
+}
+
+// Marks an account's email as verified, stamping the moment it happened. Called
+// by the verify-email route once a valid, unexpired token is redeemed. Writes
+// NOW() rather than trusting a caller-supplied time, and is idempotent in effect
+// — verifying an already-verified account just moves the timestamp, which the
+// route avoids doing by consuming the single-use token first.
+export async function updateEmailVerified(id: string): Promise<User | null> {
+  const row = await db
+    .updateTable("users")
+    .set({ email_verified_at: new Date() })
+    .where("id", "=", id)
+    .returning(PUBLIC_COLUMNS)
+    .executeTakeFirst()
+  return row ? toUser(row) : null
+}
+
+// Replaces a user's password hash — the write behind a completed password reset.
+// Only the hash changes; the email columns and verification status are untouched.
+// Returns whether a row was updated so the caller can distinguish "done" from a
+// user that vanished between token issue and redemption.
+export async function updatePasswordHash(
+  id: string,
+  passwordHash: string,
+): Promise<boolean> {
+  const result = await db
+    .updateTable("users")
+    .set({ password_hash: passwordHash })
+    .where("id", "=", id)
+    .executeTakeFirst()
+  return (result.numUpdatedRows ?? 0n) > 0n
 }
 
 // Deletes a user, and with them everything the schema hangs off their id:

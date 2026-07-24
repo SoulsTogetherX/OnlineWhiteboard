@@ -2,12 +2,13 @@
 // Creates the ENTIRE schema in one step.
 //
 // This is a re-squash. The previous history was 001_initial_schema (itself a
-// squash of seven incremental migrations) plus three follow-ups —
-// 002_email_at_rest, 003_room_open_editing, 004_canvas_dimension_bounds. They
-// have now been folded back into this single baseline, so the end state is
-// identical but there is one migration again instead of four. The project has no
-// deployed database whose data needed carrying forward, which is what makes a
-// re-squash safe.
+// squash of seven incremental migrations) plus follow-ups —
+// 002_email_at_rest, 003_room_open_editing, 004_canvas_dimension_bounds, and the
+// email-verification/password-reset schema (users.email_verified_at + the
+// auth_tokens table). They have now been folded back into this single baseline,
+// so the end state is identical but there is one migration again. The project
+// has no deployed database whose data needed carrying forward, which is what
+// makes a re-squash safe.
 //
 // One concrete benefit of folding 002 in: this baseline no longer imports live
 // application crypto. Email-at-rest was originally a follow-up that had to READ
@@ -141,15 +142,21 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // default is a harmless fallback. gen_random_uuid() is core in Postgres 13+, so
   // no pgcrypto extension is needed. `password_hash` is a self-describing scrypt
   // string — never the password.
+  // `email_verified_at` is NULL until the address is confirmed through the
+  // email-verification flow, and records WHEN it was. Nullable with no default,
+  // so every account reads as unverified until it goes through the flow —
+  // verification is informational (it never revokes access), so "not yet" is the
+  // correct starting state.
   await sql`
     CREATE TABLE users (
-      id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      email_index      TEXT NOT NULL,
-      email_ciphertext TEXT NOT NULL,
-      username         TEXT NOT NULL,
-      password_hash    TEXT NOT NULL,
-      color            TEXT NOT NULL,
-      created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      email_index       TEXT NOT NULL,
+      email_ciphertext  TEXT NOT NULL,
+      username          TEXT NOT NULL,
+      password_hash     TEXT NOT NULL,
+      color             TEXT NOT NULL,
+      email_verified_at TIMESTAMPTZ,
+      created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
     );
   `.execute(db)
 
@@ -176,6 +183,36 @@ export async function up(db: Kysely<unknown>): Promise<void> {
   // Expired-session sweeps filter on expires_at; index it so that stays cheap.
   await sql`
     CREATE INDEX sessions_expires_at_idx ON sessions (expires_at);
+  `.execute(db)
+
+  // --- Auth tokens -----------------------------------------------------------
+  // Single-use, expiring link tokens for the two out-of-band email flows —
+  // email verification and password reset — discriminated by `kind`. Like
+  // sessions.id, `id` is the SHA-256 HASH of the token, never the token itself:
+  // the raw value lives only in the emailed link, so a database dump holds
+  // hashes that cannot be presented as a live link. `kind` is constrained by a
+  // CHECK to the two flows that exist (the database refuses an out-of-range
+  // value rather than trusting the app), and ON DELETE CASCADE ties a user's
+  // pending links to their account so deleting it takes them with it.
+  await sql`
+    CREATE TABLE auth_tokens (
+      id         TEXT PRIMARY KEY,
+      user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind       TEXT NOT NULL CHECK (kind IN ('email_verify', 'password_reset')),
+      expires_at TIMESTAMPTZ NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `.execute(db)
+
+  // (user_id, kind) serves both issuing a token — which retires a user's prior
+  // tokens of the same kind and checks the anti-spam cooldown — and is the
+  // natural lookup for those. expires_at is indexed for the cleanup sweep.
+  await sql`
+    CREATE INDEX auth_tokens_user_kind_idx ON auth_tokens (user_id, kind);
+  `.execute(db)
+
+  await sql`
+    CREATE INDEX auth_tokens_expires_at_idx ON auth_tokens (expires_at);
   `.execute(db)
 
   // --- Saved colours ---------------------------------------------------------
@@ -284,6 +321,7 @@ export async function down(db: Kysely<unknown>): Promise<void> {
   await sql`DROP TABLE IF EXISTS checkpoints;`.execute(db)
   await sql`DROP TABLE IF EXISTS room_members;`.execute(db)
   await sql`DROP TABLE IF EXISTS saved_colors;`.execute(db)
+  await sql`DROP TABLE IF EXISTS auth_tokens;`.execute(db)
   await sql`DROP TABLE IF EXISTS sessions;`.execute(db)
   await sql`DROP TABLE IF EXISTS users;`.execute(db)
   await sql`DROP TABLE IF EXISTS draw_events;`.execute(db)
