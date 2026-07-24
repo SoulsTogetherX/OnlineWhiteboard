@@ -58,7 +58,6 @@ export interface WhiteboardProps {
   onLogout: () => void
   onUpdateUsername: (username: string) => Promise<{ ok: boolean; error?: string }>
   onDeleteAccount: () => Promise<{ ok: boolean; error?: string }>
-  onSendVerification: () => Promise<{ ok: boolean; error?: string }>
 }
 
 // Everything that only exists inside a room: the canvas, the tools, the sidebar
@@ -74,7 +73,6 @@ export default function Whiteboard({
   onLogout,
   onUpdateUsername,
   onDeleteAccount,
-  onSendVerification,
 }: WhiteboardProps) {
   // Canvas plumbing — the frame that pans/zooms and the canvas element itself.
   const frameRef = useRef<HTMLDivElement>(
@@ -439,7 +437,6 @@ export default function Whiteboard({
             onLogout={onLogout}
             onUpdateUsername={onUpdateUsername}
             onDeleteAccount={onDeleteAccount}
-            onSendVerification={onSendVerification}
           />
         )}
       </SideBar>

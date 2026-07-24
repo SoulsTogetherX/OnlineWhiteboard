@@ -21,15 +21,6 @@ export interface UseAuthResult {
   // user id, so neither can act on somebody else's account.
   updateUsername: (username: string) => Promise<AuthResult>
   deleteAccount: () => Promise<AuthResult>
-  // Sends a verification link to the signed-in account's own address (the server
-  // decrypts it — the client never sees or sends the address here).
-  sendVerification: () => Promise<AuthResult>
-  // Password recovery. requestPasswordReset always resolves ok — the endpoint is
-  // deliberately non-enumerable, so the UI shows the same "check your email"
-  // whether or not the address had an account. resetPassword redeems the emailed
-  // token and can genuinely fail (bad/expired link, weak password).
-  requestPasswordReset: (email: string) => Promise<AuthResult>
-  resetPassword: (token: string, password: string) => Promise<AuthResult>
 }
 //#endregion
 
@@ -221,60 +212,6 @@ export default function useAuth(): UseAuthResult {
     announce()
   }, [announce])
 
-  // Ask the server to email a verification link. Takes no address — the endpoint
-  // is session-scoped and decrypts the caller's own. If the server reports the
-  // account was already verified (e.g. another tab did it), re-read so this tab's
-  // badge updates instead of still offering a button.
-  const sendVerification = useCallback(async (): Promise<AuthResult> => {
-    const { status, data } = await sendJson("/api/auth/send-verification", {})
-    if (status === 200) {
-      if ((data as { status?: string } | null)?.status === "already-verified") {
-        void refresh()
-      }
-      return { ok: true }
-    }
-    return { ok: false, error: data?.error ?? "Could not send the email." }
-  }, [refresh])
-
-  // Non-enumerable by design on the server, so a 200 is the only success and we
-  // surface it uniformly. A network failure is the one thing worth reporting.
-  const requestPasswordReset = useCallback(
-    async (email: string): Promise<AuthResult> => {
-      try {
-        const { status } = await sendJson("/api/auth/request-password-reset", {
-          email,
-        })
-        if (status === 200) {
-          return { ok: true }
-        }
-        return { ok: false, error: "Could not send the email. Please try again." }
-      } catch {
-        return { ok: false, error: "Could not send the email. Please try again." }
-      }
-    },
-    [],
-  )
-
-  // Redeems the emailed token with a new password. The server invalidates every
-  // session on success, so there is no user to set here — the caller sends the
-  // user back to the login form.
-  const resetPassword = useCallback(
-    async (token: string, password: string): Promise<AuthResult> => {
-      const { status, data } = await sendJson("/api/auth/reset-password", {
-        token,
-        password,
-      })
-      if (status === 200) {
-        return { ok: true }
-      }
-      return {
-        ok: false,
-        error: data?.error ?? "Could not reset your password.",
-      }
-    },
-    [],
-  )
-
   return {
     user,
     isLoading,
@@ -283,9 +220,6 @@ export default function useAuth(): UseAuthResult {
     logout,
     updateUsername,
     deleteAccount,
-    sendVerification,
-    requestPasswordReset,
-    resetPassword,
   }
 }
 //#endregion

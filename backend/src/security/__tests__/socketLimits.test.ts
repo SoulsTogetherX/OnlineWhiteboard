@@ -48,11 +48,9 @@ const bucket: ClientSocketMessage = {
   },
 }
 
-// The largest entry TOTAL an undo can represent: one per pixel of the biggest
-// allowed canvas. A real client now splits this across several messages (each
-// capped at MAX_PATCH_ENTRIES_PER_MESSAGE — see chunkPatchEntries), so it is no
-// longer a single legitimate frame; it is used here only to prove the cost model
-// prices even the worst-case entry count cheaply, whatever it arrives as.
+// The biggest message a client may legitimately send: an undo patch covering
+// every pixel of the largest allowed canvas. Validation caps entries at the
+// room's pixel count, so nothing legal is ever larger than this.
 function fullCanvasPatch(): ClientSocketMessage {
   return {
     type: "draw",

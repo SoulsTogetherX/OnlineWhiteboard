@@ -4,7 +4,6 @@ import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "../../constants/canvas"
 import { isValidClientMessage } from "../validateSocketMessage"
 import {
   BYTES_PER_ENTRY,
-  chunkPatchEntries,
   decodePatchDrawFrame,
   decodePatchEntries,
   encodePatchDrawFrame,
@@ -96,20 +95,16 @@ describe("patch entry packing", () => {
       expect(decodePatchEntries(new Uint8Array(13))).toBeNull()
     })
 
-    it("returns null for more entries than a single message may carry", () => {
-      // One entry past the per-message cap — decoded straight from a length, so it
-      // never allocates the entries first.
-      const tooMany = new Uint8Array(
-        (MAX_PATCH_ENTRIES_PER_MESSAGE + 1) * BYTES_PER_ENTRY,
-      )
+    it("returns null for more entries than a patch may carry", () => {
+      // One entry past the cap — decoded straight from a length, so it never
+      // allocates the entries first.
+      const tooMany = new Uint8Array((MAX_PATCH_ENTRIES + 1) * BYTES_PER_ENTRY)
 
       expect(decodePatchEntries(tooMany)).toBeNull()
     })
 
-    it("accepts a payload at exactly the per-message entry cap", () => {
-      const atCap = new Uint8Array(
-        MAX_PATCH_ENTRIES_PER_MESSAGE * BYTES_PER_ENTRY,
-      )
+    it("accepts a payload at exactly the entry cap", () => {
+      const atCap = new Uint8Array(MAX_PATCH_ENTRIES * BYTES_PER_ENTRY)
 
       expect(decodePatchEntries(atCap)).toHaveLength(
         MAX_PATCH_ENTRIES_PER_MESSAGE,

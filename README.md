@@ -15,53 +15,52 @@ drawn.
 
 <img width="1920" height="882" alt="The whiteboard in use" src="https://github.com/user-attachments/assets/764d1d05-62f6-45a1-9438-43840e77acf6" />
 
+> The screenshots in this README predate the current UI (lobby, grouped sidebar, dark mode)
+> and are worth recapturing.
+
 ## Features
 
 **Drawing**
 
-- Real-time shared drawing across everyone in the same room, with live cursors that show
+* Real-time shared drawing across everyone in the same room, with live cursors that show
   each person's current tool
-- A full tool set: **grab** (pan/zoom), **pencil**, **eraser**, **fill** (flood fill),
+* A full tool set: **grab** (pan/zoom), **pencil**, **eraser**, **fill** (flood fill),
   **spray**, **blur**, and an **eyedropper** that samples a colour off the canvas
-- Adjustable brush **size**, spray **density**, and pointer **stabilization** (smoothing) —
+* Adjustable brush **size**, spray **density**, and pointer **stabilization** (smoothing) —
   a live dotted outline previews exactly which pixels a tool will change
-- A full **colour picker** — hue/saturation/value, recent colours, a saved palette, and
+* A full **colour picker** — hue/saturation/value, recent colours, a saved palette, and
   primary/secondary colours you can swap
-- **Undo / redo that is safe under concurrent editing** — undoing never clobbers a
+* **Undo / redo that is safe under concurrent editing** — undoing never clobbers a
   collaborator's later work
-- **Export** the canvas as PNG, WebP, JPEG, or Bitmap
-- Per-room **canvas resize**, light/**dark mode**, and a desktop + mobile layout
+* **Export** the canvas as PNG, WebP, JPEG, or Bitmap
+* Per-room **canvas resize**, light/**dark mode**, and a desktop + mobile layout
 
 **Rooms, accounts & history**
 
-- **Live presence** — see who else is in the room
-- **Accounts (optional)** — draw as a guest, or sign in for a persistent identity and a
+* **Live presence** — see who else is in the room
+* **Accounts (optional)** — draw as a guest, or sign in for a persistent identity and a
   saved palette that follows you across devices. Registration screens passwords against
-  known breaches, and email addresses are encrypted at rest. **Email verification** (confirm
-  your address from the Account tab) and **password reset** (a "Forgot password?" link that
-  emails a one-hour, single-use reset link) are both supported
-- **Ownership & roles** — claim an unowned room to become its owner; owners control who may
+  known breaches, and email addresses are encrypted at rest
+* **Ownership & roles** — claim an unowned room to become its owner; owners control who may
   draw (open editing on/off), resize or clear the canvas, and promote members. Editors draw
   and manage history; viewers are read-only
-- **Timeline** — save named **checkpoints**, restore the canvas to one, and **scrub** the
+* **Timeline** — save named **checkpoints**, restore the canvas to one, and **scrub** the
   whole drawing back to front like a recording
-- **Durable canvases** — survive server restarts and hard crashes with sub-second data loss
+* **Durable canvases** — survive server restarts and hard crashes with sub-second data loss
 
 ## Tech stack
 
-- **Frontend:** React + Vite (TypeScript), served in production as a static bundle by nginx
-- **Backend:** Node.js + Express + WebSockets (`ws`), compiled to a single bundle with esbuild
-- **Shared:** the drawing protocol and pixel algorithms live in `shared/` and run on **both**
+* **Frontend:** React + Vite (TypeScript), served in production as a static bundle by nginx
+* **Backend:** Node.js + Express + WebSockets (`ws`), compiled to a single bundle with esbuild
+* **Shared:** the drawing protocol and pixel algorithms live in `shared/` and run on **both**
   sides — one implementation, so the server and every client stay pixel-identical
-- **Database:** PostgreSQL via [Kysely](https://kysely.dev/) (typed SQL), with ordered
+* **Database:** PostgreSQL via [Kysely](https://kysely.dev/) (typed SQL), with ordered
   migrations that run automatically on startup
-- **Auth:** email + password (scrypt), httpOnly cookie sessions stored server-side as
-  hashes, a breached-password (HIBP k-anonymity) check, email-at-rest encryption, and
-  email verification + password reset via single-use, hashed, expiring link tokens
-  ([nodemailer](https://nodemailer.com/) over SMTP)
-- **Deployment:** Docker (multi-stage) + nginx; one health endpoint at `GET /api/health`
+* **Auth:** email + password (scrypt), httpOnly cookie sessions stored server-side as
+  hashes, a breached-password (HIBP k-anonymity) check, and email-at-rest encryption
+* **Deployment:** Docker (multi-stage) + nginx; one health endpoint at `GET /api/health`
 
-A deep, file-by-file explanation of _how and why_ every part works — the crypto and what it
+A deep, file-by-file explanation of *how and why* every part works — the crypto and what it
 defends against, the convergence model, the event-sourced recovery, the compression, the
 permission model — lives in **`CLAUDE.md`** at the repository root.
 
@@ -75,38 +74,10 @@ Node installed to run the app.
 ### First-time setup
 
 1. Clone the repository.
-2. Rename `.env.example` to `.env`.
-3. Set `POSTGRES_PASSWORD` to any value.
-
-That is all that's need. For email required tasks (like verifying account emails), you'll
-also neen to supply SIMP information as well. See [environment variables](#environment-variables)
-for the full list and [deployment](#deploying-online) for what production requires instead.
-
-### Environment variables
-
-Everything the app reads lives in `.env` (copied from `.env.example`). The table below is the
-whole surface; **Dev** is what a local `docker compose up` needs, **Prod** is what a public
-deployment additionally requires.
-
-| Variable                                                            | Dev          | Prod             | What it is                                                                                                                                                    |
-| ------------------------------------------------------------------- | ------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `POSTGRES_PASSWORD`                                                 | **required** | **required**     | Database password (any value in dev).                                                                                                                         |
-| `POSTGRES_USER` / `POSTGRES_DB` / `POSTGRES_HOST` / `POSTGRES_PORT` | preset       | preset           | Database connection; the defaults in `.env.example` work as-is.                                                                                               |
-| `PUBLIC_SITE_URL`                                                   | preset       | **required**     | The site's own origin. Used to build the links in verification and reset emails, so in production it must be your real URL (e.g. `https://draw.example.com`). |
-| `ALLOWED_ORIGINS`                                                   | preset       | **required**     | CSRF / cross-site-WebSocket allowlist (comma-separated). Lock to your real origin(s) in prod.                                                                 |
-| `EMAIL_INDEX_PEPPER`                                                | optional¹    | **required**     | Secret for the email blind index (login lookup).                                                                                                              |
-| `EMAIL_ENCRYPTION_KEY`                                              | optional¹    | **required**     | 32-byte base64 key for email-at-rest (AES-256-GCM).                                                                                                           |
-| `SMTP_HOST`                                                         | optional²    | **required**     | SMTP server that sends verification/reset mail.                                                                                                               |
-| `SMTP_PORT`                                                         | preset       | preset           | `587` for STARTTLS (default), `465` with `SMTP_SECURE=true`.                                                                                                  |
-| `SMTP_SECURE`                                                       | optional     | optional         | `true` for implicit TLS (port 465); otherwise leave unset.                                                                                                    |
-| `SMTP_USER` / `SMTP_PASSWORD`                                       | optional     | usually required | SMTP credentials (omit for an unauthenticated relay).                                                                                                         |
-| `EMAIL_FROM`                                                        | optional²    | **required**     | The `From` address, e.g. `Online Whiteboard <no-reply@yourapp.com>`.                                                                                          |
-| `PROD_PORT`                                                         | —            | preset           | Host port the production stack publishes (default `8080`).                                                                                                    |
-
-¹ Fall back to insecure built-in defaults in dev, with a loud warning. The server **refuses to
-start** in production without real values.
-² With no `SMTP_HOST`/`EMAIL_FROM`, dev logs the email links to the backend console instead of
-sending. Production **refuses to start** without them, so password reset can't silently fail.
+2. Copy `.env.example` to `.env`.
+3. Set `POSTGRES_PASSWORD` to any value. That is all you need for local development — the
+   email-at-rest secrets fall back to insecure dev defaults with a warning (see
+   [deployment](#deploying-online) for what production requires instead).
 
 ### Development (hot reload)
 
@@ -140,14 +111,14 @@ Open **http://localhost:8080** (change with `PROD_PORT` in `.env`).
 > Run one stack at a time. They use **separate** database volumes, so canvases drawn in
 > development do not appear in production.
 
-|                      | Development                           | Production                                      |
-| -------------------- | ------------------------------------- | ----------------------------------------------- |
-| Frontend             | Vite dev server, HMR                  | nginx serving a Rollup bundle                   |
-| Backend              | `tsx watch`, types stripped unchecked | typechecked, esbuild bundle, run as `node` user |
-| `/api` + `/ws` proxy | Vite `server.proxy`                   | nginx `proxy_pass`                              |
-| Source on disk       | bind-mounted                          | none — images are self-contained                |
-| Exposed host ports   | 5173, 3000, 5432                      | **nginx only** (8080)                           |
-| Image size           | ~500 MB frontend                      | ~50 MB frontend (nginx + static assets)         |
+| | Development | Production |
+|---|---|---|
+| Frontend | Vite dev server, HMR | nginx serving a Rollup bundle |
+| Backend | `tsx watch`, types stripped unchecked | typechecked, esbuild bundle, run as `node` user |
+| `/api` + `/ws` proxy | Vite `server.proxy` | nginx `proxy_pass` |
+| Source on disk | bind-mounted | none — images are self-contained |
+| Exposed host ports | 5173, 3000, 5432 | **nginx only** (8080) |
+| Image size | ~500 MB frontend | ~50 MB frontend (nginx + static assets) |
 
 ---
 
@@ -175,18 +146,11 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"   # 
 Set `POSTGRES_PASSWORD`, `EMAIL_INDEX_PEPPER`, and `EMAIL_ENCRYPTION_KEY` in `.env`. Keep
 `.env` off version control (it already is).
 
-Also set `PUBLIC_SITE_URL` to your real origin and configure outgoing email — `SMTP_HOST`,
-`EMAIL_FROM`, and usually `SMTP_USER`/`SMTP_PASSWORD` (point them at any transactional-email
-provider). Production **will not start** without SMTP configured, because password reset that
-silently fails to send would lock users out. The links in those emails are built from
-`PUBLIC_SITE_URL`, never from the request's `Host` header, so they can't be poisoned to point
-at another domain.
-
 ### 2. Lock the origin allowlist to your domain
 
 `ALLOWED_ORIGINS` is the CSRF / cross-site-WebSocket-hijacking allowlist. Set it to your
 real site origin(s), comma-separated — e.g. `ALLOWED_ORIGINS=https://draw.example.com`. A
-request whose `Origin` is not listed is rejected. (Left empty it fails _open_ with a startup
+request whose `Origin` is not listed is rejected. (Left empty it fails *open* with a startup
 warning, which is fine for a private test box and wrong for a public one.)
 
 ### 3. Put HTTPS in front — this is required, not optional
@@ -194,10 +158,10 @@ warning, which is fine for a private test box and wrong for a public one.)
 The stack publishes plain HTTP on `PROD_PORT` (default 8080) and is designed to sit **behind
 a TLS-terminating reverse proxy**. Two reasons it must:
 
-- The session cookie is `Secure` in production, so browsers only send it back over HTTPS. On
+* The session cookie is `Secure` in production, so browsers only send it back over HTTPS. On
   a real domain served over plain `http://`, logins silently fail to persist. (This is
   correct hardening, not a bug — the fix is TLS, not disabling the flag.)
-- You want encrypted traffic for a public app regardless.
+* You want encrypted traffic for a public app regardless.
 
 The app already upgrades `https:` → `wss:` from the page's own origin, so **no code or config
 change is needed** to run behind HTTPS. The simplest turnkey option is
@@ -222,16 +186,16 @@ terminates TLS and forwards to `localhost:8080` with WebSocket upgrades passed t
 
 ### 4. Operate it
 
-- **Health check** for load balancers / platform probes: `GET /api/health` (returns `200`
+* **Health check** for load balancers / platform probes: `GET /api/health` (returns `200`
   without touching the database, so a DB blip doesn't fail the liveness probe).
-- **Multiple devices / users:** there is nothing per-device to configure — anyone who can
+* **Multiple devices / users:** there is nothing per-device to configure — anyone who can
   reach the domain and enters the same room name is collaborating. Guests can draw
   immediately; accounts are only needed for ownership, a saved palette, or a cross-device
   identity.
-- **Backups:** all durable state (canvases, history, accounts) is in the Postgres volume
+* **Backups:** all durable state (canvases, history, accounts) is in the Postgres volume
   (`whiteboard-database-prod-v`). Back that up.
-- **Graceful deploys:** the backend flushes every room to Postgres on `SIGTERM`, so a normal
-  `docker compose ... down` / redeploy loses nothing. A _hard_ kill loses at most the last
+* **Graceful deploys:** the backend flushes every room to Postgres on `SIGTERM`, so a normal
+  `docker compose ... down` / redeploy loses nothing. A *hard* kill loses at most the last
   ~250 ms of drawing.
 
 > **Scale limit — read before you grow.** Room state, presence, rate limiting and sessions
@@ -247,31 +211,30 @@ terminates TLS and forwards to `localhost:8080` with WebSocket upgrades passed t
 You open onto a **lobby**: sign in or register (optional), enter a **room name**, and you are
 in. Everything else lives in the right-hand **sidebar**, which has three tabs:
 
-- **Drawing** — the tool picker, colour controls, undo/redo, and the size/density/
+* **Drawing** — the tool picker, colour controls, undo/redo, and the size/density/
   stabilization sliders for the active tool.
-- **Room** — foldable sections for this room: **Permissions & canvas** (ownership, open
+* **Room** — foldable sections for this room: **Permissions & canvas** (ownership, open
   editing, resize), **Cursors** (show/hide others' cursors and names), **Checkpoints** (save,
-  restore, replay the timeline), and **Rooms** (change room, browse _My Rooms_, leave). Clear
+  restore, replay the timeline), and **Rooms** (change room, browse *My Rooms*, leave). Clear
   and download are pinned to the bottom.
-- **Account** — sign in/out, verify your email address, change your display name, or delete
-  your account. A "Forgot password?" link on the sign-in form emails a reset link.
+* **Account** — sign in/out, change your display name, or delete your account.
 
-The light/dark toggle sits top-left; the _My Rooms_ dashboard and members list (when signed
+The light/dark toggle sits top-left; the *My Rooms* dashboard and members list (when signed
 in) sit top-right.
 
 ### Shortcuts & pointer
 
-- **Draw** with the left button (primary colour) or right button (secondary colour).
-- **Pan / zoom the canvas** by holding **Shift** — Shift+drag pans, Shift+wheel zooms — or by
+* **Draw** with the left button (primary colour) or right button (secondary colour).
+* **Pan / zoom the canvas** by holding **Shift** — Shift+drag pans, Shift+wheel zooms — or by
   selecting the **Grab** tool (the default on load), which makes pan/zoom the plain drag/wheel
   without holding anything. While Shift is held a move-arrows cue appears top-left, because
   the mode is otherwise invisible.
-- **Bare mouse wheel** (over the canvas, no Shift) adjusts the tool's **last-used slider** —
+* **Bare mouse wheel** (over the canvas, no Shift) adjusts the tool's **last-used slider** —
   size the brush, try it, resize it, without going back to the sidebar. Press **`D`** to
   switch which slider the wheel drives.
-- **Tool keys** (while the sidebar is open): **G** grab · **P** pencil · **E** eraser ·
+* **Tool keys** (while the sidebar is open): **G** grab · **P** pencil · **E** eraser ·
   **F** fill · **S** spray · **B** blur · **I** eyedropper.
-- **`Ctrl/Cmd + Z`** undo · **`Ctrl/Cmd + Shift + Z`** redo.
+* **`Ctrl/Cmd + Z`** undo · **`Ctrl/Cmd + Shift + Z`** redo.
 
 ---
 
@@ -281,30 +244,30 @@ The core idea: **the server owns an authoritative pixel buffer for every room** 
 of shapes. Clients draw optimistically for instant feedback and reconcile to the server's
 truth continuously.
 
-- **One drawing implementation, run on both sides.** `shared/` holds the pixel algorithms
+* **One drawing implementation, run on both sides.** `shared/` holds the pixel algorithms
   (Bresenham lines, flood fill, spray scatter, blur, compare-and-swap patches) and the wire
-  protocol, imported by _both_ the browser and the Node server. There is no second copy to
+  protocol, imported by *both* the browser and the Node server. There is no second copy to
   drift, which is what lets the server keep a canvas provably identical to what clients render.
-- **Instructions, not pixels, on the wire.** A gesture becomes a small instruction
+* **Instructions, not pixels, on the wire.** A gesture becomes a small instruction
   (`pencil`, `spray`, `bucket`, …) that the server applies, logs, and broadcasts; every client
-  replays it. A spray sends a _seed_, not a pixel list, and everyone scatters identically — so
+  replays it. A spray sends a *seed*, not a pixel list, and everyone scatters identically — so
   the message stays tiny no matter how much it paints.
-- **Cheap synchronization.** Instead of re-broadcasting the canvas, the server sends a small
+* **Cheap synchronization.** Instead of re-broadcasting the canvas, the server sends a small
   revision heartbeat; only a client that has actually fallen behind requests a fresh snapshot.
   The common case costs a few dozen bytes and does not grow with canvas size.
-- **Concurrency-safe undo.** Undo is a compare-and-swap patch: each entry only applies if the
+* **Concurrency-safe undo.** Undo is a compare-and-swap patch: each entry only applies if the
   pixel still holds the colour it expects, so undoing over a collaborator's later work skips
   those pixels rather than clobbering them (and tells you it applied partially).
-- **Instant-feel input.** A pixel you just painted is held on screen for ~100 ms even if a
+* **Instant-feel input.** A pixel you just painted is held on screen for ~100 ms even if a
   collaborator overwrites it at the same instant — a display-only overlay that never changes
-  what actually converges, so your input never _feels_ eaten while the final canvas stays
+  what actually converges, so your input never *feels* eaten while the final canvas stays
   identical for everyone.
-- **Durable by event sourcing.** Every applied instruction is appended to a `draw_events`
+* **Durable by event sourcing.** Every applied instruction is appended to a `draw_events`
   log; snapshots are written periodically. Recovery is "load the latest snapshot, replay every
   newer event," so a hard crash loses ~250 ms, not the 15 s between snapshots. The log is
   compacted and uniformly **decimated** so storage stays bounded while the whole timeline
   remains scrubbable, and a resize is a clean history boundary.
-- **Identity, ownership & security.** Connections get an identity at the WebSocket upgrade
+* **Identity, ownership & security.** Connections get an identity at the WebSocket upgrade
   (a signed-in user from the session cookie, or a generated guest). Permission checks use the
   same shared rules on both sides, but the server's are authoritative. The auth surface is
   hardened per OWASP/NIST: scrypt password hashing, hashed session tokens, a breached-password
@@ -329,18 +292,18 @@ guard exists to prevent — in `CLAUDE.md`.
 
 Five layers, each matched to what it is best at; `TESTING.md` is the full guide.
 
-- **Shared protocol unit tests** (Vitest) — the highest-value code in the repo: pure,
+* **Shared protocol unit tests** (Vitest) — the highest-value code in the repo: pure,
   deterministic, and executed by both sides, so a bug there desyncs everyone. Covers line
   drawing, fill, spray, blur, the CAS patch logic, the codecs, and rejection of malformed
   network input.
-- **Frontend unit tests** — the pure colour-space and slider-tracking logic.
-- **Backend integration tests** — the repository and auth layers against a **real** Postgres
+* **Frontend unit tests** — the pure colour-space and slider-tracking logic.
+* **Backend integration tests** — the repository and auth layers against a **real** Postgres
   (migrations, event append/replay, compaction, `ON DELETE CASCADE`, session lifecycle).
-- **End-to-end probes** (`scripts/*.mjs`) — drive the _running production stack_ over HTTP and
+* **End-to-end probes** (`scripts/*.mjs`) — drive the *running production stack* over HTTP and
   WebSocket: a **smoke** test (the happy path through nginx and the real bundle), a
   **security** probe (adversarial — the server survives each abuse), and a **permissions**
   probe (the ownership/role model with real accounts).
-- **Load test** (`loadtest/`) — many concurrent sockets against a live server.
+* **Load test** (`loadtest/`) — many concurrent sockets against a live server.
 
 ```bash
 npm ci && npm test                 # shared protocol (from the repo root)
@@ -380,8 +343,10 @@ npm test           # integration tests (needs a reachable Postgres)
 
 ## Known limitations & future work
 
-- **Single backend instance** — see the scale note above; horizontal scaling needs Redis.
-- Rooms are entered by name with no access control beyond ownership — anyone with a room name
+* **Single backend instance** — see the scale note above; horizontal scaling needs Redis.
+* **Email verification and password reset** are not implemented (the breached-password check
+  *is*).
+* Rooms are entered by name with no access control beyond ownership — anyone with a room name
   can join it.
 
 ## License

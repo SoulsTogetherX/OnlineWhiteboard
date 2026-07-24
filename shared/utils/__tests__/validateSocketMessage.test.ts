@@ -10,9 +10,7 @@ import { isValidClientMessage } from "../validateSocketMessage"
 import { isValidDrawInstruction } from "../validateInstruction"
 import { DIMS } from "./testHelpers"
 import {
-  MAX_CANVAS_DIMENSION,
   MAX_PATCH_ENTRIES,
-  MAX_PATCH_ENTRIES_PER_MESSAGE,
   MIN_CANVAS_DIMENSION,
 } from "../../constants/canvas"
 import { ROLES } from "../../types/identity"

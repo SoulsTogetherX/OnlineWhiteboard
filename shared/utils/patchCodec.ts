@@ -10,17 +10,9 @@
 // feature, and packing is what keeps that ceiling as low as it can go.
 //
 // Packed, an entry is 11 bytes flat: a u24 PIXEL index and two RGBA quadruplets.
-// The same 14,400-entry patch is ~158 KB, roughly a 9x shrink.
-//
-// Packing alone still left the WORST case — a full-canvas undo, one entry per
-// pixel of a 512 board — at ~2.75 MB, which is what pinned maxPayload in the
-// megabytes. So the entries of one undo are no longer required to fit in one
-// frame at all: chunkPatchEntries splits them into messages of at most
-// MAX_PATCH_ENTRIES_PER_MESSAGE (~176 KB packed), the server applies each
-// independently (every entry is its own CAS, so the split is invisible to the
-// result), and maxPayload is sized to that per-message cap instead of the whole
-// undo — a further ~12x tightening of the largest frame an attacker can make the
-// server buffer before any validation runs.
+// The same 14,400-entry patch is ~158 KB, roughly a 9x shrink, which lets
+// maxPayload come down to 3 MiB — a real tightening of the attack surface, paid
+// for by the feature that forced it open rather than by weakening it.
 //
 // Unlike the snapshot COMPRESSION codec (which is split across node:zlib and the
 // browser's DecompressionStream), this pair is symmetric and environment-neutral

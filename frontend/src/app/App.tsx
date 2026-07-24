@@ -1,9 +1,8 @@
 //#region Imports
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 
 import Lobby from "@/components/Lobby"
 import AuthPopup from "@/components/Popups/AuthPopup"
-import ResetPasswordPopup from "@/components/Popups/ResetPasswordPopup"
 import Whiteboard from "./Whiteboard"
 
 import useAuth from "@/hooks/useAuth"
@@ -53,47 +52,9 @@ export default function App() {
     logout,
     updateUsername,
     deleteAccount,
-    sendVerification,
-    requestPasswordReset,
-    resetPassword,
   } = useAuth()
   const authPopup = useDisclosure()
   const { theme, toggle: toggleTheme } = useTheme()
-
-  // The password-reset link the email points at lands on the app with a
-  // ?reset=<token> query. Read it once at startup; the app has no router, so a
-  // single query-param check is the lightest way to catch the one path that
-  // matters. The token is kept in state to redeem, and stripped from the URL
-  // immediately (below) so it does not linger in the address bar, history, or a
-  // Referer header on the next navigation.
-  const [resetToken] = useState<string | null>(() => {
-    if (typeof window === "undefined") {
-      return null
-    }
-    return new URLSearchParams(window.location.search).get("reset")
-  })
-  const resetPopup = useDisclosure(resetToken !== null)
-
-  useEffect(() => {
-    if (resetToken === null || typeof window === "undefined") {
-      return
-    }
-    const url = new URL(window.location.href)
-    url.searchParams.delete("reset")
-    window.history.replaceState({}, "", `${url.pathname}${url.search}${url.hash}`)
-  }, [resetToken])
-
-  const submitReset = useCallback(
-    (password: string) => resetPassword(resetToken ?? "", password),
-    [resetPassword, resetToken],
-  )
-
-  // After a successful reset, send the user to the login form — every session was
-  // invalidated server-side, so they must sign in again with the new password.
-  const goToLoginAfterReset = useCallback(() => {
-    resetPopup.close()
-    authPopup.open()
-  }, [resetPopup, authPopup])
 
   // The room to offer back in the lobby. Session-scoped like the rest of the
   // per-tab state, so a new tab opens on the lobby with an empty field.
@@ -153,7 +114,6 @@ export default function App() {
           onLogout={logout}
           onUpdateUsername={updateUsername}
           onDeleteAccount={deleteAccount}
-          onSendVerification={sendVerification}
         />
       )}
 
@@ -165,15 +125,6 @@ export default function App() {
         onLogin={login}
         onRegister={register}
         onRequestReset={requestPasswordReset}
-      />
-
-      {/* Opened when the app is loaded from a password-reset email link. Always
-          mounted (like the auth popup) so PopupBase can animate it. */}
-      <ResetPasswordPopup
-        isOpen={resetPopup.isOpen}
-        onClose={resetPopup.close}
-        onSubmit={submitReset}
-        onGoToLogin={goToLoginAfterReset}
       />
     </>
   )
