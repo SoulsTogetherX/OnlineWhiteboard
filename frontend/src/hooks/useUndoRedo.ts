@@ -6,6 +6,7 @@ import { holdLocalPixels } from "@/utils/localHold"
 import { reanchorEntries } from "@/utils/reanchor"
 
 import { applyDrawInstructionToCanvas } from "@shared/utils/handleCanvasProtocol"
+import { chunkPatchEntries } from "@shared/utils/patchCodec"
 import {
   canvasDimsOf,
   getCanvasState,
@@ -129,10 +130,22 @@ export default function useUndoRedo(
     [],
   )
 
-  // Shared by undo() and redo(): builds a patch instruction from `entries`,
-  // applies it locally through the same CAS-guarded path the server uses,
-  // repaints, and sends the (possibly filtered) result to the server. Never
-  // touches the network if nothing was actually applied.
+  // Shared by undo() and redo(): applies `entries` locally through the same
+  // CAS-guarded path the server uses, repaints, and sends the (possibly filtered)
+  // result to the server. Never touches the network if nothing was applied.
+  //
+  // The apply is done in CHUNKS of at most MAX_PATCH_ENTRIES_PER_MESSAGE, because
+  // a single undo can cover the whole canvas (a max-size pencil dragged across it)
+  // — far more entries than one patch may carry, and applyDrawInstructionToCanvas
+  // enforces that same per-message cap on every instruction, so a whole-canvas
+  // patch applied in one call would be REJECTED here just as it is on the wire.
+  // The chunks are disjoint pixel sets and each entry is an independent
+  // compare-and-swap, so applying them in sequence over the one ImageData is
+  // identical to applying the whole patch at once. The applied entries are
+  // accumulated so the redo stack, the 100 ms hold and the partial-apply notice
+  // all see the full result; the send goes once and useRoomConnection re-chunks it
+  // for the wire. A normal stroke's undo is a single chunk, so this is one apply
+  // and one send in the common case.
   const applyLocally = useCallback(
     (entries: PatchEntry[]): PatchInstruction | null => {
       const canvas = canvasRef.current
@@ -145,24 +158,38 @@ export default function useUndoRedo(
         return null
       }
 
-      const instruction: PatchInstruction = {
-        type: "patch",
-        entries,
-        instructionId: nextInstructionId.current++,
-        sessionId,
+      const appliedEntries: PatchEntry[] = []
+      for (const chunk of chunkPatchEntries(entries)) {
+        const applied = applyDrawInstructionToCanvas(
+          canvasState.imageData,
+          {
+            type: "patch",
+            entries: chunk,
+            instructionId: nextInstructionId.current++,
+            sessionId,
+          },
+          dims,
+        ) as PatchInstruction | null
+        if (applied) {
+          // push individually rather than spreading — a chunk can hold thousands
+          // of entries and `push(...chunk)` risks the argument-count limit.
+          for (const entry of applied.entries) {
+            appliedEntries.push(entry)
+          }
+        }
       }
 
-      const applied = applyDrawInstructionToCanvas(
-        canvasState.imageData,
-        instruction,
-        dims,
-      )
-      if (!applied) {
+      if (appliedEntries.length === 0) {
         return null
       }
       updateCanvas(canvas, dims)
 
-      const appliedPatch = applied as PatchInstruction
+      const appliedPatch: PatchInstruction = {
+        type: "patch",
+        entries: appliedEntries,
+        instructionId: nextInstructionId.current++,
+        sessionId,
+      }
       // An undo/redo is a local action too — hold the pixels it just changed so a
       // colliding remote instruction cannot visibly undo the undo for 100 ms.
       holdLocalPixels(appliedPatch.entries, Date.now())
