@@ -36,11 +36,32 @@ export async function findUserBySessionHash(
       "users.id as id",
       "users.username as username",
       "users.color as color",
+      "users.email_verified_at as email_verified_at",
     ])
     .where("sessions.id", "=", tokenHash)
     .where("sessions.expires_at", ">", new Date())
     .executeTakeFirst()
-  return row ?? null
+  if (!row) {
+    return null
+  }
+  // Collapse the nullable timestamp to the boolean the User shape exposes — the
+  // same projection userRepository.toUser does, kept in step by hand because the
+  // join selects the column directly rather than going through that finder.
+  const { email_verified_at, ...rest } = row
+  return { ...rest, emailVerified: email_verified_at !== null }
+}
+
+// Deletes EVERY session for a user, returning how many were removed. The write
+// behind a completed password reset: resetting a password must invalidate all
+// existing logins (the whole point when the reason is a suspected compromise),
+// not just the one that happened to make the request — which is why it takes a
+// user id rather than a token hash, unlike the self-scoped destroySession.
+export async function deleteAllSessionsForUser(userId: string): Promise<number> {
+  const result = await db
+    .deleteFrom("sessions")
+    .where("user_id", "=", userId)
+    .executeTakeFirst()
+  return Number(result.numDeletedRows ?? 0n)
 }
 
 export async function deleteSession(tokenHash: string): Promise<void> {

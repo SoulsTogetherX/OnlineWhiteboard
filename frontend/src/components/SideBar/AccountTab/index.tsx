@@ -15,6 +15,9 @@ export interface AccountTabProps {
   onLogout: () => void
   onUpdateUsername: (username: string) => Promise<{ ok: boolean; error?: string }>
   onDeleteAccount: () => Promise<{ ok: boolean; error?: string }>
+  // Emails a verification link to the account's own address. Informational only:
+  // an unverified account keeps full access — this just lets the user confirm.
+  onSendVerification: () => Promise<{ ok: boolean; error?: string }>
 }
 
 // Everything about WHO you are, in one place. Account controls used to be spread
@@ -27,6 +30,7 @@ export default function AccountTab({
   onLogout,
   onUpdateUsername,
   onDeleteAccount,
+  onSendVerification,
 }: AccountTabProps) {
   const [draftName, setDraftName] = useState(user?.username ?? "")
   // Re-seed the field when the account changes underneath it — signing in as
@@ -41,6 +45,12 @@ export default function AccountTab({
   const [status, setStatus] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
+  // Verification is its own little flow with its own busy/sent/error, kept apart
+  // from the rename state above so sending a link never disables the name form
+  // and vice versa.
+  const [verifying, setVerifying] = useState(false)
+  const [verifySent, setVerifySent] = useState(false)
+  const [verifyError, setVerifyError] = useState<string | null>(null)
   // Deleting an account is irreversible, so it takes a second, deliberate click
   // rather than a browser confirm() — which is easy to dismiss by reflex and
   // impossible to style or test.
@@ -80,6 +90,21 @@ export default function AccountTab({
     }
   }
 
+  const sendVerification = async () => {
+    if (verifying) {
+      return
+    }
+    setVerifying(true)
+    setVerifyError(null)
+    const result = await onSendVerification()
+    setVerifying(false)
+    if (result.ok) {
+      setVerifySent(true)
+    } else {
+      setVerifyError(result.error ?? "Could not send the email.")
+    }
+  }
+
   const confirmDelete = async () => {
     setBusy(true)
     setError(null)
@@ -102,6 +127,37 @@ export default function AccountTab({
           aria-hidden="true"
         />
         <span className="account-name">{user.username}</span>
+      </section>
+
+      <section className="account-verify" aria-label="Email verification">
+        {user.emailVerified ? (
+          <p className="account-verified" role="status">
+            <span className="account-verified-check" aria-hidden="true">
+              ✓
+            </span>
+            Email verified
+          </p>
+        ) : verifySent ? (
+          <p className="account-status" role="status">
+            Verification link sent — check your inbox. It expires in 24 hours.
+          </p>
+        ) : (
+          <div className="account-verify-row">
+            <p className="account-hint">Your email isn't verified yet.</p>
+            <Button
+              variant="primary"
+              onClick={sendVerification}
+              disabled={verifying}
+            >
+              {verifying ? "Sending…" : "Verify email"}
+            </Button>
+          </div>
+        )}
+        {verifyError && (
+          <p className="account-error" role="alert">
+            {verifyError}
+          </p>
+        )}
       </section>
 
       <form className="account-rename" onSubmit={submitName}>

@@ -27,11 +27,12 @@ import * as m001 from "./migrations/001_initial_schema"
 // a key once it has run anywhere: Kysely would see the old name as a migration
 // that has vanished and refuse to proceed.
 //
-// There is one entry because the whole schema — including the email-at-rest,
-// open-editing and canvas-dimension-bounds changes that were briefly separate
-// migrations — is squashed into a single baseline (no deployed database needed
-// their step-by-step history). Adding the NEXT schema change means adding
-// 002_*.ts here — not editing 001, which has now run.
+// There is one entry because the whole schema — including email-at-rest,
+// open-editing, canvas-dimension-bounds, and the email-verification/password-reset
+// schema (users.email_verified_at + auth_tokens) — is squashed into a single
+// baseline (no deployed database needed their step-by-step history). Adding the
+// NEXT schema change means adding 002_*.ts here — not editing 001, which by then
+// has run on databases that must be upgraded rather than recreated.
 const migrations: Record<string, Migration> = {
   "001_initial_schema": m001,
 }

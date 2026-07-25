@@ -10,6 +10,7 @@ const ADA: AuthUser = {
   username: "Ada",
   color: "#ff8800",
   isGuest: false,
+  emailVerified: true,
 }
 
 function renderTab(overrides: Partial<Parameters<typeof AccountTab>[0]> = {}) {
@@ -19,6 +20,7 @@ function renderTab(overrides: Partial<Parameters<typeof AccountTab>[0]> = {}) {
     onLogout: vi.fn(),
     onUpdateUsername: vi.fn().mockResolvedValue({ ok: true }),
     onDeleteAccount: vi.fn().mockResolvedValue({ ok: true }),
+    onSendVerification: vi.fn().mockResolvedValue({ ok: true }),
     ...overrides,
   }
   return { props, ...render(<AccountTab {...props} />) }
@@ -70,6 +72,39 @@ describe("AccountTab rename", () => {
     await waitFor(() => expect(props.onUpdateUsername).toHaveBeenCalled())
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "Username must be 2–32 characters.",
+    )
+  })
+})
+
+describe("AccountTab email verification", () => {
+  it("shows verified status and offers no verify button when verified", () => {
+    renderTab({ user: { ...ADA, emailVerified: true } })
+    expect(screen.getByText("Email verified")).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Verify email" }),
+    ).not.toBeInTheDocument()
+  })
+
+  it("offers a verify button when unverified and reports it was sent", async () => {
+    const { props } = renderTab({ user: { ...ADA, emailVerified: false } })
+    fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
+    await waitFor(() => expect(props.onSendVerification).toHaveBeenCalled())
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "Verification link sent",
+    )
+  })
+
+  it("reports a verification send failure", async () => {
+    const { props } = renderTab({
+      user: { ...ADA, emailVerified: false },
+      onSendVerification: vi
+        .fn()
+        .mockResolvedValue({ ok: false, error: "Could not send the email." }),
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Verify email" }))
+    await waitFor(() => expect(props.onSendVerification).toHaveBeenCalled())
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Could not send the email.",
     )
   })
 })

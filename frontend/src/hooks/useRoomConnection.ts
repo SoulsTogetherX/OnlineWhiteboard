@@ -15,7 +15,7 @@ import {
   applySnapshotToCanvas,
 } from "@shared/utils/handleCanvasProtocol"
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
-import { encodePatchDrawFrame } from "@shared/utils/patchCodec"
+import { chunkPatchEntries, encodePatchDrawFrame } from "@shared/utils/patchCodec"
 import { decompressSnapshotPayload } from "@/utils/snapshotCompression"
 import { clearHolds, latestExpiry, overlayHolds } from "@/utils/localHold"
 
@@ -569,12 +569,19 @@ export default function useRoomConnection(
 
   const sendDrawInstruction = useCallback(
     (instruction: DrawInstruction) => {
-      // Patches go out as a binary frame — an undo of a large fill is thousands
-      // of entries, ~1.4 MB as JSON but ~12 bytes each packed. Every other tool
-      // is a handful of numbers, so it stays JSON where it is easiest to read on
-      // the wire. Both arrive at the server as an identical "draw" message.
+      // Patches go out as binary frames — an undo of a large fill is thousands of
+      // entries, ~1.4 MB as JSON but 11 bytes each packed. A big undo is also
+      // SPLIT into several messages of at most MAX_PATCH_ENTRIES_PER_MESSAGE
+      // entries, so no single frame approaches the socket ceiling; the server
+      // applies each independently (every entry is its own compare-and-swap, so
+      // the split never changes the result). A normal stroke's undo fits in one
+      // chunk, so this stays a single send in the common case. Every other tool is
+      // a handful of numbers, so it stays JSON where it is easiest to read on the
+      // wire. Both arrive at the server as an identical "draw" message.
       if (instruction.type === "patch") {
-        send(encodePatchDrawFrame(roomId, instruction))
+        for (const entries of chunkPatchEntries(instruction.entries)) {
+          send(encodePatchDrawFrame(roomId, { ...instruction, entries }))
+        }
         return
       }
       const message: ClientSocketMessage = {

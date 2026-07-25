@@ -33,13 +33,16 @@ const BASE = process.argv[2] ?? "http://localhost:8080"
 const WS_BASE = BASE.replace(/^http/, "ws")
 const ROOM = `probe-${Math.floor(Math.random() * 100000)}`
 
-// The server's global patch-entry ceiling: one entry per pixel of the LARGEST
-// allowed canvas. Must mirror MAX_PATCH_ENTRIES in shared/constants/canvas
-// (= MAX_CANVAS_DIMENSION^2). It grew from 120^2 when Phase 4 made the canvas
-// per-room (default 256, max 512), so a patch of MAX_PATCH_ENTRIES+1 entries is
-// now what the count bound must reject — 14,401 entries is a perfectly legal
-// patch on a 512^2 board and is correctly broadcast.
-const MAX_PATCH_ENTRIES = 512 * 512
+// The server's per-MESSAGE patch-entry cap: the most compare-and-swap entries a
+// single patch message may carry. Must mirror MAX_PATCH_ENTRIES_PER_MESSAGE in
+// shared/constants/canvas. A larger undo is split into several messages by the
+// client (chunkPatchEntries); a single patch over this cap is rejected by
+// decodePatchEntries' count bound. It also SIZES maxPayload (~cap * 11 bytes +
+// header), which is exactly why a patch of cap+1 entries is still a small enough
+// FRAME to clear maxPayload and actually reach the count bound — the point of
+// test 2 below. (A patch of MAX_CANVAS_DIMENSION^2 entries would instead exceed
+// maxPayload and be closed as an over-limit frame, which is test 3.)
+const MAX_PATCH_ENTRIES_PER_MESSAGE = 16384
 
 // The patch wire encoder lives in ./lib/patchWire.mjs — one copy shared by the
 // probes, kept byte-identical to the real codec by a parity test.
@@ -116,17 +119,20 @@ console.log(`security probe -> ${BASE} (room "${ROOM}")\n`)
 }
 
 // --- 2. An oversized patch is dropped, never applied or broadcast -----------
-// Every entry below is individually valid; only the LIST is illegal. That is
-// exactly what per-entry validation cannot catch, and it was unbounded until
-// MAX_PATCH_ENTRIES existed. Sent as a binary frame so it clears maxPayload and
-// actually reaches the count bound in decodePatchEntries (see encodePatchFrame).
+// Every entry below is individually valid; only the LIST is illegal — one entry
+// past the per-message cap. That is exactly what per-entry validation cannot
+// catch. It is sized so the FRAME still clears maxPayload (cap+1 entries pack to
+// ~176 KB, well under the ceiling) and therefore actually reaches the count bound
+// in decodePatchEntries — as opposed to test 3, which exceeds maxPayload itself.
+// The sending socket must survive this (a count-rejected message is dropped, not
+// a reason to close the connection).
 {
   const a = await connect()
   const b = await connect()
   await waitFor(a, (m) => m.type === "ready")
   await waitFor(b, (m) => m.type === "ready")
 
-  const entries = Array.from({ length: MAX_PATCH_ENTRIES + 1 }, () => ({
+  const entries = Array.from({ length: MAX_PATCH_ENTRIES_PER_MESSAGE + 1 }, () => ({
     idx: 0,
     from: { r: 0, g: 0, b: 0, a: 0 },
     to: { r: 255, g: 0, b: 0, a: 255 },

@@ -10,7 +10,9 @@ import { isValidClientMessage } from "../validateSocketMessage"
 import { isValidDrawInstruction } from "../validateInstruction"
 import { DIMS } from "./testHelpers"
 import {
+  MAX_CANVAS_DIMENSION,
   MAX_PATCH_ENTRIES,
+  MAX_PATCH_ENTRIES_PER_MESSAGE,
   MIN_CANVAS_DIMENSION,
 } from "../../constants/canvas"
 import { ROLES } from "../../types/identity"
@@ -352,6 +354,42 @@ describe("patch entry-count bound (memory DoS)", () => {
           sessionId: "s",
         },
       }),
+    ).toBe(false)
+  })
+})
+
+describe("patch per-message cap (frame-size DoS)", () => {
+  // On a canvas LARGER than the per-message cap, the cap — not the canvas area —
+  // is the binding bound: one patch message may carry at most
+  // MAX_PATCH_ENTRIES_PER_MESSAGE entries, which is what keeps the socket
+  // maxPayload low (backend/src/server.ts). A larger undo is legitimately split
+  // into several messages by the client (chunkPatchEntries); a client that sends
+  // one oversized patch anyway is rejected here rather than trusted to have split.
+  const BIG_DIMS = { width: MAX_CANVAS_DIMENSION, height: MAX_CANVAS_DIMENSION }
+
+  it("accepts a patch exactly at the per-message cap on a large canvas", () => {
+    const entries = Array.from(
+      { length: MAX_PATCH_ENTRIES_PER_MESSAGE },
+      (_, i) => patchEntry(i * 4),
+    )
+    expect(
+      isValidDrawInstruction(
+        { type: "patch", entries, instructionId: 1, sessionId: "s" },
+        BIG_DIMS,
+      ),
+    ).toBe(true)
+  })
+
+  it("rejects a patch one past the per-message cap, even on a bigger canvas", () => {
+    const entries = Array.from(
+      { length: MAX_PATCH_ENTRIES_PER_MESSAGE + 1 },
+      (_, i) => patchEntry(i * 4),
+    )
+    expect(
+      isValidDrawInstruction(
+        { type: "patch", entries, instructionId: 1, sessionId: "s" },
+        BIG_DIMS,
+      ),
     ).toBe(false)
   })
 })

@@ -105,22 +105,34 @@ const DEFAULT_BLUR_OPACITY = 60
 //#endregion
 
 //#region Patch
-// The most entries a single undo/redo patch can legitimately carry: one per
-// pixel on the canvas. A patch is a compare-and-swap list, and touching the same
-// pixel twice in one patch is meaningless, so anything beyond this is either a
-// broken client or a hostile one.
-//
-// This is the GLOBAL ceiling — one entry per pixel of the largest canvas any
-// room may ever be — used by the patch decoder as an allocation guard before the
-// room's dimensions are known. Per-room validation (isValidDrawInstruction)
-// tightens it to the actual canvas area. It scales with the max canvas so a
-// legitimate full-canvas undo on the biggest allowed board still fits.
-//
-// Without this bound the entries array was limited only by the WebSocket frame
-// size — which defaulted to 100 MiB — so one message could hand the server a
-// million objects to parse and iterate. Same class of hazard as an unbounded
-// coordinate: bounded per-item validation is worthless if the LIST is unbounded.
+// The most entries a single undo/redo *action* can legitimately total: one per
+// pixel on the largest canvas any room may ever be. A patch is a compare-and-swap
+// list, and touching the same pixel twice is meaningless, so no undo can exceed
+// this many entries in all. It scales with the max canvas so a legitimate
+// full-canvas undo on the biggest allowed board is still representable.
 const MAX_PATCH_ENTRIES = MAX_CANVAS_DIMENSION * MAX_CANVAS_DIMENSION
+
+// The most entries a single patch *message* may carry on the wire. This is the
+// tighter, per-MESSAGE cap, and it is what actually sizes the socket maxPayload
+// (backend/src/server.ts): a full-canvas undo no longer travels as one huge
+// frame — the client splits it into ceil(total / this) messages (see
+// chunkPatchEntries), and the server applies each independently (every entry is
+// an independent CAS, so splitting changes nothing about the result).
+//
+// It is enforced on BOTH sides from this one value, so they cannot drift: the
+// decoder rejects a payload with more than this many entries before allocating
+// them, and isValidDrawInstruction rejects a patch message over it (tightened
+// further to the room's actual area). Bounded per-item validation is worthless
+// if the LIST is unbounded — this bounds the list, and small enough that one
+// message can never approach the old multi-megabyte frame.
+//
+// 16,384 entries * 11 packed bytes ≈ 176 KB on the wire, which is what lets
+// maxPayload sit around a quarter-megabyte instead of 3 MiB — roughly a 12x
+// tightening of the largest frame an attacker can make the server buffer before
+// any validation runs. A normal stroke's undo is far below this and never splits;
+// only a large fill / big-brush sweep on a bigger canvas divides into a handful
+// of small frames. MUST be <= MAX_PATCH_ENTRIES.
+const MAX_PATCH_ENTRIES_PER_MESSAGE = 16_384
 //#endregion
 
 //#region Exports
@@ -141,5 +153,6 @@ export {
   MAX_BLUR_OPACITY,
   DEFAULT_BLUR_OPACITY,
   MAX_PATCH_ENTRIES,
+  MAX_PATCH_ENTRIES_PER_MESSAGE,
 }
 //#endregion

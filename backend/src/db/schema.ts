@@ -98,6 +98,10 @@ export interface UsersTable {
   username: string
   password_hash: string
   color: string
+  // NULL until the address is confirmed through the email-verification flow; the
+  // timestamp records when. Nullable with no default, so every existing account
+  // reads as unverified until it goes through the flow (see migration 002).
+  email_verified_at: ColumnType<Date | null, Date | null | undefined, Date | null>
   created_at: Timestamp
 }
 
@@ -127,6 +131,18 @@ export interface RoomMembersTable {
   role: string
   created_at: Timestamp
   updated_at: Timestamp
+}
+
+// A single-use, expiring link token for the two out-of-band email flows —
+// email verification and password reset — discriminated by `kind`. `id` is the
+// SHA-256 HASH of the token, never the token itself (same at-rest reasoning as
+// sessions.id): a dump holds hashes that cannot be presented as a live link.
+export interface AuthTokensTable {
+  id: string
+  user_id: string
+  kind: "email_verify" | "password_reset"
+  expires_at: Timestamp
+  created_at: Timestamp
 }
 
 // A durable, named full-canvas version. rgba is the pixel buffer
@@ -159,5 +175,6 @@ export interface Database {
   saved_colors: SavedColorsTable
   room_members: RoomMembersTable
   checkpoints: CheckpointsTable
+  auth_tokens: AuthTokensTable
 }
 //#endregion

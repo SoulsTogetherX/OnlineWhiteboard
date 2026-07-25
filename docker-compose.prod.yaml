@@ -86,7 +86,12 @@ services:
           "CMD-SHELL",
           "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
         ]
-      start_period: 0s
+      # Grace window for a cold first-time `initdb` on a slow host / loaded CI
+      # runner: failures during it don't burn `retries`, and a success still
+      # marks healthy immediately, so a fast host is never delayed. At 0s a slow
+      # cold start could exceed 5x5s=25s and be marked `unhealthy`, failing the
+      # backend's `depends_on: condition: service_healthy` and the whole stack.
+      start_period: 30s
       interval: 5s
       timeout: 5s
       retries: 5
