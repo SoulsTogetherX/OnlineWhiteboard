@@ -7,7 +7,7 @@ import configureRoutes from "./routes"
 import configureWebSockets from "./sockets"
 import { runMigrations } from "./db/migrate"
 import { assertEmailSecretsPresent } from "./auth/emailCrypto"
-import { assertMailerConfigured } from "./auth/mailer"
+import { warnIfMailerUnconfigured } from "./auth/mailer"
 import pool from "./db/pool"
 
 import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "@shared/constants/canvas"
@@ -112,10 +112,11 @@ async function start(): Promise<void> {
   // start in production" was aspirational rather than true.
   assertEmailSecretsPresent()
 
-  // Likewise fail closed on a production deploy that cannot send email — the
-  // verification and password-reset flows would otherwise silently do nothing.
-  // In development this only warns and falls back to console-logging the links.
-  assertMailerConfigured()
+  // Email verification and password reset are OPTIONAL (nothing requires a
+  // verified address), so unlike the email-at-rest secrets above this does NOT
+  // fail closed — it only warns if SMTP is unset. The server boots either way;
+  // without SMTP those two emails are logged to the console instead of sent.
+  warnIfMailerUnconfigured()
 
   await runMigrations()
 

@@ -13,12 +13,15 @@
 //     name, and it is HTML-escaped before it goes into the HTML part. The token
 //     is URL-encoded into the link. Recipient addresses come from our own
 //     decrypted store, not from the request body.
-//   * In production the transport is REQUIRED (assertMailerConfigured, called at
-//     startup): a deploy where reset mail silently vanishes locks users out, so
-//     it fails closed like the email-at-rest secrets. In development, with no
-//     SMTP configured, it logs the link to the server console instead of sending
-//     — which is what lets the whole flow be exercised locally with no mail
-//     server, mirroring the dev fallbacks elsewhere in auth.
+//   * The transport is OPTIONAL. Email verification and password reset are
+//     enhancements — nothing in the app requires a verified address (login and
+//     drawing work regardless) — so a deploy without SMTP is a valid choice, not
+//     a misconfiguration to fail closed on. That is the key difference from the
+//     email-at-rest secrets (assertEmailSecretsPresent), which EVERY account
+//     depends on and which do refuse to boot. So warnIfMailerUnconfigured only
+//     WARNS, in every environment: the server starts, and with no SMTP the
+//     verification/reset links are logged to the console instead of emailed —
+//     which also lets the whole flow be exercised locally with no mail server.
 //#endregion
 
 //#region Imports
@@ -26,8 +29,6 @@ import nodemailer, { type Transporter } from "nodemailer"
 //#endregion
 
 //#region Config
-const IS_PROD = process.env.NODE_ENV === "production"
-
 // The site origin the links point at. In dev this is the Vite server
 // (http://localhost:5173), which proxies /api to the backend; in prod it is the
 // real origin, which nginx serves and proxies from. Either way it is the origin
@@ -71,23 +72,20 @@ function readSmtpConfig(): SmtpConfig | null {
   }
 }
 
-// Called from server.ts before listen(). In production a missing transport is
-// fatal — the same fail-closed stance as assertEmailSecretsPresent, because a
-// prod build that cannot send is one where password reset silently does nothing
-// and users lock themselves out. In dev it only warns, so a fresh clone runs.
-export function assertMailerConfigured(): void {
+// Called from server.ts before listen(). Never fatal: email verification and
+// password reset are optional (nothing in the app requires a verified address),
+// so a deploy without SMTP boots normally — it just cannot deliver those two
+// emails, and logs their links to the console instead (see send). This is
+// deliberately NOT the fail-closed stance of assertEmailSecretsPresent, because
+// those secrets are load-bearing for every account while this transport is not.
+export function warnIfMailerUnconfigured(): void {
   if (readSmtpConfig()) {
     return
   }
-  if (IS_PROD) {
-    throw new Error(
-      "SMTP is not configured (SMTP_HOST / EMAIL_FROM). Refusing to start in " +
-        "production: email verification and password reset would silently fail.",
-    )
-  }
   console.warn(
-    "WARNING: SMTP is not configured. Verification and password-reset links " +
-      "will be logged to this console instead of emailed. Development only.",
+    "WARNING: SMTP is not configured (SMTP_HOST / EMAIL_FROM). Email " +
+      "verification and password reset are disabled — their links are logged to " +
+      "this console instead of emailed. Set SMTP_HOST and EMAIL_FROM to deliver mail.",
   )
 }
 //#endregion
@@ -142,7 +140,7 @@ async function send(to: string, message: Message): Promise<void> {
   const config = readSmtpConfig()
   if (!config) {
     console.log(
-      `[mailer:dev] would send "${message.subject}" to ${to}\n${message.text}`,
+      `[mailer] SMTP not configured; would send "${message.subject}" to ${to}\n${message.text}`,
     )
     return
   }
