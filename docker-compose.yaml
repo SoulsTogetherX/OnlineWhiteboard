@@ -14,6 +14,14 @@ services:
       dockerfile: ./frontend/Dockerfile
       # Stop at the `dev` stage: Vite dev server, not the nginx build.
       target: dev
+    # Run a real init (tini) as PID 1. The dev command is `npm run dev`, and npm
+    # as PID 1 neither reaps zombies nor reliably forwards SIGTERM to Vite — so a
+    # long HMR session accumulates defunct child processes and `docker compose
+    # down` waits out the full 10s SIGKILL timeout instead of stopping cleanly.
+    # tini forwards signals and reaps orphans. (Prod does not need this: it runs
+    # `node`/`nginx` directly as PID 1, which handle their own signals — see the
+    # backend Dockerfile's PID-1 note.)
+    init: true
     container_name: ${FRONTEND_HOST}
     volumes:
       # Bind mounts: edits on the host appear instantly in the container, which
@@ -59,6 +67,9 @@ services:
       context: .
       dockerfile: ./backend/Dockerfile
       target: dev
+    # Same reason as frontend: `npm run dev` (tsx watch) as PID 1 does not reap
+    # zombies or forward SIGTERM well. tini as PID 1 fixes both in dev.
+    init: true
     container_name: ${BACKEND_HOST}
     volumes:
       - ./backend/src:/app/src
@@ -104,7 +115,13 @@ services:
           "CMD-SHELL",
           "pg_isready -p ${POSTGRES_PORT} -U ${POSTGRES_USER} -d ${POSTGRES_DB}",
         ]
-      start_period: 0s
+      # Grace window: failures during it do NOT count toward `retries`, and a
+      # SUCCESS still marks the container healthy immediately — so this never
+      # slows a fast host, it only protects a slow one. First-time `initdb` on a
+      # cold Windows/WSL2 host (or a loaded CI runner) can exceed the old 0s
+      # window's 5x5s=25s budget and get marked `unhealthy`, which then fails
+      # every `depends_on: condition: service_healthy` above it.
+      start_period: 30s
       interval: 5s
       timeout: 5s
       retries: 5
