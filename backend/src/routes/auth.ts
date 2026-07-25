@@ -27,6 +27,8 @@ import {
   emailIndexExists,
   findEmailCiphertext,
   findUserByEmailIndex,
+  updateEmailVerified,
+  updatePasswordHash,
   updateUsername,
 } from "@/db/userRepository"
 import { deleteAllSessionsForUser } from "@/db/sessionRepository"
@@ -334,5 +336,170 @@ export default function configureAuthRoutes(app: Express): void {
     clearSessionCookie(res)
     return res.status(204).end()
   })
+
+  // --- Send a verification email ---------------------------------------------
+  // Scoped to the caller by the session alone — like every other self-action,
+  // it takes no user id, so it can only ever request verification of the caller's
+  // own address. The address itself is never in the request: it is decrypted
+  // from the caller's stored ciphertext, so the endpoint cannot be used to send
+  // mail to an arbitrary address.
+  app.post(
+    "/api/auth/send-verification",
+    sendVerificationLimiter,
+    async (req: Request, res: Response) => {
+      const current = await resolveSessionUser(readSessionToken(req))
+      if (!current) {
+        return res.status(401).json({ error: "Not signed in." })
+      }
+      // Already done — nothing to send. Not an error; the client hides the button
+      // once verified, and another tab may have verified in the meantime.
+      if (current.emailVerified) {
+        return res.status(200).json({ status: "already-verified" })
+      }
+
+      try {
+        const ciphertext = await findEmailCiphertext(current.id)
+        if (!ciphertext) {
+          // The row exists (the session resolved) but has no address to reach —
+          // treat as a server-side problem rather than leaking specifics.
+          return res.status(500).json({ error: "Could not send the email." })
+        }
+        const email = decryptEmail(ciphertext, current.id)
+
+        // The per-account cooldown lives in issueAuthToken; a throttled result
+        // still returns the same success below, so a rapid re-click can't be used
+        // to tell whether a mail was actually sent.
+        const issued = await issueAuthToken(current.id, "email_verify")
+        if (issued.ok) {
+          await sendVerificationEmail(email, current.username, issued.token)
+        }
+        return res.status(200).json({ status: "sent" })
+      } catch (error) {
+        const e = error as { message?: string; code?: string }
+        console.error(
+          `send-verification failed: ${e.code ?? ""} ${e.message ?? ""}`.trim(),
+        )
+        return res.status(500).json({ error: "Could not send the email." })
+      }
+    },
+  )
+
+  // --- Verify an email from the link -----------------------------------------
+  // A GET, because it is opened directly from an email client — which is why it
+  // returns an HTML page rather than JSON, and why it is NOT session-scoped: the
+  // single-use token IS the authorisation, so the link works even on a device
+  // where the user isn't signed in. It is exempt from the CSRF origin guard (a
+  // GET), which is safe precisely because a 256-bit token cannot be guessed, so
+  // there is nothing a cross-site request could forge.
+  app.get(
+    "/api/auth/verify-email",
+    verifyEmailLimiter,
+    async (req: Request, res: Response) => {
+      const token = req.query.token
+      const userId =
+        typeof token === "string"
+          ? await redeemAuthToken(token, "email_verify")
+          : null
+
+      // Redeeming already consumed the token (single-use); mark the account
+      // verified. A missing user (deleted since issue) falls through to the
+      // failure page, same as a bad token.
+      const verified = userId ? await updateEmailVerified(userId) : null
+      res
+        .status(verified ? 200 : 400)
+        .type("html")
+        .send(verifyResultPage(Boolean(verified)))
+    },
+  )
+
+  // --- Request a password-reset email ----------------------------------------
+  // Non-enumerable by construction: it ALWAYS returns the same generic success,
+  // whether or not the address has an account, so it cannot be used to discover
+  // which emails are registered. A real account triggers an email; anything else
+  // silently does nothing.
+  app.post(
+    "/api/auth/request-password-reset",
+    requestResetLimiter,
+    async (req: Request, res: Response) => {
+      const generic = () => res.status(200).json({ status: "sent" })
+
+      const email = validateEmail(req.body?.email)
+      if (!email.ok) {
+        // Malformed address — not an enumeration signal (it's about format, not
+        // existence), so still answer generically and do no work.
+        return generic()
+      }
+
+      const record = await findUserByEmailIndex(await emailBlindIndex(email.value))
+      if (record) {
+        const issued = await issueAuthToken(record.id, "password_reset")
+        if (issued.ok) {
+          await sendPasswordResetEmail(email.value, record.username, issued.token)
+        }
+      }
+      return generic()
+    },
+  )
+
+  // --- Complete a password reset ---------------------------------------------
+  // Takes the emailed token and a new password. The new password is validated and
+  // breach-checked with the SAME rules as registration BEFORE the token is
+  // redeemed, so a rejected weak password does not burn the user's single-use
+  // link. Redeeming is the last destructive step and is atomic (single-use), so a
+  // double submit can't reset twice.
+  app.post(
+    "/api/auth/reset-password",
+    resetPasswordLimiter,
+    async (req: Request, res: Response) => {
+      const password = validatePassword(req.body?.password)
+      if (!password.ok) {
+        return res.status(400).json({ error: password.error })
+      }
+
+      const breach = await checkPasswordBreached(password.value)
+      if (breach.breached) {
+        return res.status(400).json({
+          error:
+            `That password has appeared in ${breach.count.toLocaleString()} known ` +
+            `data breaches. It is not weak — it is public. Please choose a different one.`,
+        })
+      }
+
+      const token = req.body?.token
+      const userId =
+        typeof token === "string"
+          ? await redeemAuthToken(token, "password_reset")
+          : null
+      if (!userId) {
+        return res
+          .status(400)
+          .json({ error: "This reset link is invalid or has expired." })
+      }
+
+      const updated = await updatePasswordHash(
+        userId,
+        await hashPassword(password.value),
+      )
+      if (!updated) {
+        // The account vanished between issuing the link and redeeming it.
+        return res
+          .status(400)
+          .json({ error: "This reset link is invalid or has expired." })
+      }
+
+      // A reset exists to recover a possibly-compromised account, so it must end
+      // EVERY existing login, not just leave them running — and close the live
+      // sockets those sessions authorised, the same order the delete route uses.
+      closeSocketsForUser(userId)
+      const dropped = await deleteAllSessionsForUser(userId)
+      if (dropped > 0) {
+        console.log(`password reset: invalidated ${dropped} session(s)`)
+      }
+
+      // Deliberately does NOT log the user in. They re-authenticate with the new
+      // password, which also confirms the reset worked.
+      return res.status(200).json({ status: "reset" })
+    },
+  )
 }
 //#endregion

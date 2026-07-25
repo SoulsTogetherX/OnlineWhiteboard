@@ -128,7 +128,38 @@ export async function updateUsername(
     .where("id", "=", id)
     .returning(PUBLIC_COLUMNS)
     .executeTakeFirst()
-  return row ?? null
+  return row ? toUser(row) : null
+}
+
+// Marks an account's email as verified, stamping the moment it happened. Called
+// by the verify-email route once a valid, unexpired token is redeemed. Writes
+// NOW() rather than trusting a caller-supplied time, and is idempotent in effect
+// — verifying an already-verified account just moves the timestamp, which the
+// route avoids doing by consuming the single-use token first.
+export async function updateEmailVerified(id: string): Promise<User | null> {
+  const row = await db
+    .updateTable("users")
+    .set({ email_verified_at: new Date() })
+    .where("id", "=", id)
+    .returning(PUBLIC_COLUMNS)
+    .executeTakeFirst()
+  return row ? toUser(row) : null
+}
+
+// Replaces a user's password hash — the write behind a completed password reset.
+// Only the hash changes; the email columns and verification status are untouched.
+// Returns whether a row was updated so the caller can distinguish "done" from a
+// user that vanished between token issue and redemption.
+export async function updatePasswordHash(
+  id: string,
+  passwordHash: string,
+): Promise<boolean> {
+  const result = await db
+    .updateTable("users")
+    .set({ password_hash: passwordHash })
+    .where("id", "=", id)
+    .executeTakeFirst()
+  return (result.numUpdatedRows ?? 0n) > 0n
 }
 
 // Deletes a user, and with them everything the schema hangs off their id:

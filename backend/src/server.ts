@@ -7,6 +7,7 @@ import configureRoutes from "./routes"
 import configureWebSockets from "./sockets"
 import { runMigrations } from "./db/migrate"
 import { assertEmailSecretsPresent } from "./auth/emailCrypto"
+import { assertMailerConfigured } from "./auth/mailer"
 import pool from "./db/pool"
 
 import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "@shared/constants/canvas"
@@ -21,19 +22,23 @@ const server = createServer(app)
 // before any of our validation ran — validation cannot protect you from a
 // payload it never gets to see.
 //
-// The bound is derived, not guessed. The biggest LEGITIMATE message is an undo
-// patch covering every pixel of the LARGEST allowed canvas: MAX_PATCH_ENTRIES
-// (= MAX_CANVAS_DIMENSION^2 = 512^2 = 262,144) entries. Patches travel as a
-// packed binary frame (shared/utils/patchCodec.ts) at 11 bytes an entry, so that
-// worst case is 262,144 * 11 ≈ 2.75 MB. 3 MiB gives that ~262 KB of headroom for
-// the frame header, and every other client->server message is far smaller.
+// The bound is derived from the biggest LEGITIMATE frame, not guessed. The only
+// bulky client->server message is an undo patch, and a patch is now capped PER
+// MESSAGE at MAX_PATCH_ENTRIES_PER_MESSAGE entries: a larger undo is split
+// client-side into several messages (shared/utils/patchCodec chunkPatchEntries),
+// and the server rejects any single patch over that cap (validateInstruction). So
+// the worst legitimate frame is one full chunk — MAX_PATCH_ENTRIES_PER_MESSAGE *
+// 11 packed bytes ≈ 176 KB — plus the small JSON/binary-frame header; 64 KiB of
+// headroom covers the header comfortably (~240 KiB total).
 //
-// It was 4 MiB while an entry packed 12 bytes; shrinking the entry to 11 (a u24
-// pixel index instead of a u32 byte offset — see patchCodec.ts) is what let this
-// come down a further megabyte. Still ~33x below the `ws` 100 MiB default, and
-// the binary patch encoding is what keeps even this in the low megabytes rather
-// than the ~25 MB the old JSON encoding would have needed for the same canvas.
-const MAX_SOCKET_PAYLOAD_BYTES = 3 * 1024 * 1024
+// Deriving it from the SAME shared constants the client chunks by and the
+// validator enforces means the three cannot drift: shrink the per-message cap and
+// this shrinks with it. This is ~12x tighter than the previous 3 MiB ceiling
+// (which had to cover a whole 262,144-entry full-canvas undo in one frame), and
+// the split is invisible to the result because every patch entry is an
+// independent compare-and-swap.
+const MAX_SOCKET_PAYLOAD_BYTES =
+  MAX_PATCH_ENTRIES_PER_MESSAGE * BYTES_PER_ENTRY + 64 * 1024
 
 const wss = new WebSocketServer({
   noServer: true,
@@ -106,6 +111,11 @@ async function start(): Promise<void> {
   // every other caller is lazy (register/login) — so without this, "refuses to
   // start in production" was aspirational rather than true.
   assertEmailSecretsPresent()
+
+  // Likewise fail closed on a production deploy that cannot send email — the
+  // verification and password-reset flows would otherwise silently do nothing.
+  // In development this only warns and falls back to console-logging the links.
+  assertMailerConfigured()
 
   await runMigrations()
 
