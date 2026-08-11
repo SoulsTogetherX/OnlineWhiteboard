@@ -1,20 +1,10 @@
 //#region Imports
 import type { NextFunction, Request, Response } from "express"
-//#endregion
 
-//#region Client IP
-// nginx sets X-Real-IP to the true client address (see nginx.conf.template); in
-// dev there's no nginx so we fall back to the socket address. Trusting the header
-// is safe because in production the backend publishes NO host port — it is
-// reachable only through nginx on the private network, so nothing external can
-// forge X-Real-IP.
-function clientIp(req: Request): string {
-  const header = req.headers["x-real-ip"]
-  if (typeof header === "string" && header.length > 0) {
-    return header
-  }
-  return req.socket.remoteAddress ?? "unknown"
-}
+// Which header to trust (and why trusting it is safe) lives in clientIp.ts,
+// shared with the WebSocket connection caps so both identify clients the same
+// way regardless of what proxy fronts the backend.
+import { clientAddressOf } from "./clientIp"
 //#endregion
 
 //#region Rate limiter
@@ -44,7 +34,7 @@ export function rateLimit(options: {
   sweep.unref?.()
 
   return (req: Request, res: Response, next: NextFunction) => {
-    const key = `${options.name}:${clientIp(req)}`
+    const key = `${options.name}:${clientAddressOf(req)}`
     const now = Date.now()
 
     let bucket = buckets.get(key)

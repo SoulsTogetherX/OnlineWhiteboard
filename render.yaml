@@ -1,0 +1,59 @@
+# Render Blueprint: the whole app as ONE free web service, built from
+# Dockerfile.render (backend + built frontend in a single container), with
+# Postgres provided externally by Neon's free tier.
+#
+# Use: Render dashboard -> New -> Blueprint -> pick this repo. Render reads
+# this file, shows a form for the `sync: false` values (Neon credentials +
+# email-at-rest secrets), and creates the service.
+#
+# ALLOWED_ORIGINS / PUBLIC_SITE_URL are deliberately absent: Render injects
+# the service's public URL as RENDER_EXTERNAL_URL at runtime, and
+# Dockerfile.render bridges that to PUBLIC_SITE_URL — which origin.ts uses as
+# the origin allowlist — so a fresh deploy comes up locked to its own origin
+# with no post-deploy steps. Set either env var in the dashboard only to
+# override (e.g. after adding a custom domain).
+
+services:
+  - type: web
+    name: online-whiteboard
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile.render
+    # The DB-free liveness route (see backend/src/routes/index.ts). Render
+    # polls it to decide when a deploy is live.
+    healthCheckPath: /api/health
+    envVars:
+      # --- Neon Postgres (fill in from the Neon dashboard) ---------------
+      # Use the DIRECT (unpooled) host — the ep-...region.aws.neon.tech one
+      # WITHOUT "-pooler". The backend keeps one small pg Pool and runs
+      # startup migrations; that wants a real Postgres session, not PgBouncer.
+      - key: POSTGRES_HOST
+        sync: false
+      - key: POSTGRES_PORT
+        value: "5432"
+      - key: POSTGRES_USER
+        sync: false
+      - key: POSTGRES_PASSWORD
+        sync: false
+      - key: POSTGRES_DB
+        sync: false
+      # Neon only accepts TLS. node-postgres reads this libpq-style env var
+      # when pool.ts passes no explicit ssl config, so no code change needed.
+      - key: PGSSLMODE
+        value: require
+
+      # --- Email-at-rest secrets (required in production) ----------------
+      # 32 bytes of base64 EACH, and they must be DIFFERENT values. Generate:
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+      - key: EMAIL_INDEX_PEPPER
+        sync: false
+      - key: EMAIL_ENCRYPTION_KEY
+        sync: false
+
+      # --- Platform plumbing ---------------------------------------------
+      # Render fronts every service with Cloudflare, which overwrites
+      # True-Client-IP with the real client address on every request — the
+      # trustworthy source for per-IP rate limits and socket caps here
+      # (backend/src/security/clientIp.ts).
+      - key: TRUSTED_CLIENT_IP_HEADER
+        value: true-client-ip

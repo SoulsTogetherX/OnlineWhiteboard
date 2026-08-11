@@ -21,6 +21,7 @@ import type { IncomingMessage } from "node:http"
 
 import { SESSION_COOKIE, parseCookies } from "@/auth/cookies"
 import { hashSessionToken } from "@/auth/session"
+import { clientAddressOf } from "@/security/clientIp"
 
 import type { ClientSocketMessage } from "@shared/types/socketProtocol"
 //#endregion
@@ -320,13 +321,10 @@ export function connectionKeys(request: IncomingMessage): ConnectionKeys {
   // cookie still consumes an IP slot, so it buys nothing, and an honest signed-in
   // user is bounded by whichever limit is tighter.
   //
-  // Same trust reasoning as the HTTP limiter: in production the backend
-  // publishes no host port, so X-Real-IP can only come from our own nginx.
-  const header = request.headers["x-real-ip"]
-  const ip =
-    typeof header === "string" && header.length > 0
-      ? header
-      : (request.socket.remoteAddress ?? "unknown")
+  // Same trust reasoning as the HTTP limiter — which header is trusted, and
+  // why, lives in clientIp.ts (shared with rateLimit.ts so the two can never
+  // disagree about who a client is).
+  const ip = clientAddressOf(request)
 
   // The raw token is never used as a map key — hashing it means the live key set
   // isn't a pile of usable session tokens sitting in memory.

@@ -1,0 +1,77 @@
+# syntax=docker/dockerfile:1
+#
+# Single-container image for PaaS free tiers (Render and similar): the backend
+# serves the built frontend itself (backend/src/staticSite.ts, enabled by
+# STATIC_DIR below), so one container answers the page, /api and /ws on one
+# origin — same-origin is what the frontend's relative URLs require.
+#
+# This does NOT replace the compose stacks. docker-compose.prod.yaml remains
+# the reference production shape (nginx + backend + Postgres); this file exists
+# because free PaaS tiers run exactly one container and provide Postgres
+# elsewhere (e.g. Neon).
+#
+# Build context is the REPO ROOT, same as the other Dockerfiles, so the stages
+# can reach shared/. The stages mirror frontend/Dockerfile and
+# backend/Dockerfile — see those for the layer-caching and esbuild reasoning.
+
+##############################################################################
+# frontend-build — tsc typecheck + Rollup bundle (same as frontend/Dockerfile).
+##############################################################################
+FROM node:22-alpine AS frontend-build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+COPY shared/ /shared/
+COPY frontend/ ./
+RUN npm run build
+
+##############################################################################
+# backend-build — typecheck, then esbuild bundle (same as backend/Dockerfile).
+##############################################################################
+FROM node:22-alpine AS backend-build
+WORKDIR /app
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci
+COPY shared/ /shared/
+COPY backend/tsconfig.json ./
+COPY backend/src ./src
+RUN npm run typecheck && npm run build
+
+##############################################################################
+# prod — runtime only: production deps, the server bundle, the static bundle.
+##############################################################################
+FROM node:22-alpine AS prod
+WORKDIR /app
+
+ENV NODE_ENV=production
+
+COPY backend/package.json backend/package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
+COPY --from=backend-build /app/dist ./dist
+COPY --from=frontend-build /app/dist ./public
+
+# Turns on static serving in the backend (see backend/src/staticSite.ts).
+ENV STATIC_DIR=/app/public
+
+USER node
+
+EXPOSE 10000
+
+# Two platform-to-app bridges, then exec node:
+#
+#   * PORT -> BACKEND_PORT: Render (like most PaaS) tells the app where to
+#     listen via PORT; the server reads BACKEND_PORT. PORT wins when present
+#     so the platform always does.
+#   * RENDER_EXTERNAL_URL -> PUBLIC_SITE_URL: Render injects the service's
+#     public URL at runtime. origin.ts uses PUBLIC_SITE_URL as the origin
+#     allowlist when ALLOWED_ORIGINS is unset — and that allowlist fails
+#     CLOSED in production — so without this bridge a first deploy boots with
+#     every WebSocket upgrade refused until someone hand-copies the URL into
+#     an env var. With it, a fresh deploy comes up locked to its own origin.
+#     Explicit ALLOWED_ORIGINS / PUBLIC_SITE_URL env vars still win.
+#
+# `exec` matters: it replaces the shell so node is PID 1 and actually receives
+# SIGTERM — the graceful shutdown in src/server.ts (flush rooms, final
+# snapshot) depends on that, exactly like the CMD note in backend/Dockerfile.
+CMD ["sh", "-c", "BACKEND_PORT=${PORT:-${BACKEND_PORT:-3000}} PUBLIC_SITE_URL=${PUBLIC_SITE_URL:-${RENDER_EXTERNAL_URL:-}} exec node dist/server.js"]
