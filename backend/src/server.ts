@@ -4,6 +4,7 @@ import { createServer } from "http"
 import { WebSocketServer } from "ws"
 
 import configureRoutes from "./routes"
+import configureStaticSite from "./staticSite"
 import configureWebSockets from "./sockets"
 import { runMigrations } from "./db/migrate"
 import { assertEmailSecretsPresent } from "./auth/emailCrypto"
@@ -58,6 +59,9 @@ const port = process.env.BACKEND_PORT || 3000
 //#region Configure
 // Body parsing lives in configureRoutes alongside the routes that need it.
 configureRoutes(app)
+// No-op unless STATIC_DIR is set (single-container deploys — see staticSite.ts).
+// After the routes on purpose: its SPA fallback must never shadow /api.
+configureStaticSite(app)
 const roomManager = configureWebSockets(wss, server)
 //#endregion
 
