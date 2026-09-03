@@ -19,6 +19,7 @@ import { Migrator, type Migration, type MigrationProvider } from "kysely"
 import { db } from "./pool"
 
 import * as m001 from "./migrations/001_initial_schema"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Provider
@@ -58,9 +59,9 @@ export async function runMigrations(): Promise<void> {
 
   for (const result of results ?? []) {
     if (result.status === "Success") {
-      console.log(`migration applied: ${result.migrationName}`)
+      log.info("migration applied", { migration: result.migrationName })
     } else if (result.status === "Error") {
-      console.error(`migration FAILED: ${result.migrationName}`)
+      log.error("migration failed", { migration: result.migrationName })
     }
   }
 

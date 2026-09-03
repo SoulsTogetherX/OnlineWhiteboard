@@ -41,6 +41,44 @@ import type { DrawInstruction } from "../types/drawProtocol"
 export type PatchApplyMode = "decide" | "replay"
 //#endregion
 
+//#region Replay Idempotence
+// Whether applying `inst` a second time, to a canvas that already has it, lands
+// on the same pixels as applying it once.
+//
+// This is load-bearing rather than trivia, because the server broadcasts to
+// EVERYONE including the sender (§5.2). Every client therefore applies its own
+// instructions TWICE: once optimistically at gesture time, and again when the
+// echo comes back. Nothing in the design makes that safe — it is safe only
+// because, for every tool but one, the second application is a no-op.
+//
+// Every other tool SETS pixels: a pencil writes its colour, a spray writes its
+// seeded splatter, a bucket fills a region with one colour, a patch writes each
+// entry's `to`. Run any of them again over their own output and they rewrite the
+// same bytes.
+//
+// A blur does not set pixels, it TRANSFORMS them — its output is derived from
+// what is already there (see handleBlurProtocol's header). Blurring an
+// already-blurred canvas blurs it twice, which broke two things at once:
+//
+//   1. The sender ended up MORE blurred than the server and than every other
+//      client, permanently. Nothing corrects it: the divergence costs no
+//      revisions, so the revision heartbeat (§5.3) never notices.
+//   2. Undo stopped working. The undo entry records the pixel values the FIRST
+//      application produced, and the canvas now holds the second's, so every one
+//      of the undo patch's compare-and-swaps failed and the undo restored
+//      nothing — silently, since a fully-narrowed patch just reports "that area
+//      was already changed".
+//
+// So the sender must NOT replay its own blur; its optimistic apply already put
+// that blur in the buffer, in that position in the order. It must still replay
+// its own everything-else, because an echo carries ORDERING the optimistic apply
+// could not know: if a collaborator painted the same pixel in between, the echo
+// is what re-establishes the server's last-writer-wins result.
+export function isIdempotentOnReplay(inst: DrawInstruction): boolean {
+  return inst.type !== "blur"
+}
+//#endregion
+
 //#region Server-Driven Canvas Methods
 // Applies inst and returns what actually happened. For pencil/eraser/bucket
 // this is unconditional — the whole instruction always applies, so it's

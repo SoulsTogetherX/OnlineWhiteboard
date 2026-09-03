@@ -13,6 +13,7 @@ import useWebSocket from "@/hooks/useWebSocket"
 import {
   applyDrawInstructionToCanvas,
   applySnapshotToCanvas,
+  isIdempotentOnReplay,
 } from "@shared/utils/handleCanvasProtocol"
 import { decodeBinaryFrame } from "@shared/utils/binaryFrame"
 import { chunkPatchEntries, encodePatchDrawFrame } from "@shared/utils/patchCodec"
@@ -165,6 +166,12 @@ export default function useRoomConnection(
   const sendRef = useRef<(message: ClientSocketMessage) => boolean>(() => false)
   const lastRevision = useRef<number>(0)
 
+  // This socket's own connectionId, as the server assigned it. A ref rather than
+  // reading `self` so the message handler does not take a dependency that
+  // changes on every roster update — and so it is already correct for the very
+  // first draw after "ready", without waiting for a render.
+  const selfConnectionId = useRef<string | null>(null)
+
   // The dimensions of the last snapshot we applied. Null until the first
   // snapshot; a later snapshot with different dims is a resize (see the
   // canvas_snapshot handler). `canvasResize` carries the old and new dims of the
@@ -289,6 +296,7 @@ export default function useRoomConnection(
       switch (message.type) {
         case "ready":
           setSelf(message.self)
+          selfConnectionId.current = message.self.connectionId
           setParticipants(message.participants)
           setSettings({
             openEditing: message.openEditing,
@@ -317,6 +325,7 @@ export default function useRoomConnection(
           // arrives through the presence broadcast instead.
           if (message.roomId === roomId) {
             setSelf(message.self)
+            selfConnectionId.current = message.self.connectionId
           }
           break
 
@@ -379,7 +388,30 @@ export default function useRoomConnection(
             break
           }
           const drawMessage = message
+          // The echo of something this client drew, which it already applied
+          // optimistically. Replaying it is normally a harmless rewrite of the
+          // same bytes, and is the ONLY thing that gets the ordering right when
+          // a collaborator painted the same pixel in between — so it is done for
+          // everything that survives a second application unchanged. A blur does
+          // not: it is computed FROM the canvas, so replaying it here blurs an
+          // already-blurred canvas a second time, leaving this client more
+          // blurred than everyone else and its undo record describing pixels the
+          // canvas no longer holds. See isIdempotentOnReplay.
+          const isOwnEcho =
+            drawMessage.connectionId !== undefined &&
+            drawMessage.connectionId === selfConnectionId.current
+          const skipReplay =
+            isOwnEcho && !isIdempotentOnReplay(drawMessage.instruction)
           enqueueCanvasWork(() => {
+            // The revision still has to advance even when the apply is skipped:
+            // this client IS up to date with it, and leaving it behind would have
+            // the revision heartbeat (§5.3) demand a full snapshot after every
+            // blur. Inside the queue, not before it, so it stays ordered against
+            // any snapshot still inflating.
+            if (skipReplay) {
+              lastRevision.current = drawMessage.revision
+              return
+            }
             const canvas = canvasRef.current
             if (!canvas) {
               return
@@ -560,6 +592,9 @@ export default function useRoomConnection(
       // Forget the last room's size so the next room's first snapshot is not
       // mistaken for a resize.
       knownDims.current = null
+      // The next room means a new socket and a new connectionId; forget the old
+      // one rather than carry an identity that is no longer ours.
+      selfConnectionId.current = null
       if (holdExpiryTimer.current !== null) {
         window.clearTimeout(holdExpiryTimer.current)
         holdExpiryTimer.current = null

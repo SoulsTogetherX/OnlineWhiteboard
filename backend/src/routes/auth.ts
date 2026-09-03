@@ -47,6 +47,7 @@ import { checkPasswordBreached } from "@/auth/breachedPassword"
 import { rateLimit } from "@/security/rateLimit"
 
 import type { User } from "@/db/userRepository"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Rate limiters
@@ -208,7 +209,7 @@ export default function configureAuthRoutes(app: Express): void {
       // carry the failing query's parameters (email, password hash), which
       // should not land in server logs.
       const e = error as { message?: string; code?: string }
-      console.error(`register failed: ${e.code ?? ""} ${e.message ?? ""}`.trim())
+      log.error("register failed", { code: e.code, message: e.message })
       return res.status(500).json({ error: "Could not create account." })
     }
   })
@@ -263,7 +264,7 @@ export default function configureAuthRoutes(app: Express): void {
     if (token) {
       const closed = closeSocketsForSession(hashSessionToken(token))
       if (closed > 0) {
-        console.log(`logout: closed ${closed} socket(s) for the ended session`)
+        log.info("logout: closed sockets for the ended session", { count: closed })
       }
     }
 
@@ -376,9 +377,7 @@ export default function configureAuthRoutes(app: Express): void {
         return res.status(200).json({ status: "sent" })
       } catch (error) {
         const e = error as { message?: string; code?: string }
-        console.error(
-          `send-verification failed: ${e.code ?? ""} ${e.message ?? ""}`.trim(),
-        )
+        log.error("send-verification failed", { code: e.code, message: e.message })
         return res.status(500).json({ error: "Could not send the email." })
       }
     },
@@ -493,7 +492,7 @@ export default function configureAuthRoutes(app: Express): void {
       closeSocketsForUser(userId)
       const dropped = await deleteAllSessionsForUser(userId)
       if (dropped > 0) {
-        console.log(`password reset: invalidated ${dropped} session(s)`)
+        log.info("password reset: invalidated sessions", { count: dropped })
       }
 
       // Deliberately does NOT log the user in. They re-authenticate with the new

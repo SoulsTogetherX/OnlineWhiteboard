@@ -5,6 +5,7 @@ import { packPixels, unpackPixels } from "./pixelStorage"
 import { DEFAULT_CANVAS_DIMS, canvasBytes } from "@shared/constants/canvas"
 
 import type { CanvasDims } from "@shared/constants/canvas"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Type Defs
@@ -55,11 +56,13 @@ export async function loadCanvas(roomId: string): Promise<StoredCanvas> {
   // starting it at the default is the safe floor.)
   const pixels = unpackPixels(row.rgba, dims)
   if (pixels === null) {
-    console.error(
-      `canvas snapshot for room "${roomId}" at revision ${row.revision} could ` +
-        `not be decompressed (${row.rgba.length} stored bytes, ` +
-        `${dims.width}x${dims.height}); starting blank`,
-    )
+    log.error("canvas snapshot could not be decompressed; starting blank", {
+      roomId,
+      revision: row.revision,
+      storedBytes: row.rgba.length,
+      width: dims.width,
+      height: dims.height,
+    })
     return blankCanvas(DEFAULT_CANVAS_DIMS)
   }
 

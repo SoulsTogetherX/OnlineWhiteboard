@@ -50,6 +50,15 @@ services:
       - key: EMAIL_ENCRYPTION_KEY
         sync: false
 
+      # --- Observability -------------------------------------------------
+      # Guards GET /api/metrics (the Prometheus scrape target). generateValue
+      # lets Render mint a random secret at deploy time — read it from the
+      # dashboard when configuring the Grafana Cloud scrape job (it goes in as
+      # the password half of Basic auth, any username). Without it the
+      # endpoint is 404 in production, fail closed.
+      - key: METRICS_TOKEN
+        generateValue: true
+
       # --- Platform plumbing ---------------------------------------------
       # Render fronts every service with Cloudflare, which overwrites
       # True-Client-IP with the real client address on every request — the

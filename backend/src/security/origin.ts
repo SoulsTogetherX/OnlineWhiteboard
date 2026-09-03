@@ -1,3 +1,5 @@
+import { log } from "@/observability/log"
+
 //#region Why this exists
 // A browser attaches an `Origin` header identifying the page that initiated a
 // request. It cannot be forged by page JavaScript, which makes it the anchor for
@@ -46,13 +48,13 @@ const IS_PRODUCTION = process.env.NODE_ENV === "production"
 // consequence in this environment.
 if (ALLOWED_ORIGINS.length === 0) {
   if (IS_PRODUCTION) {
-    console.error(
+    log.error(
       "FATAL-ADJACENT: ALLOWED_ORIGINS is empty in production — every " +
         "cross-origin browser request and WebSocket upgrade will be REFUSED. " +
         "Set ALLOWED_ORIGINS (or PUBLIC_SITE_URL) to your site origin(s).",
     )
   } else {
-    console.warn(
+    log.warn(
       "ALLOWED_ORIGINS is empty — cross-origin checks are DISABLED in " +
         "development. Set ALLOWED_ORIGINS to your site origin(s) before " +
         "deploying; production refuses browser requests when it is unset.",

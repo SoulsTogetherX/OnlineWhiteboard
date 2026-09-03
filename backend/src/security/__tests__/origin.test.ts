@@ -23,9 +23,10 @@ async function loadIsAllowedOrigin(overrides: {
 }) {
   vi.resetModules()
   // The module logs a warning/error banner at import when unconfigured; silence
-  // it so the suite output stays readable.
-  vi.spyOn(console, "warn").mockImplementation(() => {})
-  vi.spyOn(console, "error").mockImplementation(() => {})
+  // it so the suite output stays readable. The structured logger writes to the
+  // process streams directly (not via console), so those are what get spied.
+  vi.spyOn(process.stdout, "write").mockImplementation(() => true)
+  vi.spyOn(process.stderr, "write").mockImplementation(() => true)
 
   const next: NodeJS.ProcessEnv = { ...ORIGINAL_ENV }
   // Start from "unconfigured" so a case only has what it explicitly sets.

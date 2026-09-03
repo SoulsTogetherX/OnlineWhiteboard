@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 
-import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
+import {
+  applyDrawInstructionToCanvas,
+  isIdempotentOnReplay,
+} from "../handleCanvasProtocol"
 import { getIdxFromVec } from "../helperProtocolMethods"
 import { canvasBytes } from "../../constants/canvas"
 
@@ -340,5 +343,53 @@ describe("an instruction that changes nothing reports nothing", () => {
     expect(applyDrawInstructionToCanvas(pixels, line(RED), DIMS)).toBeNull()
     expect(paintedCount(pixels)).toBe(painted)
     expect(getPixel(pixels, 5, 0)).toEqual(RED)
+  })
+})
+
+describe("isIdempotentOnReplay — which instructions survive a second application", () => {
+  // Every client applies its OWN instructions twice: once optimistically at
+  // gesture time, once when the server's echo comes back (§5.2). Only the
+  // instructions that land on the same pixels the second time may be replayed by
+  // their sender, so this asserts the predicate against what the pixel writers
+  // actually do rather than restating its switch — a new tool whose output is
+  // derived from the canvas fails here, instead of silently leaving whoever drew
+  // it out of step with the room.
+  function seeded(): Uint8ClampedArray {
+    const pixels = makeCanvas()
+    for (let y = 5; y < 16; y += 1) {
+      for (let x = 5; x < 16; x += 1) {
+        setPixel(pixels, x, y, x < 10 ? RED : BLUE)
+      }
+    }
+    return pixels
+  }
+
+  const instructions = [
+    { type: "pencil", prevPos: [4, 4], nextPos: [20, 12], color: GREEN, size: 3, ...BASE },
+    { type: "eraser", prevPos: [6, 6], nextPos: [14, 14], size: 3, ...BASE },
+    { type: "bucket", pos: [7, 7], color: GREEN, ...BASE },
+    { type: "spray", pos: [10, 10], radius: 6, density: 30, seed: 4242, color: GREEN, ...BASE },
+    { type: "blur", pos: [10, 10], radius: 4, blend: 2, opacity: 100, lockAlpha: false, ...BASE },
+    { type: "patch", entries: [{ idx: getIdxFromVec([5, 5], DIMS), from: RED, to: GREEN }], ...BASE },
+    { type: "clear", ...BASE },
+  ] as DrawInstruction[]
+
+  for (const inst of instructions) {
+    it(`agrees with what a second ${inst.type} actually does`, () => {
+      const once = seeded()
+      const twice = seeded()
+      applyDrawInstructionToCanvas(once, inst, DIMS, "replay")
+      applyDrawInstructionToCanvas(twice, inst, DIMS, "replay")
+      applyDrawInstructionToCanvas(twice, inst, DIMS, "replay")
+
+      const secondApplyChangedNothing = twice.every((byte, i) => byte === once[i])
+      expect(secondApplyChangedNothing).toBe(isIdempotentOnReplay(inst))
+    })
+  }
+
+  it("singles out the blur, the one tool computed from the canvas", () => {
+    // Pinned explicitly as well as behaviourally: the loop above would still pass
+    // if the predicate and the writers were wrong in the same direction.
+    expect(instructions.filter((inst) => !isIdempotentOnReplay(inst)).map((i) => i.type)).toEqual(["blur"])
   })
 })

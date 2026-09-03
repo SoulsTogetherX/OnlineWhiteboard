@@ -3,6 +3,9 @@ import { randomUUID } from "node:crypto"
 
 import type { RawData, WebSocketServer } from "ws"
 
+import { log } from "@/observability/log"
+import * as metrics from "@/observability/metrics"
+
 import { canvasBytes, isValidCanvasDims } from "@shared/constants/canvas"
 import type { CanvasDims } from "@shared/constants/canvas"
 import { loadBaseCanvas, loadCanvas, saveCanvas } from "@/db/canvasRepository"
@@ -174,6 +177,12 @@ export default class RoomManager {
 
   constructor(private readonly wss: WebSocketServer) {}
 
+  // Rooms resident in memory. Read by the `rooms_active` gauge at scrape time
+  // (observability/metrics.ts) — a getter, so the gauge can never go stale.
+  get roomCount(): number {
+    return this.rooms.size
+  }
+
   start(): void {
     this.heartbeatTimer = setInterval(() => {
       this.wss.clients.forEach((rawSocket) => {
@@ -219,32 +228,32 @@ export default class RoomManager {
       // Never delete a room someone is currently in — see pruneStaleRooms.
       const deleted = await pruneStaleRooms(cutoff, [...this.rooms.keys()])
       if (deleted > 0) {
-        console.log(
-          `cleanup: removed ${deleted} room(s) untouched since ` +
-            cutoff.toISOString(),
-        )
+        log.info("cleanup: removed stale rooms", {
+          count: deleted,
+          untouchedSince: cutoff.toISOString(),
+        })
       }
     } catch (error) {
       // Not fatal — the rows are harmless and the next sweep retries.
-      console.error("Stale-room cleanup failed:", error)
+      log.error("stale-room cleanup failed", { error })
     }
 
     try {
       const removed = await deleteExpiredSessions()
       if (removed > 0) {
-        console.log(`cleanup: removed ${removed} expired session(s)`)
+        log.info("cleanup: removed expired sessions", { count: removed })
       }
     } catch (error) {
-      console.error("Expired-session cleanup failed:", error)
+      log.error("expired-session cleanup failed", { error })
     }
 
     try {
       const removed = await deleteExpiredAuthTokens()
       if (removed > 0) {
-        console.log(`cleanup: removed ${removed} expired auth token(s)`)
+        log.info("cleanup: removed expired auth tokens", { count: removed })
       }
     } catch (error) {
-      console.error("Expired auth-token cleanup failed:", error)
+      log.error("expired auth-token cleanup failed", { error })
     }
   }
 
@@ -292,7 +301,7 @@ export default class RoomManager {
     // save/snapshot timers running forever.
     socket.on("close", () => void this.removeClient(socket))
     socket.on("error", (error) => {
-      console.error("WebSocket client error:", error)
+      log.error("websocket client error", { error })
     })
 
     const room = await this.getOrCreateRoom(roomId)
@@ -306,7 +315,7 @@ export default class RoomManager {
       try {
         socket.identity.role = await ensureMembership(roomId, socket.userId)
       } catch (error) {
-        console.error(`Failed to resolve role for room "${roomId}":`, error)
+        log.error("failed to resolve role", { roomId, error })
       }
     }
 
@@ -412,10 +421,12 @@ export default class RoomManager {
       revision = event.revision
     }
     if (events.length > 0) {
-      console.log(
-        `recovered room ${roomId}: replayed ${events.length} event(s) ` +
-          `past snapshot revision ${stored.revision} -> ${revision}`,
-      )
+      log.info("recovered room: replayed events past snapshot", {
+        roomId,
+        events: events.length,
+        fromRevision: stored.revision,
+        toRevision: revision,
+      })
     }
 
     // Guarantee the FK target for draw_events exists before the first flush,
@@ -476,6 +487,10 @@ export default class RoomManager {
   ): Promise<void> {
     const message = this.parseMessage(raw, isBinary)
 
+    // Counted before the rate limiter on purpose: this series measures OFFERED
+    // load, and the rate-limited counter below measures what was refused.
+    metrics.wsMessagesReceived.inc({ type: message?.type ?? "invalid" })
+
     // Charge for the message BEFORE acting on it, and charge for invalid ones
     // too. Validation bounds what a single message can do; only this bounds how
     // many. Metering invalid messages matters just as much: each one sends an
@@ -486,10 +501,12 @@ export default class RoomManager {
     )
     if (decision === "close") {
       // Only reached after sustained abuse — a brief overshoot just drops.
+      metrics.wsMessagesRateLimited.inc({ decision: "close" })
       socket.close(1008, "Rate limit exceeded")
       return
     }
     if (decision === "drop") {
+      metrics.wsMessagesRateLimited.inc({ decision: "drop" })
       return
     }
 
@@ -609,7 +626,7 @@ export default class RoomManager {
       return
     }
 
-    this.applyInstruction(room, message.instruction)
+    this.applyInstruction(room, message.instruction, socket.connectionId)
   }
 
   // Relays a cursor position to everyone else in the room. Pure pass-through:
@@ -682,9 +699,15 @@ export default class RoomManager {
 
   // Returns the instruction that actually applied (so the caller can mark the
   // sender a recent editor), or null if it was rejected / a no-op.
+  //
+  // `origin` is the connectionId of the socket this came from, passed straight
+  // through to the broadcast so the sender can tell its own echo apart from
+  // everyone else's traffic. Omitted for the instructions the server generates
+  // itself (the owner's clear), which have no originating socket.
   private applyInstruction(
     room: RoomState,
     instruction: DrawInstruction,
+    origin?: string,
   ): DrawInstruction | null {
     const applied = applyDrawInstructionToCanvas(
       room.pixels,
@@ -712,6 +735,7 @@ export default class RoomManager {
       roomId: room.roomId,
       instruction: applied,
       revision: room.revision,
+      connectionId: origin,
     })
     return applied
   }
@@ -780,7 +804,7 @@ export default class RoomManager {
       // A brand-new owner needs to see anything already waiting for them.
       this.sendEditorRequests(socket, room)
     } catch (error) {
-      console.error(`Failed to claim ownership of ${room.roomId}:`, error)
+      log.error("failed to claim ownership", { roomId: room.roomId, error })
       this.send(socket, {
         type: "error",
         message: "Could not take ownership.",
@@ -823,7 +847,7 @@ export default class RoomManager {
         this.broadcastEditorRequests(room)
       }
     } catch (error) {
-      console.error(`Failed to release ownership of ${room.roomId}:`, error)
+      log.error("failed to release ownership", { roomId: room.roomId, error })
       this.send(socket, {
         type: "error",
         message: "Could not release ownership.",
@@ -852,7 +876,7 @@ export default class RoomManager {
       room.openEditing = enabled
       this.broadcastRoomSettings(room)
     } catch (error) {
-      console.error(`Failed to set open editing on ${room.roomId}:`, error)
+      log.error("failed to set open editing on", { roomId: room.roomId, error })
       this.send(socket, {
         type: "error",
         message: "Could not change that setting.",
@@ -913,7 +937,7 @@ export default class RoomManager {
       await saveCanvas(room.roomId, room.pixels, room.revision, dims, true)
       this.broadcastSnapshot(room)
     } catch (error) {
-      console.error(`Failed to resize ${room.roomId}:`, error)
+      log.error("failed to resize", { roomId: room.roomId, error })
       this.send(socket, { type: "error", message: "Could not resize." })
     }
   }
@@ -980,7 +1004,7 @@ export default class RoomManager {
       }
       this.broadcastEditorRequests(room)
     } catch (error) {
-      console.error(`Failed to answer editor request in ${room.roomId}:`, error)
+      log.error("failed to answer editor request", { roomId: room.roomId, error })
       this.send(socket, {
         type: "error",
         message: "Could not update that member.",
@@ -1020,7 +1044,7 @@ export default class RoomManager {
       await this.refreshRoles(room)
       this.broadcastRoomSettings(room)
     } catch (error) {
-      console.error(`Failed to set role in ${room.roomId}:`, error)
+      log.error("failed to set role", { roomId: room.roomId, error })
       this.send(socket, { type: "error", message: "Could not change that role." })
     }
   }
@@ -1052,7 +1076,7 @@ export default class RoomManager {
           self: client.identity,
         })
       } catch (error) {
-        console.error(`Failed to refresh a role in ${room.roomId}:`, error)
+        log.error("failed to refresh a role", { roomId: room.roomId, error })
       }
     }
 
@@ -1141,7 +1165,7 @@ export default class RoomManager {
       })
       await this.broadcastCheckpoints(room)
     } catch (error) {
-      console.error(`Failed to create checkpoint in ${room.roomId}:`, error)
+      log.error("failed to create checkpoint", { roomId: room.roomId, error })
       this.send(socket, {
         type: "error",
         message: "Could not save checkpoint.",
@@ -1199,7 +1223,7 @@ export default class RoomManager {
       await this.saveRoom(room.roomId)
       this.broadcastSnapshot(room)
     } catch (error) {
-      console.error(`Failed to restore checkpoint in ${room.roomId}:`, error)
+      log.error("failed to restore checkpoint", { roomId: room.roomId, error })
       this.send(socket, { type: "error", message: "Could not restore." })
     }
   }
@@ -1220,7 +1244,7 @@ export default class RoomManager {
       await deleteCheckpoint(room.roomId, checkpointId)
       await this.broadcastCheckpoints(room)
     } catch (error) {
-      console.error(`Failed to delete checkpoint in ${room.roomId}:`, error)
+      log.error("failed to delete checkpoint", { roomId: room.roomId, error })
     }
   }
 
@@ -1282,7 +1306,7 @@ export default class RoomManager {
         })),
       })
     } catch (error) {
-      console.error(`Failed to build playback for ${room.roomId}:`, error)
+      log.error("failed to build playback", { roomId: room.roomId, error })
       this.send(socket, { type: "error", message: "Could not load history." })
     } finally {
       // Released whatever happened, or one failure would lock this socket out of
@@ -1337,11 +1361,20 @@ export default class RoomManager {
     // Take the current buffer and clear it so new events accumulate separately
     // while this batch is in flight.
     const batch = room.eventBuffer.splice(0, room.eventBuffer.length)
+    const start = process.hrtime.bigint()
 
     try {
       await appendDrawEvents(roomId, batch)
+      // Only successful flushes feed the duration/size histograms — a failure
+      // is counted separately below, so the latency series stays a latency
+      // series instead of mixing in timeout noise.
+      metrics.eventFlushDuration.observe(
+        Number(process.hrtime.bigint() - start) / 1e9,
+      )
+      metrics.eventFlushBatchSize.observe(batch.length)
     } catch (error) {
-      console.error(`Failed to flush events for room ${roomId}:`, error)
+      metrics.eventFlushFailures.inc()
+      log.error("failed to flush events", { roomId, error })
       // Return the unwritten events to the head of the buffer, preserving order,
       // so the next flush retries them. Idempotent append (ON CONFLICT DO
       // NOTHING) means a partial success followed by a retry can't duplicate.
@@ -1438,7 +1471,7 @@ export default class RoomManager {
       await decimateRoomHistory(room.roomId, room.revision, MAX_HISTORY_EVENTS)
       room.isDirty = false
     } catch (error) {
-      console.error(`Failed to save room ${room.roomId}:`, error)
+      log.error("failed to save room", { roomId: room.roomId, error })
     }
   }
 
@@ -1514,8 +1547,15 @@ export default class RoomManager {
   }
 
   private broadcast(room: RoomState, message: ServerSocketMessage): void {
+    const start = process.hrtime.bigint()
     const payload = JSON.stringify(message)
     room.clients.forEach((client) => this.sendRaw(client, payload))
+    // Server-side fan-out cost only — the client-observed figure adds network
+    // transit on top (the load test measures that end-to-end).
+    metrics.wsBroadcastDuration.observe(
+      Number(process.hrtime.bigint() - start) / 1e9,
+    )
+    metrics.wsBroadcastRecipients.observe(room.clients.size)
   }
 
   private send(socket: ClientSocket, message: ServerSocketMessage): void {
@@ -1538,6 +1578,7 @@ export default class RoomManager {
     // Closing outright would be worse — a brief network stall would evict an
     // honest user mid-stroke.
     if (socket.bufferedAmount > MAX_BUFFERED_BYTES) {
+      metrics.wsSendsDropped.inc()
       return
     }
 

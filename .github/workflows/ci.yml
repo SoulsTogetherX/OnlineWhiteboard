@@ -180,6 +180,10 @@ jobs:
           # outside the runner. node (not sed) because base64 contains + / = that
           # sed would treat specially.
           node -e "const c=require('crypto'),fs=require('fs');let e=fs.readFileSync('.env','utf8');for(const k of ['EMAIL_INDEX_PEPPER','EMAIL_ENCRYPTION_KEY'])e=e.replace(new RegExp('^'+k+'=.*','m'),k+'='+c.randomBytes(32).toString('base64'));fs.writeFileSync('.env',e)"
+          # A throwaway metrics token: the backend runs NODE_ENV=production, so
+          # /api/metrics is 404 without one — and the metrics probe below must
+          # exercise the real authenticated path, same as Grafana would.
+          echo "METRICS_TOKEN=ci-throwaway-metrics-token" >> .env
 
       # Reuse layers across runs. Without this every run re-downloads and
       # re-installs node_modules inside the image.
@@ -207,6 +211,16 @@ jobs:
       # unit tests can agree on while the wiring is wrong.
       - name: Permissions probe
         run: node scripts/permissions-probe.mjs http://localhost:8080
+
+      # Proves the RUNNING stack exports every series the dashboards and alerts
+      # reference, and that the endpoint refuses unauthenticated scrapes in
+      # production mode. A metric that silently stops being registered breaks
+      # every alert built on it while the rest of CI stays green — this is the
+      # drift alarm (see scripts/metrics-probe.mjs).
+      - name: Metrics probe
+        run: node scripts/metrics-probe.mjs http://localhost:8080
+        env:
+          METRICS_TOKEN: ci-throwaway-metrics-token
 
       # Only on failure, and only then — a green run should stay quiet.
       - name: Dump logs on failure

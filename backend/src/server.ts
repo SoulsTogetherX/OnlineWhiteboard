@@ -10,6 +10,8 @@ import { runMigrations } from "./db/migrate"
 import { assertEmailSecretsPresent } from "./auth/emailCrypto"
 import { warnIfMailerUnconfigured } from "./auth/mailer"
 import pool from "./db/pool"
+import { log } from "./observability/log"
+import { registerRuntimeCollectors } from "./observability/metrics"
 
 import { MAX_PATCH_ENTRIES_PER_MESSAGE } from "@shared/constants/canvas"
 import { BYTES_PER_ENTRY } from "@shared/utils/patchCodec"
@@ -63,6 +65,11 @@ configureRoutes(app)
 // After the routes on purpose: its SPA fallback must never shadow /api.
 configureStaticSite(app)
 const roomManager = configureWebSockets(wss, server)
+
+// Live gauges (open sockets, resident rooms, pg pool state) read their sources
+// at scrape time; registered here because this is the one place all three
+// exist. See observability/metrics.ts.
+registerRuntimeCollectors({ sockets: wss, rooms: roomManager, pool })
 //#endregion
 
 //#region Graceful Shutdown
@@ -81,7 +88,7 @@ async function shutdown(signal: string): Promise<void> {
     return
   }
   shuttingDown = true
-  console.log(`${signal} received — draining rooms before exit`)
+  log.info("draining rooms before exit", { signal })
 
   // Stop taking new HTTP/WS connections; in-flight ones finish.
   server.close()
@@ -89,10 +96,10 @@ async function shutdown(signal: string): Promise<void> {
   try {
     await roomManager.shutdown()
     await pool.end()
-    console.log("Shutdown complete")
+    log.info("shutdown complete", { signal })
     process.exit(0)
   } catch (error) {
-    console.error("Error during shutdown:", error)
+    log.error("error during shutdown", { signal, error })
     process.exit(1)
   }
 }
@@ -130,12 +137,12 @@ async function start(): Promise<void> {
   roomManager.startCleanup()
 
   server.listen(port, () => {
-    console.log(`Server is running on ${process.env.API_BASE}:${port}`)
+    log.info("server listening", { base: process.env.API_BASE, port })
   })
 }
 
 start().catch((error) => {
-  console.error("Fatal startup error:", error)
+  log.error("fatal startup error", { error })
   process.exit(1)
 })
 //#endregion
