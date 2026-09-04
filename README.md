@@ -13,7 +13,7 @@ durable per-room canvas that survives server restarts, and offers optional accou
 room ownership, a saved colour palette, and a scrubbable history of how each canvas was
 drawn.
 
-<img width="1920" height="882" alt="The whiteboard in use" src="https://github.com/user-attachments/assets/764d1d05-62f6-45a1-9438-43840e77acf6" />
+<img width="1917" height="884" alt="Pic1" src="https://github.com/user-attachments/assets/0b63210b-75d1-4531-be54-ea210f020b74" />
 
 ## Features
 
