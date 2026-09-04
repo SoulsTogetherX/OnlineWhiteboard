@@ -209,6 +209,20 @@ export type ServerSocketMessage =
       roomId: string
       instruction: DrawInstruction
       revision: number
+      // Which SOCKET sent this, stamped by the server. Absent on the
+      // instructions the server generates itself (the owner's clear).
+      //
+      // It exists so a client can recognise the echo of its own instruction,
+      // which it already applied optimistically — see isIdempotentOnReplay in
+      // handleCanvasProtocol for what turns on that. Deliberately the
+      // connectionId and not the instruction's `sessionId`: sessionId is
+      // client-supplied (so it can be forged) and is stored per BROWSER, so two
+      // tabs of the same browser share one — each would mistake the other's
+      // instructions for its own and skip them. A connectionId is minted by the
+      // server per socket, which is exactly the granularity "did I apply this
+      // already" needs. Already public within the room (presence and cursors
+      // carry it), so this reveals nothing new.
+      connectionId?: string
     }
   | {
       // Sent as a BINARY frame, not text: this object is the frame's JSON

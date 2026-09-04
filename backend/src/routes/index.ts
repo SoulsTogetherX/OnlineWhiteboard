@@ -5,10 +5,16 @@ import configureAuthRoutes from "./auth"
 import configureColorRoutes from "./colors"
 import configureRoomRoutes from "./rooms"
 import { csrfOriginGuard } from "@/security/csrf"
+import { httpMetrics, metricsAuth, metricsHandler } from "@/observability/metrics"
 //#endregion
 
 //#region Configure Routes
 export default function configure(app: Express) {
+  // First, so it times every request — including the ones the CSRF guard
+  // rejects. A latency histogram that excludes refused requests would hide
+  // exactly the traffic you look for during an incident.
+  app.use(httpMetrics)
+
   // Reject state-changing requests from unrecognised origins before any body is
   // parsed or any handler runs (defence-in-depth over the SameSite cookie).
   app.use(csrfOriginGuard)
@@ -39,5 +45,11 @@ export default function configure(app: Express) {
   app.get("/api/health", (_req, res) => {
     res.status(200).json({ status: "ok", uptime: process.uptime() })
   })
+
+  // Prometheus scrape target. Unlike /api/health this is NOT public: it
+  // enumerates routes, error rates and connection counts, so it sits behind
+  // METRICS_TOKEN (Bearer or Basic-password) — open in development, 404 in
+  // production until the token is configured. See observability/metrics.ts.
+  app.get("/api/metrics", metricsAuth, metricsHandler)
 }
 //#endregion

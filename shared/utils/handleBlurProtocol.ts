@@ -18,6 +18,21 @@
 //      different canvas. That is safe here only because nobody ever chooses an
 //      order: the server assigns one and everyone replays that log.
 //
+//      Which means the DRAWER must not replay its own blur on top of the copy it
+//      already applied optimistically — "blurring twice is not blurring once"
+//      cuts exactly as hard when both are the same instruction. It is the only
+//      tool for which that is true, and getting it wrong desynchronised the
+//      drawer and broke its undo; see isIdempotentOnReplay in
+//      handleCanvasProtocol, which is what the client consults to skip it.
+//
+//      What that leaves open, honestly: if a collaborator's instruction reaches
+//      the server between the optimistic apply and the server's own, the drawer
+//      has blurred at a different point in the order than everyone else and the
+//      two results differ. Nothing here can fix that — the optimistic apply
+//      would have to be rolled back and replayed in the server's order — and it
+//      is a strictly smaller window than the double-apply it replaces, which
+//      diverged on EVERY blur.
+//
 // The sampling reads from a SNAPSHOT taken before any writing, not from the
 // canvas as it is being modified. Sampling live would make each pixel's result
 // depend on how many of its neighbours had already been written, which is a

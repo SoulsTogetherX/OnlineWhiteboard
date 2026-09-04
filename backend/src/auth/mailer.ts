@@ -26,6 +26,7 @@
 
 //#region Imports
 import nodemailer, { type Transporter } from "nodemailer"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Config
@@ -82,8 +83,8 @@ export function warnIfMailerUnconfigured(): void {
   if (readSmtpConfig()) {
     return
   }
-  console.warn(
-    "WARNING: SMTP is not configured (SMTP_HOST / EMAIL_FROM). Email " +
+  log.warn(
+    "SMTP is not configured (SMTP_HOST / EMAIL_FROM). Email " +
       "verification and password reset are disabled — their links are logged to " +
       "this console instead of emailed. Set SMTP_HOST and EMAIL_FROM to deliver mail.",
   )
@@ -139,9 +140,14 @@ type Message = { subject: string; text: string; html: string }
 async function send(to: string, message: Message): Promise<void> {
   const config = readSmtpConfig()
   if (!config) {
-    console.log(
-      `[mailer] SMTP not configured; would send "${message.subject}" to ${to}\n${message.text}`,
-    )
+    // Deliberately includes the address and full body: when SMTP is unset
+    // this log line IS the delivery mechanism (see .env.example) — the
+    // operator clicks the link out of the console.
+    log.info("SMTP not configured; logging email instead of sending", {
+      to,
+      subject: message.subject,
+      body: message.text,
+    })
     return
   }
   try {
@@ -157,7 +163,7 @@ async function send(to: string, message: Message): Promise<void> {
     // the address is the user's own and already known here, but keep the line
     // terse and never include the token.
     const e = error as { message?: string; code?: string }
-    console.error(`mail send failed: ${e.code ?? ""} ${e.message ?? ""}`.trim())
+    log.error("mail send failed", { code: e.code, message: e.message })
   }
 }
 

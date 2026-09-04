@@ -3,6 +3,7 @@ import { db } from "./pool"
 import { packPixels, unpackPixels } from "./pixelStorage"
 
 import type { CanvasDims } from "@shared/constants/canvas"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Type Defs
@@ -90,10 +91,13 @@ export async function loadCheckpoint(
   // instead of writing garbage over the live canvas and broadcasting it.
   const pixels = unpackPixels(row.rgba, dims)
   if (pixels === null) {
-    console.error(
-      `checkpoint "${checkpointId}" in room "${roomId}" could not be ` +
-        `decompressed (${row.rgba.length} stored bytes, ${dims.width}x${dims.height})`,
-    )
+    log.error("checkpoint could not be decompressed", {
+      checkpointId,
+      roomId,
+      storedBytes: row.rgba.length,
+      width: dims.width,
+      height: dims.height,
+    })
     return null
   }
 

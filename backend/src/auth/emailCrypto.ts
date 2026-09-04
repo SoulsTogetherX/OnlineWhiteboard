@@ -46,6 +46,7 @@ import {
 import { promisify } from "node:util"
 
 import type { ScryptOptions } from "node:crypto"
+import { log } from "@/observability/log"
 //#endregion
 
 //#region Constants
@@ -103,8 +104,8 @@ function requireSecret(name: string, devFallback: string): string {
   }
   if (!warned) {
     warned = true
-    console.warn(
-      "WARNING: EMAIL_INDEX_PEPPER / EMAIL_ENCRYPTION_KEY are unset. Using " +
+    log.warn(
+      "EMAIL_INDEX_PEPPER / EMAIL_ENCRYPTION_KEY are unset. Using " +
         "insecure development defaults. Never run this configuration anywhere real.",
     )
   }

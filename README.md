@@ -201,6 +201,37 @@ terminates TLS and forwards to `localhost:8080` with WebSocket upgrades passed t
 > across them. Multi-instance would need a shared bus (Redis pub/sub) for broadcasts and a
 > shared store for limits — noted in `CLAUDE.md §14`.
 
+### 5. Observe it
+
+The backend logs **structured JSON** (one object per line — filter with
+`docker compose logs backend | grep '"roomId":"..."'` or your platform's log search)
+and exports **Prometheus metrics** at `GET /api/metrics`:
+
+- **Live gauges:** open WebSocket connections, rooms resident in memory, pg pool state.
+- **Latency histograms:** server-side broadcast fan-out, event-log flush, HTTP by route.
+- **Counters:** messages by protocol type, rate-limiter refusals, backpressure-dropped
+  sends, rejected upgrades (origin / connection cap), flush failures.
+- **Node runtime:** event-loop lag, GC pauses, heap — prom-client's defaults.
+
+The endpoint is guarded by `METRICS_TOKEN` (`Bearer`, or the password half of Basic
+auth — what Grafana Cloud's scraper sends). Unset, it is open in development and
+**404 in production**, the same fail-closed posture as the origin allowlist. CI's
+metrics probe (`scripts/metrics-probe.mjs`) fails the build if the running stack
+stops exporting any series a dashboard or alert references, or serves an
+unauthenticated scrape.
+
+**Hosted dashboard (free):** in Grafana Cloud, add the **Metrics Endpoint**
+integration and point it at `https://<your-domain>/api/metrics` with Basic auth
+(any username, `METRICS_TOKEN` as the password). Suggested starting alerts:
+p95 `ws_broadcast_duration_seconds` over 50 ms for 5 min, any increase in
+`event_flush_failures_total`, and a failing scrape (instance down or asleep).
+
+**Service-level objective (SLO):** p95 server-side broadcast fan-out ≤ 50 ms and
+p95 event flush ≤ 250 ms, over 30 days — chosen so the end-to-end figures the
+load test measures (p50 30 ms / p95 80 ms client-observed broadcast at 50+
+clients per room, ≤ 250 ms worst-case data loss) stay honest in production, not
+just in the harness.
+
 ---
 
 ## Using the app

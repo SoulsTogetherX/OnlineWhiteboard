@@ -14,6 +14,8 @@ import {
   startSessionRevalidation,
   unregisterSocket,
 } from "./sessionRegistry"
+import { log } from "@/observability/log"
+import { wsUpgradesRejected } from "@/observability/metrics"
 
 import type { ClientSocket } from "@/types/ClientSocket"
 //#endregion
@@ -51,7 +53,8 @@ export default function configure(
     // and act under their identity. Reject a browser upgrade from an origin we
     // don't recognise before it ever becomes a WebSocket.
     if (!isAllowedOrigin(request.headers.origin)) {
-      console.warn(`Rejected WS upgrade from origin: ${request.headers.origin}`)
+      wsUpgradesRejected.inc({ reason: "origin" })
+      log.warn("rejected WS upgrade", { origin: request.headers.origin })
       socket.destroy()
       return
     }
@@ -70,7 +73,11 @@ export default function configure(
     // database query is a cap an attacker can use to generate database queries.
     const keys = connectionKeys(request)
     if (!connections.tryAcquireAll(keys)) {
-      console.warn(`Connection cap reached for ${keys.session ?? keys.ip}`)
+      wsUpgradesRejected.inc({ reason: "cap" })
+      // The key (session hash, else client IP) is the one identifier that lets
+      // an operator act on sustained abuse — the documented exception to the
+      // no-IPs logging rule.
+      log.warn("connection cap reached", { key: keys.session ?? keys.ip })
       socket.destroy()
       return
     }
@@ -127,7 +134,7 @@ export default function configure(
         return roomManager.addClient(socket, roomId)
       })
       .catch((error) => {
-        console.error(`Failed to add client to room "${roomId}":`, error)
+        log.error("failed to add client to room", { roomId, error })
         ws.close(1011, "Failed to join room")
       })
   })

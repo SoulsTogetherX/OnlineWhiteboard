@@ -26,7 +26,10 @@
 import { describe, expect, it } from "vitest"
 
 import { MAX_SPRAY_DENSITY, MAX_SPRAY_RADIUS } from "../../constants/canvas"
-import { applyDrawInstructionToCanvas } from "../handleCanvasProtocol"
+import {
+  applyDrawInstructionToCanvas,
+  isIdempotentOnReplay,
+} from "../handleCanvasProtocol"
 import { getIdxFromVec } from "../helperProtocolMethods"
 
 import {
@@ -38,9 +41,10 @@ import {
   TRANSPARENT,
   getPixel,
   makeCanvas,
+  setPixel,
 } from "./testHelpers"
 
-import type { DrawInstruction } from "../../types/drawProtocol"
+import type { DrawInstruction, PatchEntry } from "../../types/drawProtocol"
 //#endregion
 
 //#region Harness
@@ -54,8 +58,17 @@ function makeRoom(clientCount: number) {
   return {
     server,
     clients,
+    // `origin` is the index of the client that SENT this, for the tests that
+    // model a round trip. The sender already applied it optimistically, so it
+    // runs the same rule the real client does (useRoomConnection): replay every
+    // echo except one whose second application would not land on the same
+    // pixels. Omitted, nobody in the room is the sender and everyone replays.
+    //
     // Returns what the server broadcast, so a test can assert on the narrowing.
-    deliver(instruction: DrawInstruction): DrawInstruction | null {
+    deliver(
+      instruction: DrawInstruction,
+      origin?: number,
+    ): DrawInstruction | null {
       const applied = applyDrawInstructionToCanvas(server, instruction, DIMS)
       if (applied === null) {
         // Rejected or no-op: nothing is broadcast, so no client hears anything.
@@ -63,12 +76,70 @@ function makeRoom(clientCount: number) {
       }
       // Clients REPLAY: the server already decided. This asymmetry is the whole
       // point — see PatchApplyMode in handleCanvasProtocol.ts.
-      clients.forEach((pixels) =>
-        applyDrawInstructionToCanvas(pixels, applied, DIMS, "replay"),
-      )
+      clients.forEach((pixels, client) => {
+        if (client === origin && !isIdempotentOnReplay(applied)) {
+          return
+        }
+        applyDrawInstructionToCanvas(pixels, applied, DIMS, "replay")
+      })
       return applied
     },
   }
+}
+
+// The undo entries a client records for a gesture: one per pixel it actually
+// changed, holding the colour from before and the colour after. Built here by
+// diffing the two buffers, which is exactly the set withRecording +
+// coalesceRecording produce off the live pixel-write loop (same pixels, same
+// from/to, from-equals-to dropped) without needing a canvas element.
+function recordedUndoEntries(
+  before: Uint8ClampedArray,
+  after: Uint8ClampedArray,
+): PatchEntry[] {
+  const entries: PatchEntry[] = []
+  for (let i = 0; i < before.length; i += 4) {
+    const changed =
+      before[i] !== after[i] ||
+      before[i + 1] !== after[i + 1] ||
+      before[i + 2] !== after[i + 2] ||
+      before[i + 3] !== after[i + 3]
+    if (changed) {
+      entries.push({
+        idx: i,
+        from: { r: before[i], g: before[i + 1], b: before[i + 2], a: before[i + 3] },
+        to: { r: after[i], g: after[i + 1], b: after[i + 2], a: after[i + 3] },
+      })
+    }
+  }
+  return entries
+}
+
+// Reverses a recording's direction, exactly as useUndoRedo does before applying
+// it: undo replays the gesture backwards.
+function reversed(entries: PatchEntry[]): PatchEntry[] {
+  return entries.map((e) => ({ idx: e.idx, from: e.to, to: e.from }))
+}
+
+// A hard red/blue edge — the arrangement where blurring visibly does something,
+// so "did the blur land twice" is measurable.
+function paintEdge(pixels: Uint8ClampedArray): void {
+  for (let y = 5; y < 16; y += 1) {
+    for (let x = 5; x < 16; x += 1) {
+      setPixel(pixels, x, y, x < 10 ? RED : BLUE)
+    }
+  }
+}
+
+function blurAt(pos: [number, number]): DrawInstruction {
+  return {
+    type: "blur",
+    pos,
+    radius: 4,
+    blend: 2,
+    opacity: 100,
+    lockAlpha: false,
+    ...BASE,
+  } as DrawInstruction
 }
 
 // Byte-for-byte equality against the server, reported as the first differing
@@ -199,6 +270,82 @@ describe("convergence — every client ends byte-identical to the server", () =>
     // Then the round trip: server applies and broadcasts back to the sender.
     room.deliver(stroke)
 
+    expectConverged(room.server, room.clients)
+  })
+
+  it("keeps the sender converged when it echoes back its own blur", () => {
+    // The same round trip as the test above, for the one tool that is NOT
+    // idempotent. A blur is computed FROM the canvas, so replaying it over its
+    // own output blurs twice: the sender used to end up visibly softer than the
+    // server and than everybody else, permanently — no revision was missed, so
+    // the heartbeat never asked for a resync.
+    const room = makeRoom(2)
+    const [sender, bystander] = room.clients
+    ;[room.server, sender, bystander].forEach(paintEdge)
+
+    const stroke = blurAt([10, 10])
+    // Optimistic local paint, before the server has seen anything.
+    applyDrawInstructionToCanvas(sender, stroke, DIMS)
+    // The round trip: the server applies and broadcasts back to the whole room,
+    // sender included.
+    room.deliver(stroke, 0)
+
+    expectConverged(room.server, room.clients)
+    // Not a vacuous pass: the blur really did soften the edge.
+    expect(getPixel(room.server, 9, 10)).not.toEqual(RED)
+  })
+
+  it("undoes a blur completely, back to the pixels it started from", () => {
+    // The bug this file's blur cases exist for. Undo is a compare-and-swap
+    // patch: each entry only applies while the pixel still holds the colour the
+    // gesture left there. When the sender replayed its own blur echo, every one
+    // of those pixels moved again, so every CAS failed — undo lit up, applied
+    // nothing, and reported the area as already changed.
+    const room = makeRoom(1)
+    const [sender] = room.clients
+    ;[room.server, sender].forEach(paintEdge)
+    const beforeBlur = sender.slice()
+
+    // A gesture is one instruction per pointer sample, each applied
+    // optimistically, recorded, and sent — so the recording spans all of them
+    // and overlapping puffs compound, which is what makes the last-write-wins
+    // coalescing matter.
+    const gesture = [blurAt([10, 10]), blurAt([11, 10]), blurAt([11, 11])]
+    for (const puff of gesture) {
+      applyDrawInstructionToCanvas(sender, puff, DIMS)
+    }
+    const undoEntries = recordedUndoEntries(beforeBlur, sender)
+    expect(undoEntries.length).toBeGreaterThan(0)
+
+    // Every puff round trips and comes back to the whole room.
+    for (const puff of gesture) {
+      room.deliver(puff, 0)
+    }
+    expectConverged(room.server, room.clients)
+
+    // Now undo, exactly as useUndoRedo does it: reverse the recording and apply
+    // it locally in "decide" mode — this client is PROPOSING the patch, so it
+    // runs the compare-and-swap itself. This is the step that used to come back
+    // empty.
+    const proposed = applyDrawInstructionToCanvas(
+      sender,
+      { type: "patch", entries: reversed(undoEntries), ...BASE },
+      DIMS,
+    )
+    expect(proposed?.type === "patch" && proposed.entries).toHaveLength(
+      undoEntries.length,
+    )
+
+    // Only what landed is sent on, and the server decides again from its own
+    // canvas.
+    const undone = room.deliver(proposed as DrawInstruction, 0)
+
+    // Nothing was narrowed away on either side: every pixel the gesture touched
+    // was restored.
+    expect(undone?.type === "patch" && undone.entries).toHaveLength(
+      undoEntries.length,
+    )
+    expect(sender.findIndex((byte, i) => byte !== beforeBlur[i])).toBe(-1)
     expectConverged(room.server, room.clients)
   })
 
