@@ -106,6 +106,20 @@ async function shutdown(signal: string): Promise<void> {
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"))
 process.on("SIGINT", () => void shutdown("SIGINT"))
+
+// Last line of defence for background promises. Node's default for an
+// unhandled rejection is to terminate the process, which is how incident 002
+// (docs/incidents/002-flood-crash-and-blind-slo.md) turned one timed-out
+// database connect into an outage for every connected user. Every `void
+// this.x()` site is expected to catch its own errors; this handler is for the
+// one that was missed, and it logs the stack so the miss is found and fixed
+// rather than silently swallowed. Uncaught EXCEPTIONS are left to Node's
+// default — after one of those the process state is not trustworthy.
+process.on("unhandledRejection", (reason) => {
+  log.error("unhandled promise rejection — a background task is missing its catch", {
+    error: reason,
+  })
+})
 //#endregion
 
 //#region Startup

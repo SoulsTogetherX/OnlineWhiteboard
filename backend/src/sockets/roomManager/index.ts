@@ -1324,15 +1324,24 @@ export default class RoomManager {
     })
   }
 
+  // Fire-and-forget from addClient, so a rejection here has no caller to land
+  // on. Incident 002 (docs/incidents/002-flood-crash-and-blind-slo.md): under
+  // load the pool's connect to Postgres timed out, this rejected, and the
+  // unhandled rejection took the whole process down — every room, every user.
+  // The checkpoint list is a nicety on join; losing it must cost one log line.
   private async sendCheckpoints(
     socket: ClientSocket,
     room: RoomState,
   ): Promise<void> {
-    this.send(socket, {
-      type: "checkpoints",
-      roomId: room.roomId,
-      checkpoints: await this.checkpointList(room.roomId),
-    })
+    try {
+      this.send(socket, {
+        type: "checkpoints",
+        roomId: room.roomId,
+        checkpoints: await this.checkpointList(room.roomId),
+      })
+    } catch (error) {
+      log.error("failed to send checkpoints", { roomId: room.roomId, error })
+    }
   }
 
   // Metadata list with createdAt serialised to an ISO string for the wire.

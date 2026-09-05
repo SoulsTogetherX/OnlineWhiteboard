@@ -19,6 +19,12 @@ const pool = new Pool({
   user: process.env.POSTGRES_USER,
   password: process.env.POSTGRES_PASSWORD,
   database: process.env.POSTGRES_DB,
+  // Bound how long a NEW connection may take to establish. pg's default is
+  // "forever": a connect that stalls sits until the OS gives up (incident 002
+  // saw ETIMEDOUT arrive well after the process was already starving). Five
+  // seconds turns a stuck database into a fast, loggable error instead of a
+  // pile-up of half-open connects behind a saturated event loop.
+  connectionTimeoutMillis: Number(process.env.PG_CONNECT_TIMEOUT_MS ?? 5000),
 })
 //#endregion
 
